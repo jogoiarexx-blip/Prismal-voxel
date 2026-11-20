@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#151c1b" />
+    <meta
+      name="description"
+      content="Explore, construa e sobreviva em um mundo de blocos gerado por você."
+    />
+    <title>Mundo Prisma</title>
+    <link rel="icon" href="art/prisma.png" />
+    <link rel="preload" href="art/expedicao.webp" as="image" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main id="app">
+      <section id="home" aria-label="Menu principal">
+        <div class="landscape"></div>
+        <div class="shade"></div>
+        <div class="motes" aria-hidden="true"></div>
+        <header class="topline">
+          <div class="brand">
+            <img src="art/prisma.png" alt="" /><span>PRISMA</span><i></i><small>VOXEL SANDBOX</small>
+          </div>
+          <div class="tools">
+            <button class="tool" id="sound" title="Ativar som" aria-label="Ativar som"></button
+            ><button class="tool" id="full" title="Tela cheia" aria-label="Tela cheia"></button>
+          </div>
+        </header>
+        <div class="hero">
+          <div class="kicker"><i></i>ECOS DOS ARQUITETOS</div>
+          <h1 aria-label="Mundo Prisma"><span>MUNDO</span><strong>PRISMA</strong></h1>
+          <p>Explore ruínas antigas, desperte os três selos<br />e erga seu próprio Farol Prisma.</p>
+          <div class="actions">
+            <button class="primary large" id="play">
+              <i data-ico="play"></i
+              ><span class="play-copy"
+                ><strong id="playTitle">Jogar</strong
+                ><small id="playDetail">Criar meu primeiro mundo</small></span
+              ><kbd>ENTER</kbd>
+            </button>
+            <div class="twins">
+              <button class="secondary" id="worlds"><i data-ico="world"></i>Meus mundos</button
+              ><button class="secondary" id="options"><i data-ico="gear"></i>Opções</button>
+            </div>
+          </div>
+        </div>
+        <button class="scene-label" id="expCard" aria-label="Abrir o diário da expedição">
+          <span class="exp-icon" id="expImage" aria-hidden="true"></span>
+          <span class="exp-copy"
+            ><small>DIÁRIO DA EXPEDIÇÃO</small><strong id="expTitle">Pórtico da Alvorada</strong
+            ><span id="expProgress">0 de 3 selos</span></span
+          >
+        </button>
+        <footer class="footer">
+          <div class="footer-links">
+            <button id="guide"><i data-ico="book"></i>Guia de campo</button
+            ><button id="quickNew" hidden><i data-ico="plus"></i>Novo mundo</button>
+          </div>
+          <span class="version"><b></b>VERSÃO 0.3.0</span>
+        </footer>
+      </section>
+      <section id="game" hidden aria-label="Mundo jogável">
+        <canvas id="view" tabindex="0" aria-label="Área do jogo"></canvas>
+        <div id="held" aria-hidden="true" hidden></div>
+        <div id="gamehud">
+          <div class="gamehead">
+            <div class="location">
+              <i data-ico="pin"></i><span id="biome"></span><small id="clock"></small>
+            </div>
+            <button class="tool" id="pause" title="Pausar jogo" aria-label="Pausar jogo">
+              <i data-ico="pause"></i>
+            </button>
+          </div>
+          <div id="quest"></div>
+          <button id="expCompass" title="Abrir diário da expedição">
+            <i aria-hidden="true">▲</i><span></span>
+          </button>
+          <div id="cameraHint" hidden></div>
+          <div id="cross"></div>
+          <div id="target"></div>
+          <div id="breakbar" hidden><span></span></div>
+          <div class="hudbottom">
+            <div class="hudstats" id="vitals"></div>
+            <div id="itemname"></div>
+            <div id="hotbar" class="slots"></div>
+            <div class="keyhint">
+              <kbd>E</kbd> Mochila <b>·</b> <kbd>TAB</kbd> Guia <b>·</b> <kbd>ESC</kbd> Pausa
+            </div>
+          </div>
+          <div id="touch">
+            <div class="pad">
+              <button data-touch="KeyW">▲</button><button data-touch="KeyA">◀</button
+              ><button data-touch="KeyS">▼</button><button data-touch="KeyD">▶</button>
+            </div>
+            <div class="touchact">
+              <button data-touch="jump">Pular</button><button data-touch="mine">Minerar</button
+              ><button data-touch="use">Usar</button><button data-touch="bag">Mochila</button
+              ><button data-touch="camera">Câmera</button><button data-touch="journal">Diário</button>
+            </div>
+          </div>
+          <pre id="debug" hidden></pre>
+          <div id="hurt"></div>
+        </div>
+      </section>
+      <div id="overlay" hidden>
+        <section
+          id="dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="panelTitle"
+          tabindex="-1"
+        ></section>
+      </div>
+      <div id="toast" role="status" aria-live="polite"></div>
+    </main>
+    <script defer src="js/icons.js"></script>
+    <script defer src="js/world.js"></script>
+    <script defer src="js/render.js"></script>
+    <script defer src="js/store.js"></script>
+    <script defer src="js/game.js"></script>
+    <script defer src="js/ui.js"></script>
+  </body>
+</html>
