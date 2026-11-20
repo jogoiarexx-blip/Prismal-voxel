@@ -494,6 +494,7 @@ const Game = (() => {
             this.inv[this.selected] = null;
           mob.stun = 0.55;
           Sound.play('mine', this.settings);
+          this.signal('hitEnemy');
           if (mob.hp <= 0) {
             this.mobs = this.mobs.filter((m) => m !== mob);
             if (mob.kind === 'Guardião Prisma') this.goals.guardian = true;
@@ -553,6 +554,7 @@ const Game = (() => {
         }
       }
       Sound.play('mine', this.settings);
+      this.signal('blockBroken');
       this.progress = 0;
       this.attackCool = this.creative ? 0.16 : 0.1;
       this.hit = null;
@@ -766,6 +768,7 @@ const Game = (() => {
       if (t.b === 15) this.chests[pos.join(',')] = Array(18).fill(null);
       if (!this.creative && !--t.n) this.inv[this.selected] = null;
       Sound.play('place', this.settings);
+      this.signal('blockPlaced');
       this.signal('hud');
     }
     aimMob() {

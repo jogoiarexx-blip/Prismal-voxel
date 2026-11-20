@@ -1403,3 +1403,32 @@ body.touchgame #quest { max-width: min(54vw, 360px); }
 
 #game.raining::after{content:"";position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(106deg,transparent 0 40px,#aad4df40 41px,transparent 42px 89px);mask-image:repeating-linear-gradient(0deg,transparent 0 40px,#000 41px 49px,transparent 50px 82px);animation:rainfall .55s linear infinite;}
 @keyframes rainfall{to{background-position:-24px 82px;mask-position:0 82px}}
+
+/* 0.6: touch interaction feedback, adjustable stick, handedness. */
+#mineFeedback { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: 60px; height: 60px; border-radius: 50%; pointer-events: none;
+  background: conic-gradient(#ffd67e var(--mine-progress, 0%), #12282c99 0);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 3px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 3px));
+  filter: drop-shadow(0 2px 2px #000b); }
+#mineFeedback[hidden] { display:none !important; }
+#mineFeedback span { display:none; }
+body.touchgame #breakbar { display:none; }
+#touchImpact { position:absolute; top:50%; left:50%; width:18px; height:18px;
+  border:2px solid transparent; border-radius:4px; opacity:0; pointer-events:none;
+  transform:translate(-50%,-50%); }
+#touchImpact.pop { border-color:#e8fbff; animation:voxel-touch-pop .26s ease-out both; }
+#touchImpact.placed { border-color:#ffdc80; animation:voxel-touch-pop .26s ease-out both; }
+#touchImpact.enemy { border-color:#ff8176; animation:voxel-touch-pop .23s ease-out both; }
+@keyframes voxel-touch-pop { 0% { opacity:.92; transform:translate(-50%,-50%) scale(.65) rotate(-12deg); }
+  100% { opacity:0; transform:translate(-50%,-50%) scale(2.7) rotate(9deg); } }
+#movePad { scale:var(--touch-size,1); transform-origin:center bottom; }
+body.touchgame.lefty .movecluster { left:auto; right:max(12px, env(safe-area-inset-right)); }
+body.touchgame.lefty .touchact { right:auto; left:max(12px, env(safe-area-inset-left)); align-items:flex-start; }
+@media (max-width: 520px) {
+ body.touchgame.lefty .movecluster { right:max(8px, env(safe-area-inset-right)); }
+ body.touchgame.lefty .touchact { left:max(7px, env(safe-area-inset-left)); }
+}
+@media (prefers-reduced-motion: reduce) {
+ #touchImpact.pop,#touchImpact.placed,#touchImpact.enemy { animation-duration:.01s; }
+}

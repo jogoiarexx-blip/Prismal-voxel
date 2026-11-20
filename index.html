@@ -58,7 +58,7 @@
             <button id="guide"><i data-ico="book"></i>Guia de campo</button
             ><button id="quickNew" hidden><i data-ico="plus"></i>Novo mundo</button>
           </div>
-          <span class="version"><b></b>VERSÃO 0.5.0</span>
+          <span class="version"><b></b>VERSÃO 0.6.0</span>
         </footer>
       </section>
       <section id="game" hidden aria-label="Mundo jogável">
@@ -79,6 +79,8 @@
           </button>
           <div id="cameraHint" hidden></div>
           <div id="cross"></div>
+          <div id="mineFeedback" hidden aria-hidden="true"><span>⛏</span></div>
+          <div id="touchImpact" aria-hidden="true"></div>
           <div id="target"></div>
           <div id="breakbar" hidden><span></span></div>
           <div class="hudbottom">
@@ -111,7 +113,7 @@
                 <button data-touch="jump" aria-label="Pular ou nadar">↥<small id="touchJumpLabel">Pular</small></button>
               </div>
             </div>
-            <div id="touchTip" class="touch-tip">Arraste para olhar · toque para usar · segure para quebrar</div>
+            <div id="touchTip" class="touch-tip">Deslize para olhar · segure para quebrar · toque para colocar</div>
           </div>
           <pre id="debug" hidden></pre>
           <div id="hurt"></div>

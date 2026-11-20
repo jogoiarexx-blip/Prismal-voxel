@@ -20,6 +20,8 @@
     debug = false,
     gesture = null,
     joystickPointer = null,
+    lastForwardTap = 0,
+    hotbarSwipe = null,
     miningPointer = null,
     lookHoldTimer = null,
     mouseActive = false,
@@ -52,10 +54,31 @@
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => n.classList.remove('on'), 2500);
   }
+  function applyMobilePrefs() {
+    document.body.classList.toggle('lefty', Boolean(settings.leftHanded));
+    document.documentElement.style.setProperty('--touch-size',
+      String(Math.max(0.8, Math.min(1.25, Number(settings.touchSize) || 1))));
+    if (g) g.touchAutoJump = document.body.classList.contains('touchgame') && settings.autoJump !== false;
+  }
+  function haptic(pattern = 12) {
+    if (settings.haptics !== false && document.body.classList.contains('touchgame')) {
+      try { navigator.vibrate?.(pattern); } catch {}
+    }
+  }
+  function touchActionEffect(type) {
+    if (!document.body.classList.contains('touchgame')) return;
+    const el = $('#touchImpact');
+    el.className = '';
+    void el.offsetWidth;
+    el.className = type === 'blockBroken' ? 'pop' : type === 'blockPlaced' ? 'placed' : 'enemy';
+    haptic(type === 'blockBroken' ? [10, 22, 10] : type === 'hitEnemy' ? 16 : 12);
+  }
   function savePrefs() {
     Saves.prefs(settings);
     soundButton();
+    applyMobilePrefs();
   }
+  applyMobilePrefs();
   function soundButton() {
     const b = $('#sound');
     b.innerHTML = icon(settings.sound ? 'sound' : 'mute');
@@ -284,7 +307,7 @@
     renderer.canvas.focus({ preventScroll: true });
     if (lock && !document.body.classList.contains('touchgame')) activateMouse();
     cameraHint();
-    if (document.body.classList.contains('touchgame')) g.touchAutoJump = true;
+    applyMobilePrefs();
     hud();
   }
   function cameraHint() {
@@ -394,6 +417,12 @@
         slider('recuo', 'Distância da câmera externa', 2, 6, 0.1, settings.recuo || 3.7, ' m') +
         slider('fov', 'Campo de visão', 55, 100, 1, settings.fov, '°') +
         slider('sensitivity', 'Sensibilidade do mouse', 0.35, 2.5, 0.05, settings.sensitivity, '×') +
+        '<h3 class="setting-subheading">Controles no celular</h3>' +
+        slider('touchSensitivity', 'Sensibilidade da câmera ao deslizar', 0.5, 2.5, 0.05, settings.touchSensitivity ?? 1.15, '×') +
+        slider('touchSize', 'Tamanho do joystick', 0.8, 1.25, 0.05, settings.touchSize ?? 1, '×') +
+        '<label class="checkline"><input id="autoJump" type="checkbox"> Pular automaticamente obstáculos baixos</label>' +
+        '<label class="checkline"><input id="leftHanded" type="checkbox"> Inverter lados dos controles</label>' +
+        '<label class="checkline"><input id="haptics" type="checkbox"> Vibrar ao quebrar e colocar blocos</label>' +
         '<label class="checkline"><input id="thirdPerson" type="checkbox"> Câmera em terceira pessoa (V)</label>' +
         slider('volume', 'Volume', 0, 100, 1, Math.round(settings.volume * 100), '%') +
         '<label class="checkline"><input id="noFlash" type="checkbox"> Desativar flash de dano</label><label class="checkline"><input id="audioCheck" type="checkbox"> Ativar som</label><label class="checkline"><input id="motion" type="checkbox"> Animar vegetação e atmosfera</label><label class="checkline"><input id="invert" type="checkbox"> Inverter eixo vertical do mouse</label><div class="btns">' +
@@ -412,6 +441,9 @@
       ['motion', 'motion'],
       ['thirdPerson', 'thirdPerson'],
       ['invert', 'invert'],
+      ['autoJump', 'autoJump'],
+      ['leftHanded', 'leftHanded'],
+      ['haptics', 'haptics'],
     ]) {
       let input = $('#' + id);
       input.checked = settings[prop];
@@ -422,7 +454,7 @@
         if (prop === 'sound') Sound.play('ui', settings);
       };
     }
-    for (const id of ['fov', 'sensitivity', 'volume', 'recuo']) {
+    for (const id of ['fov', 'sensitivity', 'touchSensitivity', 'touchSize', 'volume', 'recuo']) {
       let n = $('#' + id);
       n.oninput = () => {
         let v = Number(n.value);
@@ -515,7 +547,7 @@
         '</ul><p>O primeiro selo libera a pedra rúnica. Com os três, use a bancada para combinar cristal, cobre e vidro em um Farol Prisma. Coloque-o para acender uma aurora sobre sua base.</p></div>';
     } else
       body =
-        '<p>Mundo Prisma é um sandbox voxel de exploração, sobrevivência e construção. Explore os Campos de Âmbar, a Floresta de Névoa e as Dunas de Vidro. Nas dunas, procure os obeliscos com cristais no topo.</p><p class="muted">Versão jogável 0.4.1 · Um jogador<br>Arte, sprites, tipografia de título e efeitos sonoros criados para Mundo Prisma. Seu progresso é salvo neste navegador.</p>';
+        '<p>Mundo Prisma é um sandbox voxel de exploração, sobrevivência e construção. Explore os Campos de Âmbar, a Floresta de Névoa e as Dunas de Vidro. Nas dunas, procure os obeliscos com cristais no topo.</p><p class="muted">Versão jogável 0.6.0 · Um jogador<br>Arte, sprites, tipografia de título e efeitos sonoros criados para Mundo Prisma. Seu progresso é salvo neste navegador.</p>';
     panel(
       'guide',
       'Guia de campo',
@@ -737,6 +769,8 @@
       if (screen === 'play') hud();
     } else if (s === 'station') {
       v.b === 15 ? chest(v) : inventory(true, v.b);
+    } else if (s === 'blockBroken' || s === 'blockPlaced' || s === 'hitEnemy') {
+      touchActionEffect(s);
     } else if (s === 'hurt') {
       if (settings.noFlash) return;
       $('#hurt').style.opacity = 0.7;
@@ -807,7 +841,11 @@
         : '3 selos · Fabrique o farol';
     }
     $('#breakbar').hidden = !g.holding || !g.progress;
-    $('#breakbar span').style.width = g.progress * 100 + '%';
+    $('#breakbar span').style.width = Math.max(0, g.progress) * 100 + '%';
+    const mineFeedback = $('#mineFeedback');
+    const mineProgress = Math.min(100, Math.max(0, g.progress * 100));
+    mineFeedback.hidden = !document.body.classList.contains('touchgame') || !g.holding || mineProgress <= 0;
+    mineFeedback.style.setProperty('--mine-progress', mineProgress + '%');
     let task = g.creative
       ? 'E · Escolha blocos no catálogo. F · Voo ' + (g.fly ? 'ligado' : 'desligado')
       : !g.goals.wood
@@ -837,7 +875,7 @@
     $('#debug').hidden = !debug;
     if (debug)
       $('#debug').textContent =
-        'PRISMA 0.5.0 · ' +
+        'PRISMA 0.6.0 · ' +
         renderer.type +
         '\n' +
         Math.round(fps) +
@@ -975,7 +1013,8 @@
           }
         }
         if (gesture.moved && !gesture.mining)
-          g.look((e.clientX - gesture.x) * 1.1, (e.clientY - gesture.y) * 1.1);
+          g.look((e.clientX - gesture.x) * 1.1 * (settings.touchSensitivity ?? 1.15),
+            (e.clientY - gesture.y) * 1.1 * (settings.touchSensitivity ?? 1.15));
         gesture.x = e.clientX;
         gesture.y = e.clientY;
         return;
@@ -1184,6 +1223,16 @@
     stick.classList.add('engaged');
     try { stick.setPointerCapture(e.pointerId); } catch {}
     updateStick(e);
+    const rect = stick.getBoundingClientRect();
+    const forwardTap = e.clientY < rect.top + rect.height * 0.39;
+    const now = performance.now();
+    if (forwardTap && now - lastForwardTap < 350) {
+      g.touchSprint = true;
+      const sprintButton = $('#touch [data-touch="sprint"]');
+      sprintButton.setAttribute('aria-pressed', 'true');
+      haptic(10);
+    }
+    lastForwardTap = forwardTap ? now : 0;
   });
   stick.addEventListener('pointermove', (e) => {
     if (e.pointerId === joystickPointer) { e.preventDefault(); updateStick(e); }
@@ -1234,7 +1283,27 @@
     b.addEventListener('pointercancel', release);
     b.addEventListener('lostpointercapture', release);
   });
+  // Swiping the quickbar switches slots while preserving ordinary tap selection.
+  $('#hotbar').addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'touch' && screen === 'play' && g)
+      hotbarSwipe = { id: e.pointerId, x: e.clientX, y: e.clientY };
+  });
+  window.addEventListener('pointerup', (e) => {
+    if (!hotbarSwipe || hotbarSwipe.id !== e.pointerId) return;
+    const dx = e.clientX - hotbarSwipe.x;
+    const dy = e.clientY - hotbarSwipe.y;
+    hotbarSwipe = null;
+    if (g && screen === 'play' && !g.paused && Math.abs(dx) > 42 && Math.abs(dx) > Math.abs(dy) * 1.4) {
+      g.selected = (g.selected + (dx < 0 ? 1 : 8)) % 9;
+      hud();
+      haptic(8);
+    }
+  });
+  window.addEventListener('pointercancel', (e) => {
+    if (hotbarSwipe?.id === e.pointerId) hotbarSwipe = null;
+  });
   if (matchMedia('(pointer: coarse)').matches) document.body.classList.add('touchgame');
+  applyMobilePrefs();
   document.addEventListener('visibilitychange', () => {
     if (document.hidden && g && screen === 'play') pauseMenu();
   });
