@@ -105,6 +105,11 @@ const Game = (() => {
       this.revs = new Map();
       this.lit = new Map();
       this.keys = new Set();
+      this.touchMove = { forward: 0, side: 0 };
+      this.touchSprint = false;
+      this.touchCrouch = false;
+      this.touchAutoJump = false;
+      this.autoJumpCool = 0;
       this.cache = new Map();
       this.saveState = 'Em dia';
       this.spawnTick = 3;
@@ -311,8 +316,8 @@ const Game = (() => {
     physics(dt) {
       const p = this.p,
         keys = this.keys;
-      let forward = +keys.has('KeyW') - +keys.has('KeyS'),
-        side = +keys.has('KeyD') - +keys.has('KeyA');
+      let forward = clip(+keys.has('KeyW') - +keys.has('KeyS') + this.touchMove.forward, -1, 1),
+        side = clip(+keys.has('KeyD') - +keys.has('KeyA') + this.touchMove.side, -1, 1);
       if (keys.has('ArrowLeft')) this.look(-dt * 560, 0);
       if (keys.has('ArrowRight')) this.look(dt * 560, 0);
       if (keys.has('ArrowUp')) this.look(0, -dt * 420);
@@ -320,6 +325,7 @@ const Game = (() => {
       this.crouch =
         keys.has('ShiftLeft') ||
         keys.has('ShiftRight') ||
+        this.touchCrouch ||
         (this.crouch && this.bounds(p.x, p.y, p.z, 1.79));
       const body = this.crouch ? 1.37 : 1.79;
       const targetHeight = this.crouch ? 1.22 : 1.62;
@@ -331,13 +337,15 @@ const Game = (() => {
       const wet = this.submerged || this.get(px, Math.floor(p.y + 0.2), pz) === 7;
       this.swimming = wet && !this.fly;
       const nearSurface = wet && this.get(px, Math.floor(p.y + 1.1), pz) !== 7;
-      let sprint = keys.has('ControlLeft') || keys.has('ControlRight');
+      let sprint = keys.has('ControlLeft') || keys.has('ControlRight') || this.touchSprint;
       let speed =
         ((this.fly ? 7 : wet ? 2.9 : this.crouch ? 2 : sprint ? 6 : 4.3) * dt) /
         (Math.hypot(forward, side) || 1);
       const dx = (forward * Math.sin(p.yaw) + side * Math.cos(p.yaw)) * speed,
         dz = (-forward * Math.cos(p.yaw) + side * Math.sin(p.yaw)) * speed;
       let atBank = false;
+      let blocked = false;
+      this.autoJumpCool = Math.max(0, this.autoJumpCool - dt);
       for (const [axis, d] of [
         ['x', dx],
         ['z', dz],
@@ -346,7 +354,18 @@ const Game = (() => {
           z = p.z + (axis === 'z' ? d : 0);
         if (!d) continue;
         if (!this.bounds(x, p.y, z, body)) p[axis] += d;
-        else if (nearSurface) atBank = true;
+        else {
+          if (nearSurface) atBank = true;
+          if (!this.bounds(x, p.y + 1.05, z, body)) blocked = true;
+        }
+      }
+      // Autojump is a mobile-only accessibility feature: climb a one-block ledge,
+      // never jump against a wall taller than one block or while crouching.
+      if (this.touchAutoJump && blocked && this.grounded && !wet && !this.fly &&
+          !this.crouch && !this.autoJumpCool && (forward || side)) {
+        this.vy = 7.15;
+        this.grounded = false;
+        this.autoJumpCool = 0.46;
       }
       if (this.fly) {
         this.vy = keys.has('Space') ? 6 : keys.has('ShiftLeft') || keys.has('ShiftRight') ? -6 : 0;

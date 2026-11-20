@@ -19,6 +19,9 @@
     chestPos = null,
     debug = false,
     gesture = null,
+    joystickPointer = null,
+    miningPointer = null,
+    lookHoldTimer = null,
     mouseActive = false,
     lastMouse = null,
     edgeX = 0,
@@ -111,6 +114,7 @@
     if (g) {
       g.paused = true;
       g.keys.clear();
+      clearMobileControls();
       g.resetMining();
       releaseGesture();
       mouseActive = false;
@@ -280,6 +284,7 @@
     renderer.canvas.focus({ preventScroll: true });
     if (lock && !document.body.classList.contains('touchgame')) activateMouse();
     cameraHint();
+    if (document.body.classList.contains('touchgame')) g.touchAutoJump = true;
     hud();
   }
   function cameraHint() {
@@ -293,7 +298,25 @@
       : 'Mova o mouse para olhar · clique no cenário para capturar o cursor';
   }
   function releaseGesture() {
+    if (lookHoldTimer !== null) {
+      clearTimeout(lookHoldTimer);
+      lookHoldTimer = null;
+    }
+    if (gesture?.mining && g) g.resetMining();
     gesture = null;
+  }
+  function clearMobileControls() {
+    joystickPointer = null;
+    miningPointer = null;
+    $('#moveKnob').style.transform = '';
+    $('#movePad').classList.remove('engaged');
+    $$('#touch button').forEach((b) => b.classList.remove('pressed'));
+    if (g) {
+      g.touchMove.forward = 0;
+      g.touchMove.side = 0;
+      g.keys.delete('Space');
+      g.resetMining();
+    }
   }
   function resetMouse() {
     lastMouse = null;
@@ -740,7 +763,7 @@
         stat('food', 'food', g.p.food) +
         (g.submerged || g.p.air < 95 ? stat('air', 'air', g.p.air) : '');
     const jumpButton = $('#touch [data-touch="jump"]');
-    jumpButton.textContent = g.swimming ? 'Nadar' : 'Pular';
+    $('#touchJumpLabel').textContent = g.swimming ? 'Nadar' : 'Pular';
     const active = g.inv[g.selected];
     const held = $('#held');
     held.hidden = settings.thirdPerson || !active;
@@ -814,7 +837,7 @@
     $('#debug').hidden = !debug;
     if (debug)
       $('#debug').textContent =
-        'PRISMA 0.4.1 · ' +
+        'PRISMA 0.5.0 · ' +
         renderer.type +
         '\n' +
         Math.round(fps) +
@@ -926,7 +949,15 @@
       document.body.classList.add('touchgame');
       resetMouse();
       mouseActive = false;
-      gesture = { id: e.pointerId, x: e.clientX, y: e.clientY };
+      gesture = { id: e.pointerId, x: e.clientX, y: e.clientY,
+        startX: e.clientX, startY: e.clientY, moved: false, mining: false };
+      lookHoldTimer = setTimeout(() => {
+        lookHoldTimer = null;
+        if (gesture?.id === e.pointerId && !gesture.moved && g && !g.paused) {
+          gesture.mining = true;
+          g.holding = true;
+        }
+      }, 290);
       try {
         canvas.setPointerCapture(e.pointerId);
       } catch {}
@@ -936,7 +967,15 @@
       if (screen !== 'play' || document.pointerLockElement === canvas) return;
       if (e.pointerType === 'touch') {
         if (gesture?.id !== e.pointerId) return;
-        g.look(e.clientX - gesture.x, e.clientY - gesture.y);
+        if (Math.hypot(e.clientX - gesture.startX, e.clientY - gesture.startY) > 9) {
+          gesture.moved = true;
+          if (lookHoldTimer !== null) {
+            clearTimeout(lookHoldTimer);
+            lookHoldTimer = null;
+          }
+        }
+        if (gesture.moved && !gesture.mining)
+          g.look((e.clientX - gesture.x) * 1.1, (e.clientY - gesture.y) * 1.1);
         gesture.x = e.clientX;
         gesture.y = e.clientY;
         return;
@@ -1000,7 +1039,12 @@
     g.look(e.movementX, e.movementY);
   });
   window.addEventListener('pointerup', (e) => {
-    if (gesture?.id === e.pointerId) releaseGesture();
+    if (gesture?.id === e.pointerId) {
+      const tap = e.pointerType === 'touch' && !gesture.moved && !gesture.mining &&
+        Math.hypot(e.clientX - gesture.startX, e.clientY - gesture.startY) < 10;
+      releaseGesture();
+      if (tap && g && screen === 'play' && !g.paused) g.use();
+    }
     if (g && e.pointerType !== 'touch' && e.button === 0) g.resetMining();
   });
   document.addEventListener('pointerlockchange', () => {
@@ -1115,26 +1159,80 @@
       if (e.code === 'KeyQ') g.resetMining();
     }
   });
+  // A true two-finger layout: left joystick moves, right finger looks/acts.
+  const stick = $('#movePad');
+  const knob = $('#moveKnob');
+  function updateStick(e) {
+    if (!g || joystickPointer !== e.pointerId) return;
+    const rect = stick.getBoundingClientRect();
+    const x = e.clientX - (rect.left + rect.width / 2);
+    const y = e.clientY - (rect.top + rect.height / 2);
+    const radius = Math.min(rect.width, rect.height) * 0.34;
+    const distance = Math.hypot(x, y);
+    const scale = Math.min(1, distance / radius);
+    const nx = distance ? x / distance : 0;
+    const ny = distance ? y / distance : 0;
+    const value = Math.max(0, (scale - 0.12) / 0.88);
+    g.touchMove.side = nx * value;
+    g.touchMove.forward = -ny * value;
+    knob.style.transform = `translate(${nx * scale * radius}px, ${ny * scale * radius}px)`;
+  }
+  stick.addEventListener('pointerdown', (e) => {
+    if (!g || g.paused || screen !== 'play' || joystickPointer !== null) return;
+    e.preventDefault();
+    joystickPointer = e.pointerId;
+    stick.classList.add('engaged');
+    try { stick.setPointerCapture(e.pointerId); } catch {}
+    updateStick(e);
+  });
+  stick.addEventListener('pointermove', (e) => {
+    if (e.pointerId === joystickPointer) { e.preventDefault(); updateStick(e); }
+  });
+  function releaseStick(e) {
+    if (joystickPointer !== e.pointerId) return;
+    joystickPointer = null;
+    stick.classList.remove('engaged');
+    knob.style.transform = '';
+    if (g) { g.touchMove.forward = 0; g.touchMove.side = 0; }
+  }
+  stick.addEventListener('pointerup', releaseStick);
+  stick.addEventListener('pointercancel', releaseStick);
+  stick.addEventListener('lostpointercapture', releaseStick);
   $$('#touch button').forEach((b) => {
     const code = b.dataset.touch;
-    const release = () => {
-      if (!g) return;
-      g.keys.delete(code === 'jump' ? 'Space' : code);
-      if (code === 'mine') g.resetMining();
+    const release = (e) => {
+      if (code === 'mine' && miningPointer === e.pointerId) {
+        miningPointer = null;
+        if (g) g.resetMining();
+      }
+      if (code === 'jump' && g) g.keys.delete('Space');
+      b.classList.remove('pressed');
     };
     b.addEventListener('pointerdown', (e) => {
+      if (!g || g.paused || screen !== 'play') return;
       e.preventDefault();
-      b.setPointerCapture(e.pointerId);
-      if (!g || g.paused) return;
+      Sound.start();
+      try { b.setPointerCapture(e.pointerId); } catch {}
+      b.classList.add('pressed');
       if (code === 'camera') changeView();
       else if (code === 'journal') guide('play', 2);
-      else if (code === 'mine') g.holding = true;
-      else if (code === 'use') g.use();
+      else if (code === 'mine' && miningPointer === null) {
+        miningPointer = e.pointerId;
+        g.holding = true;
+      } else if (code === 'use') g.use();
       else if (code === 'bag') inventory();
-      else g.keys.add(code === 'jump' ? 'Space' : code);
+      else if (code === 'jump') g.keys.add('Space');
+      else if (code === 'sprint') {
+        g.touchSprint = !g.touchSprint;
+        b.setAttribute('aria-pressed', String(g.touchSprint));
+      } else if (code === 'crouch') {
+        g.touchCrouch = !g.touchCrouch;
+        b.setAttribute('aria-pressed', String(g.touchCrouch));
+      }
     });
     b.addEventListener('pointerup', release);
     b.addEventListener('pointercancel', release);
+    b.addEventListener('lostpointercapture', release);
   });
   if (matchMedia('(pointer: coarse)').matches) document.body.classList.add('touchgame');
   document.addEventListener('visibilitychange', () => {

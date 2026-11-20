@@ -58,7 +58,7 @@
             <button id="guide"><i data-ico="book"></i>Guia de campo</button
             ><button id="quickNew" hidden><i data-ico="plus"></i>Novo mundo</button>
           </div>
-          <span class="version"><b></b>VERSÃO 0.4.1</span>
+          <span class="version"><b></b>VERSÃO 0.5.0</span>
         </footer>
       </section>
       <section id="game" hidden aria-label="Mundo jogável">
@@ -89,16 +89,29 @@
               <kbd>E</kbd> Mochila <b>·</b> <kbd>TAB</kbd> Guia <b>·</b> <kbd>ESC</kbd> Pausa
             </div>
           </div>
-          <div id="touch">
-            <div class="pad">
-              <button data-touch="KeyW">▲</button><button data-touch="KeyA">◀</button
-              ><button data-touch="KeyS">▼</button><button data-touch="KeyD">▶</button>
+          <div id="touch" aria-label="Controles de toque">
+            <div class="movecluster">
+              <div id="movePad" role="application" aria-label="Joystick de movimentação">
+                <div class="move-ring" aria-hidden="true"></div>
+                <div id="moveKnob" aria-hidden="true"></div>
+                <span class="move-caption">MOVER</span>
+              </div>
+              <button data-touch="sprint" class="touch-toggle" aria-pressed="false" aria-label="Alternar corrida">⚡ Correr</button>
             </div>
             <div class="touchact">
-              <button data-touch="jump">Pular</button><button data-touch="mine">Minerar</button
-              ><button data-touch="use">Usar</button><button data-touch="bag">Mochila</button
-              ><button data-touch="camera">Câmera</button><button data-touch="journal">Diário</button>
+              <div class="touch-utilities">
+                <button data-touch="bag" aria-label="Abrir mochila">▦<small>Mochila</small></button>
+                <button data-touch="camera" aria-label="Trocar câmera">◉<small>Câmera</small></button>
+                <button data-touch="crouch" aria-label="Agachar" aria-pressed="false">⌄<small>Agachar</small></button>
+                <button data-touch="journal" aria-label="Abrir diário">▤<small>Diário</small></button>
+              </div>
+              <div class="touch-primary">
+                <button data-touch="mine" aria-label="Segurar para quebrar ou atacar">⛏<small>Quebrar</small></button>
+                <button data-touch="use" aria-label="Colocar bloco ou interagir">▣<small>Colocar</small></button>
+                <button data-touch="jump" aria-label="Pular ou nadar">↥<small id="touchJumpLabel">Pular</small></button>
+              </div>
             </div>
+            <div id="touchTip" class="touch-tip">Arraste para olhar · toque para usar · segure para quebrar</div>
           </div>
           <pre id="debug" hidden></pre>
           <div id="hurt"></div>
