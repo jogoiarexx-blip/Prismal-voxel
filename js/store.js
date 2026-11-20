@@ -93,6 +93,7 @@ const Sound = (() => {
       pickup: [540, 850, 0.12, 'sine'],
       craft: [390, 780, 0.22, 'sine'],
       discovery: [330, 990, 0.65, 'sine'],
+      swim: [190, 80, 0.13, 'sine'],
       step: [71, 42, 0.045, 'triangle'],
       hurt: [210, 62, 0.18, 'sawtooth'],
       enemy: [98, 57, 0.31, 'triangle'],

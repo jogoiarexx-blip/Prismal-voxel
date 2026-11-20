@@ -18,7 +18,9 @@ const View = (() => {
     if (!settings.thirdPerson) return { ...axes, eye, third: false };
     // Sweep the near plane as well as its center. A ray through the center
     // alone lets the corners of the camera slip inside a wall.
-    const offset = axes.f.map((n, i) => -3.7 * n + 0.82 * axes.r[i] + 0.5 * axes.u[i]);
+    const offset = axes.f.map(
+      (n, i) => -(settings.recuo || 3.7) * n + 0.82 * axes.r[i] + 0.5 * axes.u[i],
+    );
     const max = Math.hypot(...offset),
       dir = offset.map((v) => v / max);
     let reach = max;
@@ -46,12 +48,12 @@ const View = (() => {
     return { ...basis({ yaw, pitch }), eye: pos, third: true };
   }
   const common =
-    'uniform vec3 eye,R,U,F; uniform vec2 proj; uniform float time,day,light,quality,mist,beacon; uniform vec3 sky; ';
+    'uniform vec3 eye,R,U,F; uniform vec2 proj; uniform float time,day,light,quality,mist,beacon,immersed; uniform vec3 sky; ';
   const vs =
     `attribute vec3 pos;attribute float id,face,ao;varying vec3 w;varying float mat,side,amb,deep;` +
     common +
     `
- void main(){w=pos;vec3 p=pos;if((id==6.||id==18.||id>=40.&&id<=42.)&&quality>0.)p.x+=(id>=40.?.045:.018)*sin(time*1.6+p.z*.5+p.x*.37);
+ void main(){w=pos;vec3 p=pos;if((id==6.||id==18.||id>=80.&&id<=82.)&&quality>0.)p.x+=(id>=80.?.045:.018)*sin(time*1.6+p.z*.5+p.x*.37);
  vec3 d=p-eye;float z=dot(d,F);gl_Position=vec4(dot(d,R)*proj.x,dot(d,U)*proj.y,1.0005*z-.12,z);mat=id;side=face;amb=ao;deep=z;}`;
   const fs =
     `precision highp float; varying vec3 w;varying float mat,side,amb,deep;` +
@@ -85,9 +87,9 @@ const View = (() => {
    col=mix(vec3(.09,.47,.48),sky,.24+fres*.68)+vec3(1.,.82,.48)*glint*.8*light;
    col+=max(0.,wave-1.64)*vec3(.19,.28,.22);pat*=.13;alpha=.62+.31*fres;
  }
- if(m==40.)col=vec3(.38,.59,.25);
- if(m==41.)col=vec3(.98,.68,.22);
- if(m==42.)col=vec3(.75,.57,.88);
+ if(m==80.)col=vec3(.38,.59,.25);
+ if(m==81.)col=vec3(.98,.68,.22);
+ if(m==82.)col=vec3(.75,.57,.88);
  if(m==31.){vec2 tile=abs(fract(uv)-.5);float ring=abs(tile.x+tile.y-.29);col=mix(color(31.),vec3(.84,.62,.29),1.-smoothstep(.022,.045,ring));}
  if(m==28.||m==29.||m==30.){
    vec2 t=abs(fract(uv)-.5);float diamond=t.x+t.y;
@@ -96,13 +98,17 @@ const View = (() => {
    if(abs(diamond-.42)<.028)col=vec3(.93,.72,.34);
    col+=gem*max(0.,.25-diamond)*2.;
  }
+ if(m==34.)col=rnd(floor(uv*5.))>.62?vec3(.76,.57,.44):color(3.);
+ if(m>=38.&&m<=40.&&f==2.){float row=step(.48,fract(w.x*4.));col=mix(color(38.),color(m)*1.17,row);}
+ if(m==46.&&f==2.)col=fract(w.z)>.68?vec3(.91,.84,.65):vec3(.59,.28,.23);
+ if(m==36.)col*=1.4;
  col+=pat;float shade=f==2.?1.05:(f==3.?.50:(f==0.||f==5.?.83:.68));vec3 lighting=mix(vec3(.28,.34,.55),vec3(1.03,1.00,.90),light)*shade*amb;
  float torch=0.;for(int i=0;i<8;i++){if(float(i)<numLamps)torch=max(torch,max(0.,1.-length(w-lamps[i])/7.));}
  lighting+=torch*vec3(.89,.61,.32);if(m==25.||m==13.||m==29.||m==30.)lighting=max(lighting,vec3(1.06,.98,.76));
  col*=lighting;
  float horizon=1.-clamp(abs(normalize(w-eye).y)*2.,0.,1.);
  col+=.018*horizon*vec3(.88,.72,.47)*light;
- float fog=smoothstep(36.-mist*12.,133.-mist*22.,deep);gl_FragColor=vec4(mix(col,sky,fog*.94),alpha);}`;
+ if(immersed>.5)col=mix(col,sky,.22);float fog=immersed>.5?smoothstep(2.,20.,deep):smoothstep(36.-mist*12.,133.-mist*22.,deep);gl_FragColor=vec4(mix(col,sky,fog*.94),alpha);}`;
   const skyV =
     'attribute vec2 point;varying vec2 uv;void main(){uv=point;gl_Position=vec4(point,.9999,1.);}';
   const skyF =
@@ -119,7 +125,7 @@ const View = (() => {
  float ridge=.045+.022*sin(az*13.)+.018*sin(az*27.)+.009*sin(az*63.);
  if(d.y<ridge&&d.y>-.20)c=mix(c,vec3(.25,.35,.42)*(.4+.6*light),.34);
  if(beacon>.0 && d.y>.03){float band=exp(-abs(d.y-(.34+.12*sin(az*3.+time*.07)))*10.);c+=vec3(.085,.44,.34)*band*beacon;}
- gl_FragColor=vec4(c,1.);}`;
+ gl_FragColor=vec4(immersed>.5?sky:c,1.);}`;
   const lineV =
     'attribute vec3 pos;' +
     common +
@@ -156,7 +162,7 @@ const View = (() => {
       'light',
       'sky',
       'quality',
-      'mist',
+      'mist', 'immersed',
       'beacon',
       'lamps',
       'numLamps',
@@ -186,13 +192,13 @@ const View = (() => {
       }
     }
   }
-  function tint(g) {
+  function tint(g,underwater) {
     const sun = Math.sin((g.time - 0.25) * Math.PI * 2),
       l = Voxel.clip((sun + 0.4) / 0.76, 0, 1),
       warm = 1 - Math.min(1, Math.abs(sun) * 2.5);
     return {
       l,
-      c: [0.125 + 0.55 * l + warm * 0.14, 0.18 + 0.61 * l - warm * 0.08, 0.29 + 0.55 * l - warm * 0.19],
+      c: underwater ? [0.055,0.41,0.51] : [0.125 + 0.55 * l + warm * 0.14, 0.18 + 0.61 * l - warm * 0.08, 0.29 + 0.55 * l - warm * 0.19],
     };
   }
   class GLRender {
@@ -256,7 +262,8 @@ const View = (() => {
       }
       gl.viewport(0, 0, wi, he);
       const { r, u, f, eye, third } = camera(g, settings, alpha),
-        { l, c: sky } = tint(g),
+        underwater = g.get(...eye.map(Math.floor)) === 7,
+        { l, c: sky } = tint(g,underwater),
         py = 1 / Math.tan((settings.fov * Math.PI) / 360),
         self = this;
       const glow = g.lights(30).length ? 1 : 0;
@@ -272,6 +279,7 @@ const View = (() => {
         gl.uniform1f(p.u.light, l);
         gl.uniform3fv(p.u.sky, sky);
         gl.uniform1f(p.u.quality, settings.motion ? settings.quality : 0);
+        gl.uniform1f(p.u.immersed,underwater?1:0);
         gl.uniform1f(p.u.mist, g.misty ? 1 : 0);
         gl.uniform1f(p.u.beacon, glow);
       }
@@ -334,6 +342,55 @@ const View = (() => {
           y = mob.y,
           z = mob.z,
           a = Math.sin(g.elapsed * 7) * 0.08;
+        if (mob.kind && mob.kind !== 'Raspejante') {
+          const mat = {
+            Saltim: 4,
+            Musgato: 19,
+            Luzerrante: 29,
+            'Vigia de Cascalho': 3,
+            'Guardião Prisma': 31,
+          }[mob.kind];
+          const scale =
+            mob.kind === 'Guardião Prisma' ? 1.55 : mob.kind === 'Vigia de Cascalho' ? 1.15 : 0.72;
+          const lift =
+            mob.kind === 'Saltim'
+              ? Math.abs(Math.sin(g.elapsed * 3)) * 0.16
+              : mob.kind === 'Luzerrante'
+                ? 0.45
+                : 0;
+          box(
+            ent,
+            x - 0.38 * scale,
+            y + lift,
+            z - 0.3 * scale,
+            0.76 * scale,
+            0.64 * scale,
+            0.6 * scale,
+            mat,
+          );
+          box(
+            ent,
+            x - 0.25 * scale,
+            y + lift + 0.63 * scale,
+            z - 0.29 * scale,
+            0.5 * scale,
+            0.37 * scale,
+            0.5 * scale,
+            mat,
+          );
+          for (const sign of [-1, 1])
+            box(
+              ent,
+              x + sign * 0.17 * scale,
+              y + lift + 0.94 * scale,
+              z - 0.17 * scale,
+              0.1 * scale,
+              0.28 * scale,
+              0.14 * scale,
+              mob.kind === 'Guardião Prisma' ? 11 : mat,
+            );
+          continue;
+        }
         box(ent, x - 0.41, y + 0.24, z - 0.36, 0.82, 0.5, 0.72, 18);
         box(ent, x - 0.3, y + 0.59, z - 0.28, 0.6, 0.46, 0.55, 11);
         box(ent, x - 0.27, y + 0.72, z - 0.3, 0.15, 0.13, 0.6, 13);
@@ -459,7 +516,8 @@ const View = (() => {
       const pixels = this.im.data,
         { r, u, f, eye: o, third } = camera(g, settings, alpha),
         [ox, oy, oz] = o,
-        { l, c: sky } = tint(g),
+        underwater = g.get(...o.map(Math.floor)) === 7,
+        { l, c: sky } = tint(g,underwater),
         h = Math.tan((settings.fov * Math.PI) / 360),
         ratio = W / H,
         depth = new Float32Array(W * H);
@@ -502,6 +560,7 @@ const View = (() => {
               chunk = g.chunks.get(Voxel.key(cx, cz))?.a;
             }
             hit = chunk ? chunk[Voxel.idx(bx & 15, by, bz & 15)] : 0;
+            if (underwater && hit === 7) hit = 0;
             if (hit) break;
             if (tx < ty && tx < tz) {
               d = tx;
@@ -590,7 +649,7 @@ const View = (() => {
               }
             }
           }
-          const fog = hit ? Math.max(0, (d - 38) / 45) : 0;
+          const fog = underwater ? (hit ? .22+.78*Voxel.clip((d-2)/18,0,1) : 1) : hit ? Math.max(0, (d - 38) / 45) : 0;
           let at = (y * W + x) * 4;
           for (let i = 0; i < 3; i++)
             pixels[at + i] = (rgb[i] * lighting * (1 - fog) + sky[i] * fog) * 255;
@@ -628,7 +687,19 @@ const View = (() => {
           }
       }
       for (const m of g.mobs) {
-        drawSprite(m.x, m.y + 0.45, m.z, 0.9, '#557969');
+        drawSprite(
+          m.x,
+          m.y + 0.45,
+          m.z,
+          m.kind === 'Guardião Prisma' ? 1.45 : 0.9,
+          {
+            Saltim: '#cfa968',
+            Musgato: '#739358',
+            Luzerrante: '#86f8d6',
+            'Vigia de Cascalho': '#878987',
+            'Guardião Prisma': '#539f9a',
+          }[m.kind] || '#557969',
+        );
         drawSprite(m.x, m.y + 0.85, m.z, 0.52, '#ba88c9');
       }
       for (const p of g.fragments) drawSprite(p.x, p.y, p.z, 0.11, '#' + Voxel.blocks[p.b].hex);

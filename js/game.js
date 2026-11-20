@@ -2,11 +2,11 @@
 const Game = (() => {
   const { idx, key, land, blocks, clip } = Voxel,
     BAG = 36;
-  const slot = (b, n = 1) => ({ b, n, ...(b === 22 ? { dur: 48 } : {}) }),
+  const slot = (b, n = 1) => ({ b, n, ...(Voxel.durability[b] ? { dur: Voxel.durability[b] } : {}) }),
     empty = () => Array(BAG).fill(null);
   const solid = (id) => id < 0 || !!blocks[id]?.solid;
   function fill(bag, b, n, dur) {
-    if (b !== 22)
+    if (!Voxel.durability[b])
       for (let t of bag)
         if (t && t.b === b && t.n < 64) {
           let a = Math.min(n, 64 - t.n);
@@ -16,9 +16,9 @@ const Game = (() => {
         }
     for (let j = 0; j < bag.length && n; j++)
       if (!bag[j]) {
-        let a = Math.min(n, b === 22 ? 1 : 64);
+        let a = Math.min(n, Voxel.durability[b] ? 1 : 64);
         bag[j] = slot(b, a);
-        if (b === 22 && dur != null) bag[j].dur = dur;
+        if (Voxel.durability[b] && dur != null) bag[j].dur = dur;
         n -= a;
       }
     return n;
@@ -44,7 +44,7 @@ const Game = (() => {
     }
     return {
       schema: 1,
-      generator: 2,
+      generator: 3,
       id: crypto.randomUUID?.() || Date.now().toString(36) + Math.random().toString(36).slice(2),
       name,
       seed,
@@ -74,10 +74,12 @@ const Game = (() => {
         mode: rec.mode,
         difficulty: rec.difficulty,
       };
-      if (![1, 2].includes(rec.generator) || rec.schema !== 1)
+      if (![1, 2, 3].includes(rec.generator) || rec.schema !== 1)
         throw Error('Versão de mundo incompatível');
       this.generator = rec.generator;
       this.fragments = [];
+      this.plots = rec.plots || {};
+      this.bed = rec.bed || null;
       this.seed = Voxel.seedHash(rec.seed);
       this.p = { ...rec.p };
       this.inv = rec.inv;
@@ -86,7 +88,7 @@ const Game = (() => {
       this.day = rec.day || 1;
       this.elapsed = rec.elapsed;
       this.edits = rec.edits || {};
-      this.sites = rec.sites || Voxel.planRuins(this.seed, this.edits, this.p);
+      this.sites = rec.sites || Voxel.planRuins(this.seed, this.edits, this.p, this.generator);
       this.seals = rec.seals || [false, false, false];
       this.eyeHeight = 1.62;
       this.previousEye = null;
@@ -325,13 +327,13 @@ const Game = (() => {
       if (this.crouch && this.bounds(p.x, p.y, p.z, this.eyeHeight + 0.1)) this.eyeHeight = targetHeight;
       const px = Math.floor(p.x),
         pz = Math.floor(p.z);
-      const wet = this.get(px, Math.floor(p.y + 0.04), pz) === 7;
+      this.submerged = this.get(...this.eye().map(Math.floor)) === 7;
+      const wet = this.submerged || this.get(px, Math.floor(p.y + 0.2), pz) === 7;
       this.swimming = wet && !this.fly;
       const nearSurface = wet && this.get(px, Math.floor(p.y + 1.1), pz) !== 7;
-      this.submerged = this.get(...this.eye().map(Math.floor)) === 7;
       let sprint = keys.has('ControlLeft') || keys.has('ControlRight');
       let speed =
-        ((this.fly ? 7 : wet ? 2.65 : this.crouch ? 2 : sprint ? 6 : 4.3) * dt) /
+        ((this.fly ? 7 : wet ? 2.9 : this.crouch ? 2 : sprint ? 6 : 4.3) * dt) /
         (Math.hypot(forward, side) || 1);
       const dx = (forward * Math.sin(p.yaw) + side * Math.cos(p.yaw)) * speed,
         dz = (-forward * Math.cos(p.yaw) + side * Math.sin(p.yaw)) * speed;
@@ -349,14 +351,8 @@ const Game = (() => {
       if (this.fly) {
         this.vy = keys.has('Space') ? 6 : keys.has('ShiftLeft') || keys.has('ShiftRight') ? -6 : 0;
       } else if (wet) {
-        if (keys.has('Space') || (atBank && !this.crouch)) {
-          // Retain enough upward speed at the surface to clear a one-block bank.
-          this.vy = nearSurface && atBank ? 7.65 : 4.2;
-        } else if (this.crouch) this.vy = -2.4;
-        else {
-          const floatSpeed = nearSurface ? 0 : 1.6;
-          this.vy += (floatSpeed - this.vy) * Math.min(1, dt * 9);
-        }
+        this.vy = Math.max(-2.5, this.vy - 5.5 * dt);
+        if (keys.has('Space')) this.vy = nearSurface && atBank ? 7.95 : 3.8;
       } else {
         if (keys.has('Space') && this.grounded) {
           this.vy = 7.15;
@@ -377,16 +373,16 @@ const Game = (() => {
         this.vy = 0;
       }
       if (p.y < 0.2) this.respawn();
-      if ((forward || side) && this.grounded) {
+      if ((forward || side) && (this.grounded || this.swimming)) {
         this.stepTick -= dt;
         if (this.stepTick <= 0) {
-          Sound.play('step', this.settings);
-          this.stepTick = sprint ? 0.34 : 0.48;
+          Sound.play(this.swimming ? 'swim' : 'step', this.settings);
+          this.stepTick = this.swimming ? 2.1 / 2.9 : sprint ? 0.34 : 0.48;
         }
       }
       if (!this.creative) {
         p.food = Math.max(0, p.food - dt * (sprint && (forward || side) ? 0.038 : 0.009));
-        p.air = clip(p.air + dt * (this.submerged ? -7 : 30), 0, 100);
+        p.air = clip(p.air + dt * (this.submerged ? -11 : 35), 0, 100);
         if (p.air <= 0) this.damage(7, 'Sem fôlego');
         if (p.food <= 0) this.damage(2, 'Fome');
         else if (p.food > 72) p.life = Math.min(100, p.life + dt * 0.085);
@@ -405,7 +401,8 @@ const Game = (() => {
       this.previousEye = this.eye();
       this.physics(dt);
       this.stream();
-      const terrain = land(this.p.x, this.p.z, this.seed);
+      const terrain = land(this.p.x, this.p.z, this.seed, this.generator);
+      this.region = terrain.region;
       this.misty = terrain.mist;
       this.dunes = this.generator >= 2 && terrain.dunes;
       this.fragments = this.fragments.filter((p) => p.life > 0);
@@ -420,6 +417,34 @@ const Game = (() => {
         eye = this.eye();
       this.hit = Voxel.ray((x, y, z) => this.get(x, y, z), eye, d);
       if (this.holding) this.mine(dt);
+      if (Math.floor(this.elapsed) !== Math.floor(this.elapsed - dt)) {
+        const period = Math.floor(this.elapsed / 85);
+        this.raining = Voxel.hash(period, 0, this.seed ^ 612) > 0.53;
+        this.exposed = this.raining && !this.submerged;
+        if (this.exposed)
+          for (let y = Math.ceil(this.eye()[1]); y < Voxel.H; y++) {
+            if (solid(this.get(Math.floor(this.p.x), y, Math.floor(this.p.z)))) {
+              this.exposed = false;
+              break;
+            }
+          }
+        for (const k of Object.keys(this.plots)) {
+          const [x, y, z] = k.split(',').map(Number);
+          if (!this.chunks.has(key(x >> 4, z >> 4))) continue;
+          if (this.get(x, y, z) !== 39) {
+            delete this.plots[k];
+            continue;
+          }
+          let wet = false;
+          for (let dx = -2; dx <= 2 && !wet; dx++)
+            for (let dz = -2; dz <= 2 && !wet; dz++)
+              wet = this.get(x + dx, y, z + dz) === 7 || this.get(x + dx, y - 1, z + dz) === 7;
+          if (wet && ++this.plots[k] >= 45) {
+            this.set(x, y, z, 40);
+            delete this.plots[k];
+          }
+        }
+      }
       this.ai(dt);
       this.loot(dt);
       this.hudTick -= dt;
@@ -443,13 +468,23 @@ const Game = (() => {
       if (mob) {
         this.progress = 0;
         if (!this.attackCool) {
-          mob.hp -= this.inv[this.selected]?.b === 22 ? 2 : 1;
+          mob.hp -=
+            this.inv[this.selected]?.b === 47 ? 5 : Voxel.durability[this.inv[this.selected]?.b] ? 2 : 1;
           this.attackCool = 0.45;
+          if (this.inv[this.selected]?.b === 47 && --this.inv[this.selected].dur <= 0)
+            this.inv[this.selected] = null;
           mob.stun = 0.55;
           Sound.play('mine', this.settings);
           if (mob.hp <= 0) {
             this.mobs = this.mobs.filter((m) => m !== mob);
-            this.addDrop(mob.x, mob.y, mob.z, 11, 1);
+            if (mob.kind === 'Guardião Prisma') this.goals.guardian = true;
+            this.addDrop(
+              mob.x,
+              mob.y,
+              mob.z,
+              mob.kind === 'Saltim' ? 23 : mob.kind === 'Musgato' ? 36 : 11,
+              1,
+            );
             this.changed();
           }
         }
@@ -470,14 +505,19 @@ const Game = (() => {
         this.mineKey = k;
       }
       const tool = this.inv[this.selected],
-        rock = [3, 9, 10, 11, 14, 20].includes(hit.b);
+        rock = [3, 9, 10, 11, 14, 20, 32, 34].includes(hit.b);
+      const speed = { 22: 3.2, 42: 4, 43: 5, 44: 6, 45: 8 }[tool?.b] || 1;
+      if (hit.b === 34 && !this.creative && speed < 4) {
+        if (this.progress === 0) this.notify('O ferro exige picareta de pedra ou superior');
+        this.progress = -1;
+        return;
+      }
       if (this.creative && this.attackCool) return;
-      this.progress += this.creative
-        ? 1
-        : (dt * (tool?.b === 22 && rock ? 3.2 : 1)) / blocks[hit.b].hard;
+      this.progress += this.creative ? 1 : (dt * (rock ? speed : 1)) / blocks[hit.b].hard;
       if (this.progress < 1) return;
       const [x, y, z] = hit.p,
         b = hit.b;
+      delete this.plots[k];
       this.set(x, y, z, 0);
       if (this.settings.motion) {
         for (let i = 0; i < 6; i++) {
@@ -502,10 +542,11 @@ const Game = (() => {
         delete this.chests[k];
       }
       if (!this.creative) {
-        this.addDrop(x + 0.5, y + 0.12, z + 0.5, b === 1 || b === 17 ? 2 : b, 1);
+        this.addDrop(x + 0.5, y + 0.12, z + 0.5, b === 39 ? 38 : b === 1 || b === 17 ? 2 : b, 1);
         if (b === 6 || b === 18) this.addDrop(x + 0.5, y + 0.2, z + 0.5, 23, 1);
+        if ([1, 17, 39, 40].includes(b)) this.addDrop(x + 0.5, y + 0.2, z + 0.5, 37, b === 40 ? 2 : 1);
         if (b === 5 || b === 27) this.goals.wood = true;
-        if (tool?.b === 22 && rock && --tool.dur <= 0) {
+        if (speed > 1 && rock && --tool.dur <= 0) {
           this.inv[this.selected] = null;
           this.notify('Sua picareta se desgastou.');
         }
@@ -569,6 +610,28 @@ const Game = (() => {
         this.notify('Selo já registrado no guia');
         return;
       }
+      if (
+        site.id === 2 &&
+        this.generator >= 3 &&
+        !this.creative &&
+        this.meta.difficulty !== 'peaceful' &&
+        !this.goals.guardian
+      ) {
+        if (!this.mobs.some((m) => m.kind === 'Guardião Prisma')) {
+          this.mobs.push({
+            kind: 'Guardião Prisma',
+            x: x + 2.5,
+            y: site.y,
+            z: z + 1.5,
+            hp: 24,
+            cool: 2,
+            wind: 0,
+          });
+          this.save();
+        }
+        this.notify('O Guardião protege o último núcleo');
+        return;
+      }
       this.seals[site.id] = true;
       this.set(x, y, z, 29);
       this.p.life = Math.min(100, this.p.life + 12);
@@ -615,12 +678,34 @@ const Game = (() => {
         this.signal('station', h);
         return;
       }
-      if (t?.b === 23 && !this.creative) {
+      if (h?.b === 46 && !this.keys.has('ShiftLeft')) {
+        this.bed = h.p.slice();
+        this.notify('Ponto de retorno definido na cama');
+        this.save();
+        return;
+      }
+      if (h?.b === 40 && !this.keys.has('ShiftLeft')) {
+        this.set(...h.p, 38);
+        this.addDrop(h.p[0] + 0.5, h.p[1] + 1, h.p[2] + 0.5, 40, 1);
+        this.addDrop(h.p[0] + 0.5, h.p[1] + 1, h.p[2] + 0.5, 37, 2);
+        this.notify('Trigo colhido · canteiro pronto para replantar');
+        this.changed();
+        return;
+      }
+      if (h?.b === 38 && t?.b === 37) {
+        this.set(...h.p, 39);
+        this.plots[h.p.join(',')] = 0;
+        if (!this.creative && !--t.n) this.inv[this.selected] = null;
+        this.changed();
+        this.notify('Plantado · irrigue com água a até dois blocos');
+        return;
+      }
+      if ([23, 36, 41].includes(t?.b) && !this.creative) {
         if (this.p.food >= 99.9 && this.p.life >= 99.9) {
           this.notify('Você já está alimentado');
           return;
         }
-        this.p.food = Math.min(100, this.p.food + 18);
+        this.p.food = Math.min(100, this.p.food + (t.b === 41 ? 36 : t.b === 36 ? 10 : 18));
         this.p.life = Math.min(100, this.p.life + 3);
         if (!--t.n) this.inv[this.selected] = null;
         Sound.play('eat', this.settings);
@@ -679,24 +764,44 @@ const Game = (() => {
       });
     }
     ai(dt) {
-      if (this.creative || this.meta.difficulty === 'peaceful') return;
+      const peaceful = this.creative || this.meta.difficulty === 'peaceful';
       const p = this.p,
         night = this.time < 0.215 || this.time > 0.81;
       this.spawnTick -= dt;
       if (this.spawnTick <= 0) {
         this.spawnTick = 10;
-        if (night && this.mobs.length < 4) {
+        if (this.mobs.length < 4) {
           const a = Voxel.hash(this.day, Math.floor(this.elapsed), this.seed) * 6.283,
             rad = 12 + Voxel.hash(this.day, Math.floor(this.elapsed), this.seed ^ 43) * 5,
             x = p.x + Math.cos(a) * rad,
             z = p.z + Math.sin(a) * rad,
-            y = this.floorAt(x, z, 120);
+            cave = p.y < land(p.x, p.z, this.seed, this.generator).h - 5,
+            kind = cave
+              ? 'Vigia de Cascalho'
+              : night
+                ? this.region === 'Pântano Luminescente'
+                  ? 'Luzerrante'
+                  : 'Raspejante'
+                : this.misty
+                  ? 'Musgato'
+                  : 'Saltim',
+            hostile = kind === 'Raspejante' || kind === 'Vigia de Cascalho',
+            y = this.floorAt(x, z, cave ? p.y + 2 : 145);
           if (
+            (!hostile || !peaceful) &&
             y !== null &&
             !this.lights().some((l) => Math.hypot(l[0] - x, l[1] - y, l[2] - z) < 8) &&
             this.get(Math.floor(x), y, Math.floor(z)) === 0
           )
-            this.mobs.push({ x, y, z, hp: 4, wind: 0, cool: 1 });
+            this.mobs.push({
+              kind,
+              x,
+              y,
+              z,
+              hp: kind === 'Vigia de Cascalho' ? 9 : 4,
+              wind: 0,
+              cool: 1,
+            });
         }
       }
       for (let m of this.mobs) {
@@ -707,13 +812,47 @@ const Game = (() => {
         m.cool = Math.max(0, m.cool - dt);
         if (m.stun || !d || d > 30) continue;
         const safe = this.lights().some((l) => Math.hypot(l[0] - m.x, l[1] - m.y, l[2] - m.z) < 4.4);
-        let dir = safe || !night ? -1 : 1;
+        const kind = m.kind || 'Raspejante';
+        const passive = ['Saltim', 'Musgato', 'Luzerrante'].includes(kind);
+        if (passive) {
+          let tx = m.x + Math.cos(this.elapsed * 0.4 + m.y) * 2,
+            tz = m.z + Math.sin(this.elapsed * 0.4 + m.y) * 2;
+          if ((kind === 'Saltim' && d < 6) || m.hp < 4) {
+            tx = m.x - dx;
+            tz = m.z - dz;
+          } else if (kind === 'Luzerrante' && this.destination) {
+            tx = this.destination.x;
+            tz = this.destination.z;
+          } else if (kind === 'Musgato' && Object.keys(this.plots).length) {
+            const a = Object.keys(this.plots)[0].split(',').map(Number);
+            tx = a[0];
+            tz = a[2];
+          }
+          const len = Math.max(0.5, Math.hypot(tx - m.x, tz - m.z)),
+            nx = m.x + ((tx - m.x) / len) * dt,
+            nz = m.z + ((tz - m.z) / len) * dt;
+          const floor = this.floorAt(nx, nz, m.y + 1);
+          if (
+            floor !== null &&
+            Math.abs(floor - m.y) <= 1 &&
+            !this.get(Math.floor(nx), floor + 1, Math.floor(nz))
+          ) {
+            m.x = nx;
+            m.z = nz;
+            m.y = floor;
+          }
+          continue;
+        }
+        if (peaceful) continue;
+        const boss = kind === 'Guardião Prisma',
+          stage = boss ? (m.hp > 16 ? 1 : m.hp > 8 ? 2 : 3) : 1;
+        let dir = boss || kind === 'Vigia de Cascalho' ? 1 : safe || !night ? -1 : 1;
         if (d < 1.75 && dir > 0 && Math.abs(p.y - m.y) < 1.3) {
           if (m.cool === 0) {
             if (!m.wind) {
-              m.wind = 0.48;
+              m.wind = boss ? 1.05 : kind === 'Vigia de Cascalho' ? 0.85 : 0.48;
               Sound.play('enemy', this.settings);
-              this.notify('Raspejante preparando ataque');
+              this.notify(kind + ' preparando ataque' + (boss ? ' · fase ' + stage : ''));
             }
             m.wind -= dt;
             if (m.wind <= 0) {
@@ -729,14 +868,14 @@ const Game = (() => {
                   true,
                 )
               )
-                this.damage(11, 'Raspejante');
-              m.cool = 2;
+                this.damage(boss ? 10 + stage * 3 : kind === 'Vigia de Cascalho' ? 15 : 11, kind);
+              m.cool = boss ? 3 - stage * 0.5 : 2;
               m.wind = 0;
             }
           }
         } else {
           m.wind = 0;
-          let step = dir * dt * (night ? 1.42 : 0.95);
+          let step = dir * dt * (boss ? 1 + stage * 0.32 : night ? 1.42 : 0.95);
           let x = m.x + (dx / d) * step,
             z = m.z + (dz / d) * step;
           const y = this.floorAt(x, z, m.y + 1.05);
@@ -752,7 +891,9 @@ const Game = (() => {
           }
         }
       }
-      this.mobs = this.mobs.filter((m) => Math.hypot(m.x - p.x, m.z - p.z) < (night ? 47 : 19));
+      this.mobs = this.mobs.filter(
+        (m) => m.kind === 'Guardião Prisma' || Math.hypot(m.x - p.x, m.z - p.z) < (night ? 47 : 19),
+      );
     }
     damage(n, why) {
       if (this.creative || this.damageCool > 0) return;
@@ -783,12 +924,25 @@ const Game = (() => {
           break;
         }
       }
+      if (this.bed) {
+        const [x, y, z] = this.bed;
+        const blockAt = (yy) =>
+          this.edits[key(x >> 4, z >> 4)]?.[idx(x & 15, yy, z & 15)] ??
+          Voxel.generate(x >> 4, z >> 4, this.seed, this.sites, this.generator).a[
+            idx(x & 15, yy, z & 15)
+          ];
+        if (blockAt(y) === 46 && !blockAt(y + 1) && !blockAt(y + 2)) {
+          p.x = x + 0.5;
+          p.y = y + 1.01;
+          p.z = z + 0.5;
+        }
+      }
       p.life = p.food = p.air = 100;
       this.vy = 0;
       this.damageCool = 5;
       this.previousEye = null;
       this.stream(true);
-      this.notify('Você renasceu no ponto inicial' + (why ? ' · ' + why : ''));
+      this.notify('Você renasceu' + (why ? ' · ' + why : ''));
       this.changed();
       this.save();
     }
@@ -819,6 +973,8 @@ const Game = (() => {
         bag: this.bag,
         goals: this.goals,
         sites: this.sites,
+        plots: this.plots,
+        bed: this.bed,
         seals: this.seals,
       });
     }

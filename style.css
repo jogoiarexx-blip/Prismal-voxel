@@ -1388,3 +1388,6 @@ body.touchgame #touch {
 #held.swing { animation:swing .36s ease-in-out infinite alternate; }
 @keyframes swing { to { transform:translate(-12%,-12%) rotate(-38deg); } }
 @media(max-width:650px){#held {right:7%;bottom:27%;} #held img {width:46px;}}
+
+#game.raining::after{content:"";position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(106deg,transparent 0 40px,#aad4df40 41px,transparent 42px 89px);mask-image:repeating-linear-gradient(0deg,transparent 0 40px,#000 41px 49px,transparent 50px 82px);animation:rainfall .55s linear infinite;}
+@keyframes rainfall{to{background-position:-24px 82px;mask-position:0 82px}}

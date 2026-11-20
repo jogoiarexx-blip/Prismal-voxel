@@ -37,14 +37,31 @@ const Voxel = (() => {
     ['Núcleo desperto', '6df0d0', 2],
     ['Farol Prisma', '91f0df', 1.6],
     ['Pedra rúnica', '637671', 1.3],
+    ['Gelo azul', 'addfe7', 0.7],
+    ['Cinza mineral', '5e6168', 0.6],
+    ['Minério de ferro', '987c67', 2.1],
+    ['Barra de ferro', 'bdc4c2', 0],
+    ['Fungo luminescente', '7ee8bb', 0.2],
+    ['Sementes', 'dfa84e', 0],
+    ['Canteiro', '795336', 0.45],
+    ['Brotos', '85a64b', 0.35],
+    ['Trigo maduro', 'e3bb59', 0.35],
+    ['Pão de campo', 'dcaa68', 0],
+    ['Picareta de pedra', '9ca59a', 0],
+    ['Picareta de cobre', 'cb895e', 0],
+    ['Picareta de ferro', 'd5dddd', 0],
+    ['Picareta prisma', 'aa8ada', 0],
+    ['Cama de campo', '986857', 0.65],
+    ['Espada de ferro', 'cbd9da', 0],
   ];
   const blocks = data.map(([name, hex, hard], id) => ({
     id,
     name,
     hex,
     hard,
-    solid: !!id && ![7, 21, 22, 23, 24, 25].includes(id),
-    placeable: id > 0 && ![7, 21, 22, 23, 24, 28, 29].includes(id),
+    solid: !!id && ![7, 21, 22, 23, 24, 25, 35, 36, 37, 41, 42, 43, 44, 45, 47].includes(id),
+    placeable:
+      id > 0 && ![7, 21, 22, 23, 24, 28, 29, 35, 37, 39, 40, 41, 42, 43, 44, 45, 47].includes(id),
   }));
   const recipes = [
     [8, 4, [[5, 1]], 0],
@@ -133,12 +150,98 @@ const Voxel = (() => {
       3,
     ],
   );
+  const durability = { 22: 48, 42: 80, 43: 120, 44: 180, 45: 260, 47: 100 };
+  recipes.push(
+    [
+      38,
+      2,
+      [
+        [2, 2],
+        [21, 1],
+      ],
+      0,
+    ],
+    [
+      35,
+      1,
+      [
+        [34, 1],
+        [9, 1],
+      ],
+      14,
+    ],
+    [
+      41,
+      2,
+      [
+        [40, 1],
+        [9, 1],
+      ],
+      14,
+    ],
+    [
+      42,
+      1,
+      [
+        [3, 3],
+        [21, 2],
+      ],
+      12,
+    ],
+    [
+      43,
+      1,
+      [
+        [24, 3],
+        [21, 2],
+      ],
+      12,
+    ],
+    [
+      44,
+      1,
+      [
+        [35, 3],
+        [21, 2],
+      ],
+      12,
+    ],
+    [
+      45,
+      1,
+      [
+        [11, 3],
+        [35, 1],
+        [21, 2],
+      ],
+      12,
+      1,
+    ],
+    [
+      46,
+      1,
+      [
+        [8, 4],
+        [6, 3],
+      ],
+      12,
+    ],
+    [
+      47,
+      1,
+      [
+        [35, 2],
+        [21, 1],
+      ],
+      12,
+    ],
+  );
   const ruins = [
     { name: 'Pórtico da Alvorada', seal: 'Aurora' },
     { name: 'Jardim das Brumas', seal: 'Bruma' },
     { name: 'Observatório do Céu', seal: 'Zênite' },
   ];
-  function planRuins(seed, edits = {}, player = null) {
+  function planRuins(seed, edits = {}, player = null, generator = 1) {
     // On the first visit, reserve untouched chunks so a returning player's build
     // or position can never intersect a newly introduced monument.
     return ruins.map((_, id) => {
@@ -147,14 +250,14 @@ const Voxel = (() => {
         const radius = 37 + id * 27 + Math.floor(n / 20) * 15 + hash(id, n, seed ^ 724) * 13;
         const x = Math.round(Math.sin(arc) * radius),
           z = -Math.round(Math.cos(arc) * radius),
-          h = land(x, z, seed).h;
+          h = land(x, z, seed, generator).h;
         if (h < SEA + 2 || (player && Math.hypot(player.x - x, player.z - z) < 12)) continue;
         let free = true;
         for (let dz = -4; dz <= 4 && free; dz++)
           for (let dx = -4; dx <= 4 && free; dx++) {
             if (
               edits[key((x + dx) >> 4, (z + dz) >> 4)] ||
-              Math.abs(land(x + dx, z + dz, seed).h - h) > 3
+              Math.abs(land(x + dx, z + dz, seed, generator).h - h) > 3
             )
               free = false;
           }
@@ -236,7 +339,7 @@ const Voxel = (() => {
       v,
     );
   }
-  function land(x, z, s) {
+  function land(x, z, s, generator = 1) {
     const zone =
       Math.sin(x * 0.035 + z * 0.011 + (s % 27) * 0.018) +
       0.67 * (noise(x * 0.027, z * 0.027, s ^ 357) - 0.5);
@@ -257,6 +360,20 @@ const Voxel = (() => {
         (1 - flat) * 1.4,
     );
     const dunes = !mist && Math.hypot(x, z) > 48 && noise(x * 0.014, z * 0.014, s ^ 231) > 0.53;
+    if (generator >= 3) {
+      const distance = Math.hypot(x, z),
+        band = noise(x * 0.009, z * 0.009, s ^ 1384);
+      const blend = smooth(clip((distance - 92) / 36, 0, 1));
+      if (blend && band > 0.62)
+        return { h: h + Math.round(blend * (band - 0.62) * 125), region: 'Montanhas Azuis' };
+      if (blend && band < 0.36)
+        return {
+          h: Math.round(h + (SEA - 1 + 2 * Math.sin(x * 0.17) * Math.cos(z * 0.13) - h) * blend),
+          region: 'Pântano Luminescente',
+        };
+      if (blend && noise(x * 0.012, z * 0.012, s ^ 632) > 0.64)
+        return { h, region: 'Planícies de Cinza' };
+    }
     return { h, mist, dunes };
   }
   const idx = (x, y, z) => (y * 16 + z) * 16 + x;
@@ -276,25 +393,35 @@ const Voxel = (() => {
       for (let x = 0; x < 16; x++) {
         const wx = ox + x,
           wz = oz + z,
-          { h, mist, dunes } = land(wx, wz, s);
+          { h, mist, dunes, region } = land(wx, wz, s, generator);
         top = Math.max(top, h);
         const cv = noise(wx * 0.081, wz * 0.081, s ^ 871),
           path = SEA - 8 + 5 * Math.sin(wx * 0.079) + 3 * Math.cos(wz * 0.095);
         for (let y = 0; y <= Math.max(SEA, h); y++) {
           let b = 3;
           if (y > h) b = 7;
+          else if (y === h && region)
+            b =
+              region === 'Montanhas Azuis'
+                ? h > 87
+                  ? 32
+                  : 3
+                : region === 'Planícies de Cinza'
+                  ? 33
+                  : 19;
           else if (y === h) b = h <= SEA + 1 || (generator >= 2 && dunes) ? 4 : mist ? 17 : 1;
           else if (y >= h - 3) b = h < SEA + 1 || (generator >= 2 && dunes) ? 4 : 2;
           else if (y > 8 && cv > 0.54 && Math.abs(y - path) < (cv - 0.51) * 11) b = 0;
           else if (y > 0) {
             const ore = hash(wx + y * 3, wz - y * 2, s ^ 717);
-            if (ore > 0.958) b = y < h - 12 && ore > 0.988 ? 11 : y < h - 6 && ore > 0.978 ? 10 : 9;
+            if (generator >= 3 && y < h - 10 && ore < 0.033) b = 34;
+            else if (ore > 0.958) b = y < h - 12 && ore > 0.988 ? 11 : y < h - 6 && ore > 0.978 ? 10 : 9;
           }
           a[idx(x, y, z)] = b;
         }
       }
     function tree(tx, tz, starter = false) {
-      const { h, mist } = land(tx, tz, s);
+      const { h, mist } = land(tx, tz, s, generator);
       if (h <= SEA + 1) return;
       const n = hash(tx, tz, s ^ 139);
       const trunk = mist ? 27 : 5,
@@ -320,8 +447,13 @@ const Voxel = (() => {
         const tx = gx * 7 + Math.floor(hash(gx, gz, s ^ 51) * 5) + 1,
           tz = gz * 7 + Math.floor(hash(gx, gz, s ^ 52) * 5) + 1;
         if (Math.hypot(tx, tz - 3) < 8) continue;
-        const terrain = land(tx, tz, s);
+        const terrain = land(tx, tz, s, generator);
         const { mist, dunes, h } = terrain;
+        if (terrain.region) {
+          if (terrain.region === 'Pântano Luminescente' && h >= SEA && hash(gx, gz, s) > 0.35)
+            set(tx, h + 1, tz, 36);
+          continue;
+        }
         if (generator >= 2 && dunes) {
           if (h > SEA + 1 && hash(gx, gz, s ^ 197) > 0.88) {
             for (let dy = 1; dy <= 5; dy++) set(tx, h + dy, tz, dy === 5 ? 11 : dy === 2 ? 31 : 20);
@@ -516,10 +648,10 @@ const Voxel = (() => {
         const h = 0.23 + hash(ox + x, oz + z, seed ^ 127) * 0.36,
           a = roll * 31,
           shade = height(x + 1, z - 1) > y + 1 ? 0.78 : 1;
-        blade(gx, y + 1, gz, a, 0.13, h, 40, shade);
-        blade(gx, y + 1, gz, a + 1.57, 0.115, h * 0.85, 40, shade);
+        blade(gx, y + 1, gz, a, 0.13, h, 80, shade);
+        blade(gx, y + 1, gz, a + 1.57, 0.115, h * 0.85, 80, shade);
         if (roll < 0.065) {
-          const id = b === 17 ? 42 : 41;
+          const id = b === 17 ? 82 : 81;
           blade(gx + 0.03, y + 1 + h * 0.73, gz, a, 0.14, 0.16, id, shade);
           blade(gx + 0.03, y + 1 + h * 0.73, gz, a + 1.57, 0.14, 0.16, id, shade);
         }
@@ -562,6 +694,7 @@ const Voxel = (() => {
     version,
     blocks,
     recipes,
+    durability,
     seedHash,
     ruins,
     planRuins,

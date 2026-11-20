@@ -368,11 +368,12 @@
       'options',
       'Opções',
       '<label class="field">Qualidade gráfica<select id="quality"><option value="0">Baixa · menor distância de visão</option><option value="1">Média · água e vegetação animadas</option><option value="2">Alta · maior distância de visão</option></select></label>' +
+        slider('recuo', 'Distância da câmera externa', 2, 6, 0.1, settings.recuo || 3.7, ' m') +
         slider('fov', 'Campo de visão', 55, 100, 1, settings.fov, '°') +
         slider('sensitivity', 'Sensibilidade do mouse', 0.35, 2.5, 0.05, settings.sensitivity, '×') +
         '<label class="checkline"><input id="thirdPerson" type="checkbox"> Câmera em terceira pessoa (V)</label>' +
         slider('volume', 'Volume', 0, 100, 1, Math.round(settings.volume * 100), '%') +
-        '<label class="checkline"><input id="audioCheck" type="checkbox"> Ativar som</label><label class="checkline"><input id="motion" type="checkbox"> Animar vegetação e atmosfera</label><label class="checkline"><input id="invert" type="checkbox"> Inverter eixo vertical do mouse</label><div class="btns">' +
+        '<label class="checkline"><input id="noFlash" type="checkbox"> Desativar flash de dano</label><label class="checkline"><input id="audioCheck" type="checkbox"> Ativar som</label><label class="checkline"><input id="motion" type="checkbox"> Animar vegetação e atmosfera</label><label class="checkline"><input id="invert" type="checkbox"> Inverter eixo vertical do mouse</label><div class="btns">' +
         btn('back', 'Concluir', 'primary') +
         '</div>',
     );
@@ -384,6 +385,7 @@
     };
     for (let [id, prop] of [
       ['audioCheck', 'sound'],
+      ['noFlash', 'noFlash'],
       ['motion', 'motion'],
       ['thirdPerson', 'thirdPerson'],
       ['invert', 'invert'],
@@ -397,7 +399,7 @@
         if (prop === 'sound') Sound.play('ui', settings);
       };
     }
-    for (const id of ['fov', 'sensitivity', 'volume']) {
+    for (const id of ['fov', 'sensitivity', 'volume', 'recuo']) {
       let n = $('#' + id);
       n.oninput = () => {
         let v = Number(n.value);
@@ -462,7 +464,7 @@
         '<p class="smallnote">Mova o mouse para olhar. Clique no cenário para capturar o cursor e use Esc para liberá-lo. No celular, deslize o dedo sobre o cenário. As teclas Q e R também servem para minerar e usar.</p>';
     } else if (tab === 1) {
       body =
-        '<div class="guidecontent"><h3>Antes da primeira noite</h3><p>Para sair da água, nade em direção a uma margem de até um bloco e segure Espaço ou Nadar. Segure o botão esquerdo em um tronco e se aproxime para recolher a madeira. Abra a mochila com E e transforme um tronco em quatro tábuas.</p><h3>Monte sua oficina</h3><p>Fabrique uma bancada com quatro tábuas e coloque-a no chão. Perto dela, combine três tábuas e duas hastes para produzir sua primeira picareta.</p><h3>Ilumine o abrigo</h3><p>Procure carvão na pedra ou queime um tronco no forno. Combine carvão e haste para fazer tochas. Os raspejantes recuam diante da luz.</p><h3>Recupere forças</h3><p>Quebre folhas para encontrar frutas. Selecione-as e use o botão direito para comer. Se cair, volte ao local para recuperar a mochila.</p></div>';
+        '<div class="guidecontent"><h3>Cultivo e abrigo</h3><p>Quebre grama para obter sementes. Coloque um canteiro junto à água, selecione as sementes e use o canteiro. Colha o trigo dourado e asse pão no forno. Use uma cama para marcar o retorno.</p><h3>Antes da primeira noite</h3><p>Segure Espaço ou Nadar para subir e solte para afundar. Para sair da água, nade em direção a uma margem de até um bloco e segure Espaço ou Nadar. Segure o botão esquerdo em um tronco e se aproxime para recolher a madeira. Abra a mochila com E e transforme um tronco em quatro tábuas.</p><h3>Monte sua oficina</h3><p>Fabrique uma bancada com quatro tábuas e coloque-a no chão. Perto dela, combine três tábuas e duas hastes para produzir sua primeira picareta.</p><h3>Ilumine o abrigo</h3><p>Procure carvão na pedra ou queime um tronco no forno. Combine carvão e haste para fazer tochas. Os raspejantes recuam diante da luz.</p><h3>Recupere forças</h3><p>Quebre folhas para encontrar frutas. Selecione-as e use o botão direito para comer. Se cair, volte ao local para recuperar a mochila.</p></div>';
     } else if (tab === 2) {
       const expedition = g || worldList[0];
       const names = Voxel.ruins
@@ -490,7 +492,7 @@
         '</ul><p>O primeiro selo libera a pedra rúnica. Com os três, use a bancada para combinar cristal, cobre e vidro em um Farol Prisma. Coloque-o para acender uma aurora sobre sua base.</p></div>';
     } else
       body =
-        '<p>Mundo Prisma é um sandbox voxel de exploração, sobrevivência e construção. Explore os Campos de Âmbar, a Floresta de Névoa e as Dunas de Vidro. Nas dunas, procure os obeliscos com cristais no topo.</p><p class="muted">Versão jogável 0.3.0 · Um jogador<br>Arte, sprites, tipografia de título e efeitos sonoros criados para Mundo Prisma. Seu progresso é salvo neste navegador.</p>';
+        '<p>Mundo Prisma é um sandbox voxel de exploração, sobrevivência e construção. Explore os Campos de Âmbar, a Floresta de Névoa e as Dunas de Vidro. Nas dunas, procure os obeliscos com cristais no topo.</p><p class="muted">Versão jogável 0.4.1 · Um jogador<br>Arte, sprites, tipografia de título e efeitos sonoros criados para Mundo Prisma. Seu progresso é salvo neste navegador.</p>';
     panel(
       'guide',
       'Guia de campo',
@@ -519,7 +521,9 @@
     }
   }
   function slotButton(t, i, prefix, active = false, hot = false) {
-    const title = t ? name(t.b) + (t.b === 22 ? ' · ' + t.dur + '/48 usos' : '') : 'Espaço vazio';
+    const title = t
+      ? name(t.b) + (Voxel.durability[t.b] ? ' · ' + t.dur + '/' + Voxel.durability[t.b] + ' usos' : '')
+      : 'Espaço vazio';
     return (
       '<button class="slot' +
       (active ? ' active' : '') +
@@ -534,7 +538,10 @@
       '">' +
       (hot ? '<em>' + (i + 1) + '</em>' : '') +
       (t
-        ? img(t.b) + '<b>' + (t.b === 22 ? '' : g.creative && prefix === 'hot' ? '∞' : t.n) + '</b>'
+        ? img(t.b) +
+          '<b>' +
+          (Voxel.durability[t.b] ? '' : g.creative && prefix === 'hot' ? '∞' : t.n) +
+          '</b>'
         : '') +
       '</button>'
     );
@@ -555,7 +562,7 @@
       right =
         '<div class="sectionhead">Catálogo de blocos</div><div class="catalog">' +
         Voxel.blocks
-          .filter((t) => t.placeable || [21, 22, 23, 24].includes(t.id))
+          .filter((t) => t.id > 0 && ![7, 28, 29, 39].includes(t.id))
           .map(
             (b) =>
               '<button class="slot" data-act="catalog:' +
@@ -608,7 +615,7 @@
         '<p class="smallnote">' +
         (bagSel
           ? 'Selecione o destino de ' + esc(name(inv[bagSel.i]?.b)) + '.'
-          : 'Clique em um item e depois no destino para movê-lo.') +
+          : 'Clique no item e no destino para mover. Clique direito divide a pilha em um espaço vazio.') +
         '</p></div><div>' +
         right +
         '</div></div>',
@@ -658,7 +665,7 @@
         j = bagSel.i,
         t = from[j];
       if (t && (a !== from || i !== j)) {
-        if (a[i]?.b === t.b && t.b !== 22) {
+        if (a[i]?.b === t.b && !Voxel.durability[t.b]) {
           const move = Math.min(64 - a[i].n, t.n);
           a[i].n += move;
           t.n -= move;
@@ -672,6 +679,20 @@
   }
   function bindSlots() {
     dialog.querySelectorAll('.slot[data-act^="inv:"],.slot[data-act^="chest:"]').forEach((el) => {
+      el.oncontextmenu = (e) => {
+        e.preventDefault();
+        const [type, index] = el.dataset.act.split(':');
+        const slots = type === 'inv' ? g.inv : g.chests[chestPos],
+          stack = slots[+index],
+          dest = slots.findIndex((v) => !v);
+        if (!stack || stack.n < 2 || dest < 0) return;
+        const half = Math.floor(stack.n / 2);
+        slots[dest] = { ...stack, n: half };
+        stack.n -= half;
+        bagSel = null;
+        g.changed();
+        screen === 'chest' ? chest(null, false) : inventory(false);
+      };
       el.draggable = true;
       el.ondragstart = (e) => {
         const [type, i] = el.dataset.act.split(':');
@@ -694,17 +715,16 @@
     } else if (s === 'station') {
       v.b === 15 ? chest(v) : inventory(true, v.b);
     } else if (s === 'hurt') {
+      if (settings.noFlash) return;
       $('#hurt').style.opacity = 0.7;
       setTimeout(() => ($('#hurt').style.opacity = 0), 190);
     }
   }
   function hud() {
     if (!g) return;
-    $('#biome').textContent = g.dunes
-      ? 'Dunas de Vidro'
-      : g.misty
-        ? 'Floresta de Névoa'
-        : 'Campos de Âmbar';
+    game.classList.toggle('raining', Boolean(g.exposed && settings.motion));
+    $('#biome').textContent =
+      g.region || (g.dunes ? 'Dunas de Vidro' : g.misty ? 'Floresta de Névoa' : 'Campos de Âmbar');
     let minutes = Math.floor(g.time * 1440);
     $('#clock').textContent =
       'DIA ' +
@@ -730,7 +750,8 @@
     }
     held.classList.toggle('swing', Boolean(g.holding && settings.motion));
     $('#itemname').textContent = active
-      ? name(active.b) + (active.b === 22 ? ' · ' + active.dur + '/48' : '')
+      ? name(active.b) +
+        (Voxel.durability[active.b] ? ' · ' + active.dur + '/' + Voxel.durability[active.b] : '')
       : 'Mão livre';
     let html = g.inv
       .slice(0, 9)
@@ -741,7 +762,7 @@
       $('#hotbar')._old = html;
     }
     $('#target').textContent = g.aimMob()
-      ? 'Raspejante'
+      ? g.aimMob().kind || 'Raspejante'
       : g.hit?.b === 28
         ? 'R · Despertar núcleo'
         : g.hit
@@ -793,7 +814,7 @@
     $('#debug').hidden = !debug;
     if (debug)
       $('#debug').textContent =
-        'PRISMA 0.3.0 · ' +
+        'PRISMA 0.4.1 · ' +
         renderer.type +
         '\n' +
         Math.round(fps) +
