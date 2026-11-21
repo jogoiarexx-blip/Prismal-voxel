@@ -38,7 +38,7 @@ const Game = (() => {
   function fresh(name, seed, mode, difficulty) {
     let h = land(0, 3, Voxel.seedHash(seed)).h;
     let inv = empty();
-    if (mode === 'creative') [8, 49, 53, 57, 55, 16, 48, 65, 67].forEach((v, i) => (inv[i] = slot(v, 64)));
+    if (mode === 'creative') [8, 49, 53, 57, 55, 16, 83, 85, 87].forEach((v, i) => (inv[i] = slot(v, 64)));
     else {
       inv[0] = slot(23, 3);
     }
@@ -126,6 +126,7 @@ const Game = (() => {
       this.dirtySave = false;
       this.creative = this.meta.mode === 'creative';
       this.resetMining();
+      this.lastBlueprint = null;
       this.startWorker();
       this.stream(true);
     }
@@ -283,6 +284,105 @@ const Game = (() => {
       this.relight(k);
       this.pump();
       this.changed();
+      return true;
+    }
+    // Apply a checked project atomically: no destructive overwrites or partial inventory charges.
+    blueprintPlan(kind) {
+      if (!['base', 'cabin'].includes(kind)) return { ok: false, reason: 'Projeto desconhecido' };
+      if (!this.ready) return { ok: false, reason: 'Aguarde o cenário carregar' };
+      const forwardX = Math.sin(this.p.yaw), forwardZ = -Math.cos(this.p.yaw);
+      const cx = Math.floor(this.p.x + forwardX * 7);
+      const cz = Math.floor(this.p.z + forwardZ * 7);
+      const floor = this.floorAt(cx, cz, this.p.y + 3);
+      if (floor == null || floor < 3 || floor > Voxel.H - 7 || Math.abs(floor - this.p.y) > .65) return { ok: false, reason: 'Procure terreno plano e livre na mesma altura do jogador' };
+      const dxEntrance = Math.abs(forwardX) >= Math.abs(forwardZ);
+      const entranceX = dxEntrance ? (forwardX > 0 ? cx - 2 : cx + 2) : cx;
+      const entranceZ = dxEntrance ? cz : (forwardZ > 0 ? cz - 2 : cz + 2);
+      const ops = [];
+      const add = (x, y, z, id) => ops.push([x, y, z, id]);
+      for (let z = cz - 2; z <= cz + 2; z++) for (let x = cx - 2; x <= cx + 2; x++) {
+        if (this.floorAt(x, z, floor + 1) !== floor || this.get(x, floor, z, true) !== 0)
+          return { ok: false, reason: 'Terreno irregular ou ocupado. Tente em uma planície livre' };
+        add(x, floor, z, kind === 'cabin' ? 8 : 48);
+        if (kind === 'cabin') {
+          const edge = x === cx-2 || x === cx+2 || z === cz-2 || z === cz+2;
+          if (edge) for (let h = 1; h <= 3; h++) {
+            if (x === entranceX && z === entranceZ && h === 2) continue;
+            const id = x === entranceX && z === entranceZ && h === 1
+              ? Voxel.orientBlock(57, this.p.yaw)
+              : h === 2 && ((x === cx && Math.abs(z-cz) === 2) || (z === cz && Math.abs(x-cx) === 2))
+                ? 56 : 8;
+            add(x, floor + h, z, id);
+          }
+          add(x, floor + 4, z, 65);
+        }
+      }
+      const costs = {};
+      for (const [, , , id] of ops) {
+        const item = Voxel.itemId(id);
+        costs[item] = (costs[item] || 0) + 1;
+      }
+      for (let z = cz - 2; z <= cz + 2; z++) for (let x = cx - 2; x <= cx + 2; x++) {
+        const top = kind === 'cabin' ? floor + 4 : floor;
+        for (let y = floor; y <= top; y++) {
+          // Check all space, including two-high doorway. Do not destroy existing builds.
+          if (this.get(x, y, z, true) !== 0)
+            return { ok: false, reason: 'Área ocupada por árvores, blocos ou outras construções' };
+        }
+        if (this.bounds(x + .5, floor, z + .5, 1.8) &&
+            Math.abs(this.p.x-(x+.5)) < .6 && Math.abs(this.p.z-(z+.5)) < .6)
+          return { ok: false, reason: 'Afaste-se da área da construção' };
+      }
+      const missing = Object.entries(costs).filter(([id, n]) => !this.creative && count(this.inv, +id) < n);
+      return { ok: !missing.length, reason: missing.length ? 'Faltam materiais na mochila' : '',
+        ops, costs, center: [cx, floor, cz], missing: missing.map(([id,n]) => [+id, n - count(this.inv, +id)]) };
+    }
+    // Batch all writes and queue at most one mesh rebuild per affected chunk.
+    applyBlockBatch(ops) {
+      const dirty = new Set();
+      for (const [x,y,z,id] of ops) {
+        const cx = x >> 4, cz = z >> 4, k = key(cx,cz);
+        const index = idx(x & 15,y,z & 15);
+        (this.edits[k] ||= {})[index] = id;
+        this.chunks.get(k).a[index] = id;
+        const xs = [0], zs = [0];
+        if ((x & 15) < 3) xs.push(-1);
+        if ((x & 15) > 12) xs.push(1);
+        if ((z & 15) < 3) zs.push(-1);
+        if ((z & 15) > 12) zs.push(1);
+        for (const a of xs) for (const b of zs) dirty.add(key(cx+a,cz+b));
+      }
+      for (const k of dirty) {
+        this.revs.set(k, (this.revs.get(k) || 0) + 1);
+        if (this.chunks.has(k)) this.pending.add(k);
+      }
+      for (const k of dirty) if (this.chunks.has(k)) this.relight(k);
+      this.pump();
+      this.changed();
+    }
+    placeBlueprint(kind) {
+      const plan = this.blueprintPlan(kind);
+      if (!plan.ok) { this.notify(plan.reason); return false; }
+      const copied = this.inv.map(t => t && { ...t });
+      if (!this.creative) for (const [id, n] of Object.entries(plan.costs)) cost(copied, +id, n);
+      this.inv = copied;
+      this.applyBlockBatch(plan.ops);
+      this.lastBlueprint = this.creative ? plan.ops : null;
+      this.goals.built = (this.goals.built || 0) + plan.ops.length;
+      Sound.play('craft', this.settings);
+      this.notify((kind === 'base' ? 'Fundação' : 'Cabana') + ' construída: ' + plan.ops.length + ' blocos');
+      return true;
+    }
+    undoBlueprint() {
+      if (!this.creative || !this.lastBlueprint?.length) return false;
+      const ops = this.lastBlueprint;
+      // Revert only if every cell still contains its auto-placed block.
+      if (ops.some(([x,y,z,id]) => this.get(x,y,z,true) !== id)) {
+        this.notify('Projeto foi alterado; desfazer indisponível'); return false;
+      }
+      this.lastBlueprint = null;
+      this.applyBlockBatch(ops.map(([x,y,z]) => [x,y,z,0]));
+      this.notify('Último projeto desfeito');
       return true;
     }
     eye() {
@@ -557,13 +657,16 @@ const Game = (() => {
       const tool = this.inv[this.selected],
         rock = [3, 9, 10, 11, 14, 20, 32, 34].includes(hit.b);
       const speed = { 22: 3.2, 42: 4, 43: 5, 44: 6, 45: 8 }[tool?.b] || 1;
+      const wood = [5, 8, 12, 15, 27, 46, 49, 50, 51, 52, 53, 55, 57, 58, 59, 60, 61, 62, 63, 64, 68, 77, 78, 79, 83, 84, 85, 86, 91].includes(hit.b);
+      const soil = [1, 2, 4, 17, 19, 38, 39, 40].includes(hit.b);
+      const toolSpeed = tool?.b === 89 && wood ? 5.4 : tool?.b === 90 && soil ? 4 : rock ? speed : 1;
       if (hit.b === 34 && !this.creative && speed < 4) {
         if (this.progress === 0) this.notify('O ferro exige picareta de pedra ou superior');
         this.progress = -1;
         return;
       }
       if (this.creative && this.attackCool) return;
-      this.progress += this.creative ? 1 : (dt * (rock ? speed : 1)) / blocks[hit.b].hard;
+      this.progress += this.creative ? 1 : (dt * toolSpeed) / Math.max(.12, blocks[hit.b].hard);
       if (this.progress < 1) return;
       const [x, y, z] = hit.p,
         b = hit.b;
@@ -588,7 +691,7 @@ const Game = (() => {
       this.progress = 0;
       this.attackCool = this.creative ? 0.16 : 0.1;
       this.hit = null;
-      if (b === 15 && this.chests[k]) {
+      if ([15, 83, 84].includes(b) && this.chests[k]) {
         for (const t of this.chests[k]) if (t) this.addDrop(x + 0.5, y + 0.2, z + 0.5, t.b, t.n, t.dur);
         delete this.chests[k];
       }
@@ -597,9 +700,9 @@ const Game = (() => {
         if (b === 6 || b === 18) this.addDrop(x + 0.5, y + 0.2, z + 0.5, 23, 1);
         if ([1, 17, 39, 40].includes(b)) this.addDrop(x + 0.5, y + 0.2, z + 0.5, 37, b === 40 ? 2 : 1);
         if (b === 5 || b === 27) this.goals.wood = true;
-        if (speed > 1 && rock && --tool.dur <= 0) {
+        if (((speed > 1 && rock) || (tool?.b === 89 && wood) || (tool?.b === 90 && soil)) && --tool.dur <= 0) {
           this.inv[this.selected] = null;
-          this.notify('Sua picareta se desgastou.');
+          this.notify('Sua ferramenta se desgastou.');
         }
       }
       this.signal('hud');
@@ -736,6 +839,10 @@ const Game = (() => {
       const t = this.inv[this.selected],
         h = this.hit;
       const sneaking = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') || this.touchCrouch;
+      if (h && (h.b === 85 || h.b === 86) && !sneaking) {
+        if (this.set(...h.p, h.b === 85 ? 86 : 85)) Sound.play('place', this.settings);
+        return;
+      }
       if (h && h.b >= 57 && h.b <= 64 && !sneaking) {
         const opened = h.b <= 60 ? h.b + 4 : h.b - 4;
         if (this.set(...h.p, opened)) { Sound.play('place', this.settings); this.signal('hud'); }
@@ -748,7 +855,7 @@ const Game = (() => {
       if (
         h &&
         !sneaking &&
-        [12, 14, 15].includes(h.b)
+        [12, 14, 15, 83, 84].includes(h.b)
       ) {
         this.signal('station', h);
         return;
@@ -805,7 +912,7 @@ const Game = (() => {
         Sound.play('discovery', this.settings);
       }
       this.goals.built = (this.goals.built || 0) + 1;
-      if (t.b === 15) this.chests[pos.join(',')] = Array(18).fill(null);
+      if ([15, 83, 84].includes(t.b)) this.chests[pos.join(',')] = Array(18).fill(null);
       if (!this.creative && !--t.n) this.inv[this.selected] = null;
       Sound.play('place', this.settings);
       this.signal('blockPlaced');

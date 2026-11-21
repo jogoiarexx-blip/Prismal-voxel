@@ -70,3 +70,12 @@ Segurar **Colocar** no celular aplica colocação contínua com cadência limita
 - Cache offline atualizado para 0.7.0.
 
 Limites conhecidos: não é um clone completo de Minecraft. Não há montagem por receitas em mesa 3×3, telhados inclinados contínuos, mobília funcional completa ou multiplayer; o renderizador CPU de compatibilidade ainda mostra peças pequenas como cubos.
+
+
+## Atualização 0.8.0 — projetos, móveis funcionais e ferramentas
+
+**Projetos rápidos**: na oficina de construção, escolha Fundação 5×5 ou Cabana 5×5. O projeto usa uma área plana a sete blocos à sua frente. A operação só aparece disponível com região carregada, espaço livre e todos os materiais na mochila (ou no modo Criativo). O jogo não substitui árvores ou estruturas existentes. No Criativo é possível desfazer o último projeto, se ainda estiver intacto. Os blocos são inseridos em lote, com uma única fila de reconstrução por região afetada.
+
+**Novas peças**: armário e barril de armazenamento (18 espaços cada), alçapão interativo, sofá, tapete, viga de madeira, janela emoldurada. **Novas ferramentas**: machado de ferro para madeira e pá de pedra para terra/areia, ambas com durabilidade. A oficina apresenta receitas para a Sobrevivência. Blocos novos usam pequenas caixas e a mesma malha voxel; os ícones são incorporados no JS, sem requisições adicionais.
+
+**Atenção**: a fundação e a cabana exigem solo plano, sem construções, e material já disponível na mochila. As casas são protótipos 5×5, não uma ferramenta de edição arquitetônica. Testes automatizados verificam custo, área, orientações e malha, mas os FPS ainda devem ser medidos em aparelhos reais.

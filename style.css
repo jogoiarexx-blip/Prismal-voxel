@@ -1465,3 +1465,9 @@ body.touchgame .game-tools .build-trigger span { display:none; }
 @media(max-width:400px) { .touch-utilities button { width:33px; min-width:33px; }
   .touch-utilities { gap:4px; }
 }
+
+/* 0.8.0: keep project costs legible on narrow touch screens. */
+.project-card { grid-column:1/-1; border-color:#77694e; background:linear-gradient(105deg,#27352e,#1b2928); min-height:82px; }
+.project-card .build-copy small { max-width:100%; color:#d5cfb6; }
+.project-card button { white-space:nowrap; }
+@media(max-width:380px) { .project-card { flex-wrap:wrap; } .project-card button { width:100%; } }

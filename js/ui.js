@@ -553,7 +553,7 @@
         '</ul><p>O primeiro selo libera a pedra rúnica. Com os três, use a bancada para combinar cristal, cobre e vidro em um Farol Prisma. Coloque-o para acender uma aurora sobre sua base.</p></div>';
     } else
       body =
-        '<p>Mundo Prisma é um sandbox voxel de exploração, sobrevivência e construção. Explore os Campos de Âmbar, a Floresta de Névoa e as Dunas de Vidro. Nas dunas, procure os obeliscos com cristais no topo.</p><p class="muted">Versão jogável 0.7.0 · Um jogador<br>Arte, sprites, tipografia de título e efeitos sonoros criados para Mundo Prisma. Seu progresso é salvo neste navegador.</p>';
+        '<p>Mundo Prisma é um sandbox voxel de exploração, sobrevivência e construção. Explore os Campos de Âmbar, a Floresta de Névoa e as Dunas de Vidro. Nas dunas, procure os obeliscos com cristais no topo.</p><p class="muted">Versão jogável 0.8.0 · Um jogador<br>Arte, sprites, tipografia de título e efeitos sonoros criados para Mundo Prisma. Seu progresso é salvo neste navegador.</p>';
     panel(
       'guide',
       'Guia de campo',
@@ -644,7 +644,21 @@
       ' Segure Colocar no celular para continuar construindo. Toque na porta para abrir ou fechar.</p>' +
       '<div class="tabbar build-tabs">' + tabs + '</div>' +
       '<div class="build-list">' + cards + '</div>' +
-      '<p class="smallnote">As escadas e portas giram na direção em que você olha ao colocar. Agache para colocar um bloco encostado em uma porta ou bancada.</p>',
+      '<div class="sectionhead">Projetos rápidos · terreno plano</div>' +
+      '<p class="smallnote">Os projetos são construídos 7 blocos à sua frente, sem substituir árvores nem construções. Na Sobrevivência, coloque os materiais necessários na mochila. Verifique o espaço antes de confirmar.</p>' +
+      ['base','cabin'].map((kind) => {
+        const plan = g.blueprintPlan(kind);
+        const title = kind === 'base' ? 'Fundação 5×5' : 'Cabana 5×5';
+        const summary = plan.costs ? Object.entries(plan.costs).map(([id, n]) => n + ' ' + name(+id)).join(' · ') : plan.reason;
+        const valid = plan.ok;
+        return '<article class="build-card project-card"><div class="build-copy"><b>' + title +
+          '</b><small>' + esc(summary) + '</small>' +
+          (!valid ? '<small class="build-unavailable">' + esc(plan.reason) + '</small>' : '') +
+          '</div><button class="primary" data-act="buildplan:' + kind + '" ' +
+          (valid ? '' : 'disabled') + '>Construir projeto</button></article>';
+      }).join('') +
+      (g.creative && g.lastBlueprint ? btn('build-undo','↶ Desfazer último projeto','secondary') : '') +
+      '<p class="smallnote">As escadas e portas giram na direção em que você olha ao colocar. Agache para colocar ao lado de uma porta ou bancada. Armários e barris guardam itens; toque em alçapões para abrir.</p>',
       true,
     );
   }
@@ -815,7 +829,7 @@
     } else if (s === 'hud') {
       if (screen === 'play') hud();
     } else if (s === 'station') {
-      v.b === 15 ? chest(v) : inventory(true, v.b);
+      [15, 83, 84].includes(v.b) ? chest(v) : inventory(true, v.b);
     } else if (s === 'blockBroken' || s === 'blockPlaced' || s === 'hitEnemy') {
       touchActionEffect(s);
     } else if (s === 'hurt') {
@@ -922,7 +936,7 @@
     $('#debug').hidden = !debug;
     if (debug)
       $('#debug').textContent =
-        'PRISMA 0.6.0 · ' +
+        'PRISMA 0.8.0 · ' +
         renderer.type +
         '\n' +
         Math.round(fps) +
@@ -1011,9 +1025,17 @@
       case 'buildtab':
         buildMenu(+i);
         break;
+      case 'buildplan':
+        if (g.placeBlueprint(i)) { resume(); toast('Projeto pronto! Abra Construir para os próximos materiais.'); }
+        else buildMenu();
+        break;
+      case 'build-undo':
+        if (g.undoBlueprint()) { resume(); toast('Projeto desfeito'); }
+        else buildMenu();
+        break;
       case 'buildpick':
         if (g.creative) {
-          g.inv[g.selected] = Game.slot(+i, 64);
+          g.inv[g.selected] = Game.slot(+i, Voxel.durability[+i] ? 1 : 64);
           g.changed();
           resume();
           toast('Pronto para construir · ' + name(+i));
@@ -1032,7 +1054,7 @@
         } else buildMenu();
         break;
       case 'catalog':
-        g.inv[g.selected] = Game.slot(+i, +i === 22 ? 1 : 64);
+        g.inv[g.selected] = Game.slot(+i, Voxel.durability[+i] ? 1 : 64);
         g.changed();
         toast(name(+i) + ' na barra rápida');
         inventory();

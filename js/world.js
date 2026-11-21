@@ -85,15 +85,29 @@ const Voxel = (() => {
     ['Estante de madeira', '856544', 0.65],       // 77
     ['Mesa de madeira', 'a07850', 0.55],          // 78
     ['Cadeira de madeira', 'a07850', 0.45],       // 79
+    // IDs 80–82 are reserved for the procedural grass shaders, not blocks.
+    ['Decoração de campo', '6d9b53', 0], // 80
+    ['Flor âmbar', 'e2b64f', 0],         // 81
+    ['Flor da névoa', '90dfd2', 0],      // 82
+    ['Armário de madeira', '866344', 0.65], // 83
+    ['Barril de armazenamento', '92714b', 0.7], // 84
+    ['Alçapão de madeira', 'ad8455', 0.5], // 85
+    ['Alçapão aberto', 'ad8455', 0.5], // 86
+    ['Sofá de campo', '9c5e57', 0.65], // 87
+    ['Tapete vermelho', 'b8645d', 0.12], // 88
+    ['Machado de ferro', 'bccad1', 0], // 89
+    ['Pá de pedra', 'a2a69b', 0], // 90
+    ['Viga de madeira', '89623c', 0.85], // 91
+    ['Janela emoldurada', '95c7c7', 0.36], // 92
   ];
   const blocks = data.map(([name, hex, hard], id) => ({
     id,
     name,
     hex,
     hard,
-    solid: !!id && ![7, 21, 22, 23, 24, 25, 35, 36, 37, 41, 42, 43, 44, 45, 47].includes(id),
+    solid: !!id && ![7, 21, 22, 23, 24, 25, 35, 36, 37, 41, 42, 43, 44, 45, 47, 80, 81, 82, 88, 89, 90].includes(id),
     placeable:
-      id > 0 && ![7, 21, 22, 23, 24, 28, 29, 35, 37, 39, 40, 41, 42, 43, 44, 45, 47, 50, 51, 52, 58, 59, 60, 61, 62, 63, 64, 70, 71, 72].includes(id),
+      id > 0 && ![7, 21, 22, 23, 24, 28, 29, 35, 37, 39, 40, 41, 42, 43, 44, 45, 47, 50, 51, 52, 58, 59, 60, 61, 62, 63, 64, 70, 71, 72, 80, 81, 82, 86, 89, 90].includes(id),
   }));
   // A few detailed architectural pieces are built from tiny boxes only when placed.
   // Regular terrain still uses greedy meshing, without textures or new draw calls.
@@ -122,18 +136,27 @@ const Voxel = (() => {
   shapes.set(76, [box(.42, 0, .02, .16, 1, .96), box(.43, .25, 0, .14, .09, 1), box(.43, .73, 0, .14, .09, 1)]);
   shapes.set(78, [box(.05,.72,.05,.9,.18,.9), box(.12,0,.12,.14,.72,.14), box(.74,0,.12,.14,.72,.14), box(.12,0,.74,.14,.72,.14), box(.74,0,.74,.14,.72,.14)]);
   shapes.set(79, [box(.15,.45,.18,.7,.14,.7), box(.16,0,.2,.14,.45,.14), box(.70,0,.2,.14,.45,.14), box(.16,0,.74,.14,.45,.14), box(.70,0,.74,.14,.45,.14), box(.16,.58,.76,.68,.42,.12)]);
+  // Lightweight furniture shapes: all faces are packed in the existing chunk mesh.
+  shapes.set(83, [box(.06, 0, .06, .88, 1, .88), box(.45, .18, .035, .1, .12, .035), box(.45, .66, .035, .1, .12, .035)]);
+  shapes.set(84, [box(.14, .05, .14, .72, .86, .72), box(.10, .28, .10, .80, .12, .80), box(.22, .86, .22, .56, .10, .56)]);
+  shapes.set(85, [box(0, 0, 0, 1, .16, 1)]);
+  shapes.set(86, [box(0, 0, 0, 1, 1, .16)]);
+  shapes.set(87, [box(.04, .14, .04, .92, .38, .92), box(.04, .52, .73, .92, .42, .23), box(.04, .30, .06, .18, .38, .72), box(.78, .30, .06, .18, .38, .72)]);
+  shapes.set(88, [box(.02, 0, .02, .96, .045, .96)]);
+  shapes.set(92, [box(.04, 0, .43, .92, .10, .14), box(.04, .90, .43, .92, .10, .14), box(.04, 0, .43, .10, 1, .14), box(.86, 0, .43, .10, 1, .14), box(.45, 0, .45, .10, 1, .10)]);
   const shapeParts = (id) => shapes.get(id) || null;
   const specialShape = (id) => shapes.has(id);
-  const itemId = (id) => id >= 49 && id <= 52 ? 49 : id >= 57 && id <= 64 ? 57 : id >= 69 && id <= 72 ? 69 : id;
+  const itemId = (id) => id >= 49 && id <= 52 ? 49 : id >= 57 && id <= 64 ? 57 : id >= 69 && id <= 72 ? 69 : id === 86 ? 85 : id;
   const orientBlock = (id, yaw) => {
     const dir = ((Math.round(yaw / (Math.PI / 2)) % 4) + 4) % 4;
     return id === 49 || id === 57 || id === 69 ? id + dir : id;
   };
   const buildCategories = [
-    ['Madeira', [8, 68, 49, 53, 55, 57, 77, 78, 79]],
+    ['Madeira', [8, 68, 49, 53, 55, 57, 77, 78, 79, 83, 84, 85, 87, 91]],
     ['Pedra', [3, 20, 48, 54, 69, 74]],
-    ['Telhados e paredes', [65, 66, 75, 16, 56]],
-    ['Detalhes', [67, 73, 76, 13, 25]],
+    ['Telhados e paredes', [65, 66, 75, 16, 56, 92]],
+    ['Detalhes', [67, 73, 76, 13, 25, 88]],
+    ['Ferramentas', [22, 42, 43, 44, 45, 47, 89, 90]],
   ];
   function intersects(id, bx, by, bz, x0, y0, z0, x1, y1, z1) {
     if (!blocks[id]?.solid) return false;
@@ -228,7 +251,7 @@ const Voxel = (() => {
       3,
     ],
   );
-  const durability = { 22: 48, 42: 80, 43: 120, 44: 180, 45: 260, 47: 100 };
+  const durability = { 22: 48, 42: 80, 43: 120, 44: 180, 45: 260, 47: 100, 89: 160, 90: 80 };
   recipes.push(
     [
       38,
@@ -334,6 +357,15 @@ const Voxel = (() => {
     [77, 1, [[8, 6], [5, 1]], 12],
     [78, 1, [[8, 4], [21, 2]], 12],
     [79, 2, [[8, 4], [21, 2]], 12],
+    [83, 1, [[8, 6], [21, 2]], 12],
+    [84, 1, [[8, 5], [21, 1]], 12],
+    [85, 2, [[8, 4], [21, 1]], 12],
+    [87, 1, [[8, 5], [6, 2]], 12],
+    [88, 3, [[6, 3], [23, 1]], 12],
+    [89, 1, [[35, 3], [21, 2]], 12],
+    [90, 1, [[3, 2], [21, 2]], 12],
+    [91, 4, [[5, 2]], 0],
+    [92, 4, [[16, 2], [8, 2]], 12],
   );
   const ruins = [
     { name: 'Pórtico da Alvorada', seal: 'Aurora' },
@@ -575,7 +607,7 @@ const Voxel = (() => {
     [0, 0, 1],
     [0, 0, -1],
   ];
-  const transparent = (id) => id === 7 || id === 16 || id === 56;
+  const transparent = (id) => id === 7 || id === 16 || id === 56 || id === 92;
   function makeJob(job, cache) {
     const { cx, cz, seed, edits } = job;
     const neighborhood = new Map();
