@@ -53,6 +53,38 @@ const Voxel = (() => {
     ['Picareta prisma', 'aa8ada', 0],
     ['Cama de campo', '986857', 0.65],
     ['Espada de ferro', 'cbd9da', 0],
+    ['Tijolos de pedra', '8e9897', 1.6],            // 48
+    ['Escada de madeira', 'b88e57', 0.65],          // 49
+    ['Escada de madeira', 'b88e57', 0.65],          // 50
+    ['Escada de madeira', 'b88e57', 0.65],          // 51
+    ['Escada de madeira', 'b88e57', 0.65],          // 52
+    ['Laje de madeira', 'b58b58', 0.52],            // 53
+    ['Laje de pedra', '93918b', 1.1],              // 54
+    ['Cerca de madeira', '966c40', 0.7],           // 55
+    ['Painel de vidro', 'b0e6e2', 0.24],           // 56
+    ['Porta de madeira', 'aa794c', 0.75],          // 57
+    ['Porta de madeira', 'aa794c', 0.75],          // 58
+    ['Porta de madeira', 'aa794c', 0.75],          // 59
+    ['Porta de madeira', 'aa794c', 0.75],          // 60
+    ['Porta aberta', 'aa794c', 0.75],              // 61
+    ['Porta aberta', 'aa794c', 0.75],              // 62
+    ['Porta aberta', 'aa794c', 0.75],              // 63
+    ['Porta aberta', 'aa794c', 0.75],              // 64
+    ['Telha de argila', 'a75b49', 0.8],            // 65
+    ['Tijolos vermelhos', 'ac6851', 1.3],         // 66
+    ['Lanterna artesanal', 'f9c96d', 0.3],         // 67
+    ['Tábuas escuras', '765139', 0.55],           // 68
+    ['Escada de pedra', '93918b', 1.5],           // 69
+    ['Escada de pedra', '93918b', 1.5],           // 70
+    ['Escada de pedra', '93918b', 1.5],           // 71
+    ['Escada de pedra', '93918b', 1.5],           // 72
+    ['Pilar de cobre', 'bb8260', 1.25],           // 73
+    ['Piso de pedra', '9a9c8f', 1.25],             // 74
+    ['Reboco claro', 'e2d9be', 0.6],               // 75
+    ['Grade de ferro', '8e9a9e', 1.2],            // 76
+    ['Estante de madeira', '856544', 0.65],       // 77
+    ['Mesa de madeira', 'a07850', 0.55],          // 78
+    ['Cadeira de madeira', 'a07850', 0.45],       // 79
   ];
   const blocks = data.map(([name, hex, hard], id) => ({
     id,
@@ -61,8 +93,54 @@ const Voxel = (() => {
     hard,
     solid: !!id && ![7, 21, 22, 23, 24, 25, 35, 36, 37, 41, 42, 43, 44, 45, 47].includes(id),
     placeable:
-      id > 0 && ![7, 21, 22, 23, 24, 28, 29, 35, 37, 39, 40, 41, 42, 43, 44, 45, 47].includes(id),
+      id > 0 && ![7, 21, 22, 23, 24, 28, 29, 35, 37, 39, 40, 41, 42, 43, 44, 45, 47, 50, 51, 52, 58, 59, 60, 61, 62, 63, 64, 70, 71, 72].includes(id),
   }));
+  // A few detailed architectural pieces are built from tiny boxes only when placed.
+  // Regular terrain still uses greedy meshing, without textures or new draw calls.
+  const shapes = new Map();
+  const box = (x, y, z, w, h, d) => [x, y, z, w, h, d];
+  for (const base of [49, 69]) {
+    for (let orientation = 0; orientation < 4; orientation++) {
+      const upper = [
+        box(0, .5, .5, 1, .5, .5),
+        box(0, .5, 0, .5, .5, 1),
+        box(0, .5, 0, 1, .5, .5),
+        box(.5, .5, 0, .5, .5, 1),
+      ][orientation];
+      shapes.set(base + orientation, [box(0, 0, 0, 1, .5, 1), upper]);
+    }
+  }
+  shapes.set(53, [box(0, 0, 0, 1, .5, 1)]);
+  shapes.set(54, [box(0, 0, 0, 1, .5, 1)]);
+  shapes.set(55, [box(.34, 0, .34, .32, 1, .32), box(0, .33, .40, 1, .13, .20), box(.40, .33, 0, .20, .13, 1), box(0, .73, .40, 1, .10, .20), box(.40, .73, 0, .20, .10, 1)]);
+  shapes.set(56, [box(.455, 0, .02, .09, 1, .96)]);
+  for (let facing = 0; facing < 4; facing++) {
+    shapes.set(57 + facing, [facing % 2 ? box(.4, 0, 0, .2, 1, 1) : box(0, 0, .4, 1, 1, .2)]);
+    shapes.set(61 + facing, [facing % 2 ? box(0, 0, facing === 1 ? .08 : .75, 1, 1, .17) : box(facing === 0 ? .08 : .75, 0, 0, .17, 1, 1)]);
+  }
+  shapes.set(67, [box(.31, .02, .31, .38, .75, .38), box(.23, .06, .23, .54, .09, .54), box(.4, .77, .4, .2, .17, .2)]);
+  shapes.set(76, [box(.42, 0, .02, .16, 1, .96), box(.43, .25, 0, .14, .09, 1), box(.43, .73, 0, .14, .09, 1)]);
+  shapes.set(78, [box(.05,.72,.05,.9,.18,.9), box(.12,0,.12,.14,.72,.14), box(.74,0,.12,.14,.72,.14), box(.12,0,.74,.14,.72,.14), box(.74,0,.74,.14,.72,.14)]);
+  shapes.set(79, [box(.15,.45,.18,.7,.14,.7), box(.16,0,.2,.14,.45,.14), box(.70,0,.2,.14,.45,.14), box(.16,0,.74,.14,.45,.14), box(.70,0,.74,.14,.45,.14), box(.16,.58,.76,.68,.42,.12)]);
+  const shapeParts = (id) => shapes.get(id) || null;
+  const specialShape = (id) => shapes.has(id);
+  const itemId = (id) => id >= 49 && id <= 52 ? 49 : id >= 57 && id <= 64 ? 57 : id >= 69 && id <= 72 ? 69 : id;
+  const orientBlock = (id, yaw) => {
+    const dir = ((Math.round(yaw / (Math.PI / 2)) % 4) + 4) % 4;
+    return id === 49 || id === 57 || id === 69 ? id + dir : id;
+  };
+  const buildCategories = [
+    ['Madeira', [8, 68, 49, 53, 55, 57, 77, 78, 79]],
+    ['Pedra', [3, 20, 48, 54, 69, 74]],
+    ['Telhados e paredes', [65, 66, 75, 16, 56]],
+    ['Detalhes', [67, 73, 76, 13, 25]],
+  ];
+  function intersects(id, bx, by, bz, x0, y0, z0, x1, y1, z1) {
+    if (!blocks[id]?.solid) return false;
+    if (x1 <= bx || x0 >= bx + 1 || y1 <= by || y0 >= by + 1 || z1 <= bz || z0 >= bz + 1) return false;
+    const parts = shapeParts(id);
+    return !parts || parts.some(([x,y,z,w,h,d]) => x0 < bx+x+w && x1 > bx+x && y0 < by+y+h && y1 > by+y && z0 < bz+z+d && z1 > bz+z);
+  }
   const recipes = [
     [8, 4, [[5, 1]], 0],
     [8, 4, [[27, 1]], 0],
@@ -235,6 +313,27 @@ const Voxel = (() => {
       ],
       12,
     ],
+  );
+  recipes.push(
+    [48, 4, [[3, 4]], 12],
+    [49, 4, [[8, 6]], 12],
+    [53, 6, [[8, 3]], 0],
+    [54, 6, [[48, 3]], 12],
+    [55, 3, [[8, 4], [21, 2]], 12],
+    [56, 6, [[16, 3]], 12],
+    [57, 3, [[8, 6]], 12],
+    [65, 6, [[4, 3], [3, 2], [9, 1]], 14],
+    [66, 4, [[4, 4], [9, 1]], 14],
+    [67, 2, [[25, 2], [24, 1]], 12],
+    [68, 4, [[27, 1]], 0],
+    [69, 4, [[48, 6]], 12],
+    [73, 4, [[24, 3]], 12],
+    [74, 4, [[48, 4]], 12],
+    [75, 4, [[4, 3], [2, 1]], 0],
+    [76, 8, [[35, 2]], 12],
+    [77, 1, [[8, 6], [5, 1]], 12],
+    [78, 1, [[8, 4], [21, 2]], 12],
+    [79, 2, [[8, 4], [21, 2]], 12],
   );
   const ruins = [
     { name: 'Pórtico da Alvorada', seal: 'Aurora' },
@@ -476,7 +575,7 @@ const Voxel = (() => {
     [0, 0, 1],
     [0, 0, -1],
   ];
-  const transparent = (id) => id === 7 || id === 16;
+  const transparent = (id) => id === 7 || id === 16 || id === 56;
   function makeJob(job, cache) {
     const { cx, cz, seed, edits } = job;
     const neighborhood = new Map();
@@ -559,11 +658,12 @@ const Voxel = (() => {
             p[u] = i;
             const [x, y, z] = p,
               b = center[idx(x, y, z)];
-            if (!b) continue;
+            if (!b || specialShape(b)) continue;
             let other = at(x + dir[0], y + dir[1], z + dir[2]);
-            if (other && other !== 25 && (!transparent(other) || other === b)) continue;
+            if (other && other !== 25 && !specialShape(other) && (!transparent(other) || other === b)) continue;
             const shade = height(x + 1, z - 1) > y + 1 || height(x + 2, z - 2) > y + 3 ? 1 : 0;
-            mask[j * W + i] = b + shade * 32;
+            // Shade must not overlap material ID. The old 32-stride corrupted block IDs >= 32.
+            mask[j * W + i] = b | (shade << 8);
           }
         }
         for (let j = 0; j < V; j++)
@@ -572,7 +672,7 @@ const Voxel = (() => {
             if (!n) continue;
             let w = 1,
               h = 1,
-              b = n % 32;
+              b = n & 255;
             if (b !== 25) {
               while (i + w < W && mask[j * W + i + w] === n) w++;
               outer: while (j + h < V) {
@@ -610,12 +710,38 @@ const Voxel = (() => {
                 t[2] + oz,
                 b,
                 f,
-                n >= 32 ? 0.74 : 1,
+                n & 256 ? 0.74 : 1,
               );
             }
           }
       }
     }
+    // Detailed construction pieces are batched into the same two chunk buffers.
+    // A few boxes per *placed* piece; no extra draw call, model import, or texture.
+    function emitSmallBox(x, y, z, shape, id) {
+      const dims = shape.slice(3);
+      for (let f = 0; f < 6; f++) {
+        const axis = f >> 1, u = axis === 0 ? 2 : 0, v = axis === 1 ? 2 : 1;
+        const boundary = f % 2 === 0 ? shape[axis] + dims[axis] : shape[axis];
+        if ((f % 2 ? boundary === 0 : boundary === 1)) {
+          const n = directions[f], other = at(x + n[0], y + n[1], z + n[2]);
+          if (other && !specialShape(other) && !transparent(other)) continue;
+        }
+        const out = transparent(id) ? alpha : solid;
+        for (const [a,b] of [[0,0],[1,0],[1,1],[0,0],[1,1],[0,1]]) {
+          const q = [shape[0], shape[1], shape[2]];
+          q[axis] = boundary;
+          q[u] += a * dims[u];
+          q[v] += b * dims[v];
+          out.push(x + q[0] + ox, y + q[1], z + q[2] + oz, id, f, 1);
+        }
+      }
+    }
+    for (let z = 0; z < 16; z++) for (let x = 0; x < 16; x++)
+      for (let y = 1; y <= highest && y < H; y++) {
+        const id = center[idx(x, y, z)];
+        if (specialShape(id)) for (const shape of shapeParts(id)) emitSmallBox(x, y, z, shape, id);
+      }
     // Small crossed quads follow the edited surface without adding collision objects.
     function blade(x, y, z, angle, width, h, id, shade) {
       const dx = Math.cos(angle) * width,
@@ -695,6 +821,12 @@ const Voxel = (() => {
     blocks,
     recipes,
     durability,
+    shapeParts,
+    specialShape,
+    itemId,
+    orientBlock,
+    buildCategories,
+    intersects,
     seedHash,
     ruins,
     planRuins,

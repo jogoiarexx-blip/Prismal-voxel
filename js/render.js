@@ -73,11 +73,11 @@ const View = (() => {
  if(m==1.||m==17.){if(f!=2.&&(f==3.||fract(w.y)<.77+.12*rnd(vec2(floor(uv.x*6.),floor(w.y)))))col=color(2.);}
  if(m==5.||m==27.){if(f==2.||f==3.){float rings=max(abs(fract(uv.x)-.5),abs(fract(uv.y)-.5));pat+=.15*sin(rings*50.);col*=vec3(1.20,1.22,1.1);}else{pat+=.19*(rnd(vec2(px.x,floor(px.y/7.)))-.5);}}
  if(m==6.||m==18.){pat+=(large>.61?.10:-.045);col+=vec3(.008,.015,0.);}
- if(m==8.||m==12.||m==15.){if(fract(uv.y*3.)<.08||fract(uv.x+floor(uv.y*3.)*.37)<.035)col*=.6;if(m==12.&&f==2.&&min(fract(uv.x*3.),fract(uv.y*3.))<.12)col*=.59;if(m==15.&&f!=2.&&fract(w.y)>.46&&fract(w.y)<.61)col*=.5;}
+ if(m==8.||m==12.||m==15.||m==49.||m==50.||m==51.||m==52.||m==53.||m==55.||m==57.||m==58.||m==59.||m==60.||m==61.||m==62.||m==63.||m==64.||m==68.||m==77.||m==78.||m==79.){if(fract(uv.y*3.)<.08||fract(uv.x+floor(uv.y*3.)*.37)<.035)col*=.6;if(m==12.&&f==2.&&min(fract(uv.x*3.),fract(uv.y*3.))<.12)col*=.59;if(m==15.&&f!=2.&&fract(w.y)>.46&&fract(w.y)<.61)col*=.5;}
  if(m==9.||m==10.||m==11.){col=color(3.);if(rnd(floor(uv*5.))>.67)col=m==9.?vec3(.23,.24,.23):(m==10.?vec3(.79,.46,.30):vec3(.76,.52,.90));}
  if(m==14.&&f==4.&&fract(w.x)>.18&&fract(w.x)<.82&&fract(w.y)>.25&&fract(w.y)<.6)col*=.32;
  if(m==20.||m==26.){if(fract(uv.y*2.)<.08||fract(uv.x+floor(uv.y*2.)*.5)<.05)col*=.65;}
- if(m==16.){alpha=.28;if(min(fract(uv.x),fract(uv.y))<.045)alpha=.7;}
+ if(m==16.||m==56.){alpha=.28;if(min(fract(uv.x),fract(uv.y))<.045)alpha=.7;}
  if(m==7.){
    vec3 V=normalize(eye-w);
    float wave=sin(w.x*1.8+w.z*.7+time*1.35)+sin(w.z*2.7+time*1.1);
@@ -102,9 +102,18 @@ const View = (() => {
  if(m>=38.&&m<=40.&&f==2.){float row=step(.48,fract(w.x*4.));col=mix(color(38.),color(m)*1.17,row);}
  if(m==46.&&f==2.)col=fract(w.z)>.68?vec3(.91,.84,.65):vec3(.59,.28,.23);
  if(m==36.)col*=1.4;
+ if(m==48.||m==66.||m==69.||m==70.||m==71.||m==72.||m==74.){
+   if(fract(uv.y*3.)<.07 || fract(uv.x*2.+floor(uv.y*3.)*.5)<.045)col*=.7;
+ }
+ if(m==65.){if(fract(uv.y*3.)<.095||fract(uv.x*3.+floor(uv.y*3.)*.5)<.045)col*=.63;}
+ if(m==75.)pat*=.38;
+ if(m==73.){if(fract(uv.x*5.)<.05)col*=.7;pat*=.7;}
+ if(m==67.){col=mix(col,vec3(1.,.82,.43),.36);pat*=.3;}
+ if(m==77.){if(fract(w.y*3.)<.13)col*=.52;else if(rnd(floor(uv*7.))>.42)col=mix(col,vec3(.61,.42,.25),.5);}
+
  col+=pat;float shade=f==2.?1.05:(f==3.?.50:(f==0.||f==5.?.83:.68));vec3 lighting=mix(vec3(.28,.34,.55),vec3(1.03,1.00,.90),light)*shade*amb;
  float torch=0.;for(int i=0;i<8;i++){if(float(i)<numLamps)torch=max(torch,max(0.,1.-length(w-lamps[i])/7.));}
- lighting+=torch*vec3(.89,.61,.32);if(m==25.||m==13.||m==29.||m==30.)lighting=max(lighting,vec3(1.06,.98,.76));
+ lighting+=torch*vec3(.89,.61,.32);if(m==25.||m==13.||m==29.||m==30.||m==67.)lighting=max(lighting,vec3(1.06,.98,.76));
  col*=lighting;
  float horizon=1.-clamp(abs(normalize(w-eye).y)*2.,0.,1.);
  col+=.018*horizon*vec3(.88,.72,.47)*light;
@@ -433,27 +442,28 @@ const View = (() => {
       for (const m of visible) geom(m.a, m.na);
       gl.depthMask(true);
       gl.disable(gl.BLEND);
-      if (g.hit) {
-        let o = [],
-          p = g.hit.p;
-        for (let ax = 0; ax < 3; ax++) {
-          let u = (ax + 1) % 3,
-            v = (ax + 2) % 3;
-          for (let i of [0, 1])
-            for (let j of [0, 1])
-              for (let k of [0, 1]) {
-                let t = p.map((x) => x - 0.004);
-                t[ax] += 1.008 * k;
-                t[u] += 1.008 * i;
-                t[v] += 1.008 * j;
-                o.push(...t);
-              }
-        }
+      // Outline the aimed block and, when holding a construction piece, its destination.
+      // Both reuse one tiny dynamic buffer; no persistent ghost mesh.
+      const outlines = g.hit ? [g.hit.p] : [];
+      const preview = g.preview();
+      if (preview?.valid) outlines.push(preview.pos);
+      if (outlines.length) {
         use(this.line);
         gl.bindBuffer(gl.ARRAY_BUFFER, this.outline);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(o), gl.DYNAMIC_DRAW);
         this.attr(this.line.a.pos, 3, 0, 0);
-        gl.drawArrays(gl.LINES, 0, o.length / 3);
+        for (const p of outlines) {
+          const o = [];
+          for (let ax = 0; ax < 3; ax++) {
+            const u = (ax + 1) % 3, v = (ax + 2) % 3;
+            for (let i of [0, 1]) for (let j of [0, 1]) for (let k of [0, 1]) {
+              const t = p.map(x => x - .004);
+              t[ax] += 1.008 * k; t[u] += 1.008 * i; t[v] += 1.008 * j;
+              o.push(...t);
+            }
+          }
+          gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(o), gl.DYNAMIC_DRAW);
+          gl.drawArrays(gl.LINES, 0, o.length / 3);
+        }
       }
     }
   }

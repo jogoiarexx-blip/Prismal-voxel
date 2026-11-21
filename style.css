@@ -1432,3 +1432,36 @@ body.touchgame.lefty .touchact { right:auto; left:max(12px, env(safe-area-inset-
 @media (prefers-reduced-motion: reduce) {
  #touchImpact.pop,#touchImpact.placed,#touchImpact.enemy { animation-duration:.01s; }
 }
+
+/* 0.7 · Oficina voxel e construção móvel — apenas CSS, sem bibliotecas. */
+.game-tools { display:flex; align-items:center; gap:8px; pointer-events:auto; }
+.game-tools .build-trigger { display:flex; align-items:center; gap:8px; padding:0 12px;
+  background:#244c3ee8; border:1px solid #83e3b899; color:#e8ffdf; border-radius:8px;
+  font:700 12px var(--mono); width:auto; min-width:96px; height:37px; }
+.game-tools .build-trigger:hover { background:#326a4e; }
+.build-tabs { flex-wrap:wrap; gap:5px; }
+.build-tabs button { min-width:unset; padding:8px 10px; }
+.build-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px;
+  overflow:auto; max-height:min(53vh,420px); padding:2px 4px 8px 0; }
+.build-card { display:flex; align-items:center; gap:9px; min-width:0; min-height:72px;
+  padding:10px; border:1px solid #536e60; border-radius:9px;
+  background:linear-gradient(115deg,#253931,#1a2628); }
+.build-card img { width:39px; height:39px; object-fit:contain; image-rendering:pixelated; flex:0 0 auto; }
+.build-copy { min-width:0; flex:1; }
+.build-copy b { color:#f6e1b6; font:700 12px var(--mono); display:block; }
+.build-copy small { color:#c2cabc; display:block; font-size:10px; line-height:1.4; overflow-wrap:anywhere; }
+.build-card button { padding:7px 8px; border-radius:7px; font-size:11px; flex-shrink:0; }
+.build-actions { display:flex; flex-direction:column; gap:4px; flex-shrink:0; }
+.build-card button:disabled { opacity:.43; cursor:not-allowed; }
+.build-unavailable { color:#bbc3b7; max-width:70px; font-size:10px; }
+body.touchgame .game-tools .build-trigger { min-width:37px; width:37px; padding:0; justify-content:center; font-size:18px; }
+body.touchgame .game-tools .build-trigger span { display:none; }
+@media(max-width:680px) { .build-list { grid-template-columns:1fr; max-height:55vh; }
+  .build-tabs button { padding:8px 7px; font-size:10px; }
+  .build-card { padding:7px 8px; min-height:62px; }
+  .build-card img { width:34px; height:34px; }
+  .build-card button { font-size:10px; }
+}
+@media(max-width:400px) { .touch-utilities button { width:33px; min-width:33px; }
+  .touch-utilities { gap:4px; }
+}

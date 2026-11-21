@@ -1,4 +1,4 @@
-# Mundo Prisma 0.6.0
+# Mundo Prisma 0.7.0
 
 Explore seis biomas, descubra as ruínas e construa o Farol Prisma. Nos mundos novos, as Dunas de Vidro têm obeliscos com cristal no topo.
 
@@ -52,3 +52,21 @@ Novo joystick analógico com zona morta, câmera por deslize independente, contr
 ## Atualização 0.6.0 — ações e configurações móveis
 
 Indicador circular de progresso ao quebrar blocos, efeito curto ao acertar inimigos/colocar/quebrar blocos e vibração opcional (se disponível no dispositivo). Controles com sensibilidade da câmera por toque independente, tamanho do joystick ajustável, opção de inverter os lados para preferências de mão, salto automático configurável e corrida ao tocar duas vezes na parte frontal do joystick. A barra rápida também aceita deslize lateral para alternar o item selecionado. Preferências salvas localmente, sem mudar o formato dos mundos antigos. O uso de teclado e mouse permanece inalterado.
+
+## Oficina de construção (v0.7.0)
+
+No PC, pressione **B**. No celular, toque em **Construir**. A oficina organiza peças por Madeira, Pedra, Telhados e paredes e Detalhes. No modo Criativo, selecione qualquer peça e receba uma pilha de 64 blocos na barra rápida. Na Sobrevivência, os materiais precisam ser coletados e algumas receitas exigem bancada ou forno próximo. Também é possível abrir a oficina pela mochila.
+
+Peças adicionadas: tijolos de pedra e vermelhos, escadas de madeira/pedra com orientação, lajes de madeira/pedra, cerca, painel de vidro, porta interativa, telha, lanterna, tábuas escuras, coluna de cobre, piso, reboco, grades de ferro, estante, mesa e cadeira. A direção de escadas e portas depende da câmera na hora de colocar. Para abrir ou fechar uma porta, use o comando de interação; para colocar um bloco encostado nela, agache.
+
+Segurar **Colocar** no celular aplica colocação contínua com cadência limitada de aproximadamente quatro blocos por segundo. O destino aparece contornado em amarelo. Lajes e escadas usam colisão por partes; peças detalhadas são agrupadas na malha da região, sem modelos 3D externos.
+
+## Otimizações e compatibilidade
+
+- Corrigida a codificação da máscara de meshing para IDs a partir de 32.
+- Malha greedy preservada para blocos cúbicos, usando pequenas caixas somente para peças não cúbicas.
+- Texturas não foram adicionadas: os materiais são feitos por cores e padrões no shader; os ícones novos são pixel-art comprimida num único JS (sem solicitações HTTP extras).
+- Salvamento schema 1 e geradores anteriores permanecem, com novos IDs anexados à tabela de blocos; mundos antigos continuam com o mesmo terreno e inventário.
+- Cache offline atualizado para 0.7.0.
+
+Limites conhecidos: não é um clone completo de Minecraft. Não há montagem por receitas em mesa 3×3, telhados inclinados contínuos, mobília funcional completa ou multiplayer; o renderizador CPU de compatibilidade ainda mostra peças pequenas como cubos.

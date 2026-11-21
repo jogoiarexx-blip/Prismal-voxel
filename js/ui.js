@@ -23,6 +23,9 @@
     lastForwardTap = 0,
     hotbarSwipe = null,
     miningPointer = null,
+    buildingPointer = null,
+    buildRepeatAt = 0,
+    buildCategory = 0,
     lookHoldTimer = null,
     mouseActive = false,
     lastMouse = null,
@@ -186,6 +189,7 @@
   $('#options').onclick = () => options('home');
   $('#guide').onclick = () => guide('home');
   $('#pause').onclick = () => pauseMenu();
+  $('#build').onclick = () => buildMenu();
   function newWorld(back) {
     backPanel = back;
     edition = 'survival';
@@ -331,6 +335,7 @@
   function clearMobileControls() {
     joystickPointer = null;
     miningPointer = null;
+    buildingPointer = null;
     $('#moveKnob').style.transform = '';
     $('#movePad').classList.remove('engaged');
     $$('#touch button').forEach((b) => b.classList.remove('pressed'));
@@ -508,6 +513,7 @@
         ['Colocar, comer ou usar', 'Clique direito'],
         ['Selecionar espaço', '1–9 / rolagem'],
         ['Mochila e fabricação', 'E'],
+        ['Oficina de construção', 'B / botão Construir'],
         ['Guia / pausa', 'Tab / Esc'],
         ['Ativar voo no Criativo', 'F'],
         ['Informações de desempenho', 'F3'],
@@ -519,7 +525,7 @@
         '<p class="smallnote">Mova o mouse para olhar. Clique no cenário para capturar o cursor e use Esc para liberá-lo. No celular, deslize o dedo sobre o cenário. As teclas Q e R também servem para minerar e usar.</p>';
     } else if (tab === 1) {
       body =
-        '<div class="guidecontent"><h3>Cultivo e abrigo</h3><p>Quebre grama para obter sementes. Coloque um canteiro junto à água, selecione as sementes e use o canteiro. Colha o trigo dourado e asse pão no forno. Use uma cama para marcar o retorno.</p><h3>Antes da primeira noite</h3><p>Segure Espaço ou Nadar para subir e solte para afundar. Para sair da água, nade em direção a uma margem de até um bloco e segure Espaço ou Nadar. Segure o botão esquerdo em um tronco e se aproxime para recolher a madeira. Abra a mochila com E e transforme um tronco em quatro tábuas.</p><h3>Monte sua oficina</h3><p>Fabrique uma bancada com quatro tábuas e coloque-a no chão. Perto dela, combine três tábuas e duas hastes para produzir sua primeira picareta.</p><h3>Ilumine o abrigo</h3><p>Procure carvão na pedra ou queime um tronco no forno. Combine carvão e haste para fazer tochas. Os raspejantes recuam diante da luz.</p><h3>Recupere forças</h3><p>Quebre folhas para encontrar frutas. Selecione-as e use o botão direito para comer. Se cair, volte ao local para recuperar a mochila.</p></div>';
+        '<div class="guidecontent"><h3>Cultivo e abrigo</h3><p>Quebre grama para obter sementes. Coloque um canteiro junto à água, selecione as sementes e use o canteiro. Colha o trigo dourado e asse pão no forno. Use uma cama para marcar o retorno.</p><h3>Antes da primeira noite</h3><p>Segure Espaço ou Nadar para subir e solte para afundar. Para sair da água, nade em direção a uma margem de até um bloco e segure Espaço ou Nadar. Segure o botão esquerdo em um tronco e se aproxime para recolher a madeira. Abra a mochila com E e transforme um tronco em quatro tábuas.</p><h3>Monte sua oficina</h3><p>Fabrique uma bancada com quatro tábuas e coloque-a no chão. Perto dela, combine três tábuas e duas hastes para produzir sua primeira picareta. Abra a oficina de construção (B no teclado) para fabricar escadas, lajes, cercas, portas, tijolos e telhas.</p><h3>Ilumine o abrigo</h3><p>Procure carvão na pedra ou queime um tronco no forno. Combine carvão e haste para fazer tochas. Os raspejantes recuam diante da luz.</p><h3>Recupere forças</h3><p>Quebre folhas para encontrar frutas. Selecione-as e use o botão direito para comer. Se cair, volte ao local para recuperar a mochila.</p></div>';
     } else if (tab === 2) {
       const expedition = g || worldList[0];
       const names = Voxel.ruins
@@ -547,7 +553,7 @@
         '</ul><p>O primeiro selo libera a pedra rúnica. Com os três, use a bancada para combinar cristal, cobre e vidro em um Farol Prisma. Coloque-o para acender uma aurora sobre sua base.</p></div>';
     } else
       body =
-        '<p>Mundo Prisma é um sandbox voxel de exploração, sobrevivência e construção. Explore os Campos de Âmbar, a Floresta de Névoa e as Dunas de Vidro. Nas dunas, procure os obeliscos com cristais no topo.</p><p class="muted">Versão jogável 0.6.0 · Um jogador<br>Arte, sprites, tipografia de título e efeitos sonoros criados para Mundo Prisma. Seu progresso é salvo neste navegador.</p>';
+        '<p>Mundo Prisma é um sandbox voxel de exploração, sobrevivência e construção. Explore os Campos de Âmbar, a Floresta de Névoa e as Dunas de Vidro. Nas dunas, procure os obeliscos com cristais no topo.</p><p class="muted">Versão jogável 0.7.0 · Um jogador<br>Arte, sprites, tipografia de título e efeitos sonoros criados para Mundo Prisma. Seu progresso é salvo neste navegador.</p>';
     panel(
       'guide',
       'Guia de campo',
@@ -566,6 +572,7 @@
       case 'guide':
         return origin === 'pause' ? pauseMenu() : origin === 'play' ? resume() : homeMenu();
       case 'bag':
+      case 'build':
       case 'chest':
       case 'pause':
         return resume();
@@ -601,6 +608,46 @@
       '</button>'
     );
   }
+  function buildMenu(category = buildCategory) {
+    if (!g) return;
+    buildCategory = Math.max(0, Math.min(Voxel.buildCategories.length - 1, Number(category) || 0));
+    const tabs = Voxel.buildCategories.map(([label], i) =>
+      btn('buildtab:' + i, esc(label), 'tab' + (buildCategory === i ? ' on' : ''))).join('');
+    const [label, ids] = Voxel.buildCategories[buildCategory];
+    const cards = ids.map((id) => {
+      const owned = Game.count(g.inv, id);
+      const ri = Voxel.recipes.findIndex((r) => r[0] === id);
+      const recipe = ri < 0 ? null : Voxel.recipes[ri];
+      const available = recipe && g.canCraft(recipe);
+      const requirement = recipe
+        ? recipe[2].map(([b,n]) => n + ' ' + esc(name(b))).join(' + ')
+        : 'Encontre o material no mundo';
+      const station = recipe?.[3] && !g.nearStation(recipe[3])
+        ? ' · Perto de ' + esc(name(recipe[3])) : '';
+      const action = g.creative
+        ? btn('buildpick:' + id, 'Selecionar 64', 'primary')
+        : '<div class="build-actions">' +
+          (owned ? btn('buildequip:' + id, 'Usar ' + owned, 'primary') : '') +
+          (recipe
+            ? (available
+                ? btn('buildcraft:' + ri, 'Fabricar ×' + recipe[1], 'secondary')
+                : '<button class="secondary" disabled title="Faltam materiais ou estação de fabricação">Indisponível</button>')
+            : owned ? '' : '<small class="build-unavailable">Colete no mundo</small>') +
+          '</div>';
+      return '<article class="build-card">' + img(id) + '<div class="build-copy"><b>' + esc(name(id)) +
+        '</b><small>' + esc(g.creative ? 'Bloco pronto para construir' : requirement + station) +
+        '</small></div>' + action + '</article>';
+    }).join('');
+    panel('build', 'Oficina de construção',
+      '<p class="smallnote">' + (g.creative ? 'Escolha um material e construa imediatamente.' :
+        'Reúna materiais e fabrique peças. Uma bancada ou forno próximo libera receitas especiais.') +
+      ' Segure Colocar no celular para continuar construindo. Toque na porta para abrir ou fechar.</p>' +
+      '<div class="tabbar build-tabs">' + tabs + '</div>' +
+      '<div class="build-list">' + cards + '</div>' +
+      '<p class="smallnote">As escadas e portas giram na direção em que você olha ao colocar. Agache para colocar um bloco encostado em uma porta ou bancada.</p>',
+      true,
+    );
+  }
   function inventory(reset = true, station = null) {
     if (reset) bagSel = null;
     const sel = bagSel?.type === 'inv' ? bagSel.i : -1;
@@ -615,9 +662,9 @@
     let right;
     if (g.creative) {
       right =
-        '<div class="sectionhead">Catálogo de blocos</div><div class="catalog">' +
+        '<div class="sectionhead">Catálogo de blocos</div>' + btn('buildmenu', '▦ Peças de construção', 'secondary') + '<div class="catalog">' +
         Voxel.blocks
-          .filter((t) => t.id > 0 && ![7, 28, 29, 39].includes(t.id))
+          .filter((t) => t.id > 0 && t.placeable && Voxel.itemId(t.id) === t.id && ![28, 29, 39].includes(t.id))
           .map(
             (b) =>
               '<button class="slot" data-act="catalog:' +
@@ -634,7 +681,7 @@
         '</div><p class="smallnote">Escolha um material para o espaço ativo da barra.</p>';
     } else {
       right =
-        '<div class="sectionhead">Receitas</div><div class="recipes">' +
+        '<div class="sectionhead">Receitas</div>' + btn('buildmenu', '▦ Abrir oficina de construção', 'secondary') + '<div class="recipes">' +
         Voxel.recipes
           .map((r, i) => {
             const ava = g.canCraft(r);
@@ -958,6 +1005,32 @@
       case 'craft':
         if (g.craft(+i)) inventory(true);
         break;
+      case 'buildmenu':
+        buildMenu();
+        break;
+      case 'buildtab':
+        buildMenu(+i);
+        break;
+      case 'buildpick':
+        if (g.creative) {
+          g.inv[g.selected] = Game.slot(+i, 64);
+          g.changed();
+          resume();
+          toast('Pronto para construir · ' + name(+i));
+        }
+        break;
+      case 'buildequip':
+        if (g.equip(+i)) { resume(); toast('Selecionado · ' + name(+i)); }
+        else buildMenu();
+        break;
+      case 'buildcraft':
+        if (g.craft(+i)) {
+          const b = Voxel.recipes[+i][0];
+          g.equip(b);
+          resume();
+          toast('Peça fabricada e equipada · ' + name(b));
+        } else buildMenu();
+        break;
       case 'catalog':
         g.inv[g.selected] = Game.slot(+i, +i === 22 ? 1 : 64);
         g.changed();
@@ -1159,6 +1232,9 @@
       case 'KeyE':
         inventory();
         break;
+      case 'KeyB':
+        buildMenu();
+        break;
       case 'Tab':
         guide('play');
         break;
@@ -1254,6 +1330,7 @@
         miningPointer = null;
         if (g) g.resetMining();
       }
+      if (code === 'use' && buildingPointer === e.pointerId) buildingPointer = null;
       if (code === 'jump' && g) g.keys.delete('Space');
       b.classList.remove('pressed');
     };
@@ -1268,7 +1345,12 @@
       else if (code === 'mine' && miningPointer === null) {
         miningPointer = e.pointerId;
         g.holding = true;
-      } else if (code === 'use') g.use();
+      } else if (code === 'use') {
+        g.use();
+        buildingPointer = e.pointerId;
+        buildRepeatAt = performance.now() + 340;
+      }
+      else if (code === 'build') buildMenu();
       else if (code === 'bag') inventory();
       else if (code === 'jump') g.keys.add('Space');
       else if (code === 'sprint') {
@@ -1320,6 +1402,12 @@
     if (!g || !g.ready || g.paused) return;
     if (mouseActive && (edgeX || edgeY) && !document.pointerLockElement)
       g.look(edgeX * 820 * dt, edgeY * 590 * dt);
+    // Hold-to-build, capped to ~4 blocks/sec to avoid excessive chunk rebuilding.
+    if (buildingPointer !== null && now >= buildRepeatAt && g.preview()?.valid &&
+        ![12, 14, 15, 46, 57, 58, 59, 60, 61, 62, 63, 64].includes(g.hit?.b)) {
+      g.use();
+      buildRepeatAt = now + 260;
+    }
     fps = fps * 0.94 + (1 / Math.max(0.001, dt)) * 0.06;
     acc += dt;
     while (acc >= 1 / 60) {

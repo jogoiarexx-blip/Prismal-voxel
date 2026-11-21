@@ -58,7 +58,7 @@
             <button id="guide"><i data-ico="book"></i>Guia de campo</button
             ><button id="quickNew" hidden><i data-ico="plus"></i>Novo mundo</button>
           </div>
-          <span class="version"><b></b>VERSÃO 0.6.0</span>
+          <span class="version"><b></b>VERSÃO 0.7.0</span>
         </footer>
       </section>
       <section id="game" hidden aria-label="Mundo jogável">
@@ -69,9 +69,12 @@
             <div class="location">
               <i data-ico="pin"></i><span id="biome"></span><small id="clock"></small>
             </div>
-            <button class="tool" id="pause" title="Pausar jogo" aria-label="Pausar jogo">
-              <i data-ico="pause"></i>
-            </button>
+            <div class="game-tools">
+              <button id="build" class="tool build-trigger" title="Oficina de construção (B)" aria-label="Abrir oficina de construção">▦ <span>Construir</span></button>
+              <button class="tool" id="pause" title="Pausar jogo" aria-label="Pausar jogo">
+                <i data-ico="pause"></i>
+              </button>
+            </div>
           </div>
           <div id="quest"></div>
           <button id="expCompass" title="Abrir diário da expedição">
@@ -102,6 +105,7 @@
             </div>
             <div class="touchact">
               <div class="touch-utilities">
+                <button data-touch="build" aria-label="Abrir oficina de construção">▥<small>Construir</small></button>
                 <button data-touch="bag" aria-label="Abrir mochila">▦<small>Mochila</small></button>
                 <button data-touch="camera" aria-label="Trocar câmera">◉<small>Câmera</small></button>
                 <button data-touch="crouch" aria-label="Agachar" aria-pressed="false">⌄<small>Agachar</small></button>
@@ -131,6 +135,7 @@
       <div id="toast" role="status" aria-live="polite"></div>
     </main>
     <script defer src="js/icons.js"></script>
+    <script defer src="js/build-icons.js"></script>
     <script defer src="js/world.js"></script>
     <script defer src="js/render.js"></script>
     <script defer src="js/store.js"></script>

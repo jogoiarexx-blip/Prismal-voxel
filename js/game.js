@@ -38,7 +38,7 @@ const Game = (() => {
   function fresh(name, seed, mode, difficulty) {
     let h = land(0, 3, Voxel.seedHash(seed)).h;
     let inv = empty();
-    if (mode === 'creative') [1, 3, 8, 5, 4, 16, 11, 13, 25].forEach((v, i) => (inv[i] = slot(v, 64)));
+    if (mode === 'creative') [8, 49, 53, 57, 55, 16, 48, 65, 67].forEach((v, i) => (inv[i] = slot(v, 64)));
     else {
       inv[0] = slot(23, 3);
     }
@@ -231,7 +231,7 @@ const Game = (() => {
       let [cx, cz] = k.split(',').map(Number),
         arr = [];
       for (const [i, b] of Object.entries(this.edits[k] || {}))
-        if (b === 13 || b === 25 || b === 29 || b === 30) {
+        if (b === 13 || b === 25 || b === 29 || b === 30 || b === 67) {
           let n = Number(i);
           const position = [cx * 16 + (n & 15) + 0.5, (n >> 8) + 0.6, cz * 16 + ((n >> 4) & 15) + 0.5];
           position.block = b;
@@ -299,11 +299,33 @@ const Game = (() => {
       );
     }
     bounds(x, y, z, height = 1.79) {
-      for (let yy = Math.floor(y + 0.00001); yy <= Math.floor(y + height - 0.00001); yy++)
-        for (let zz = Math.floor(z - 0.27); zz <= Math.floor(z + 0.27); zz++)
-          for (let xx = Math.floor(x - 0.27); xx <= Math.floor(x + 0.27); xx++)
-            if (solid(this.get(xx, yy, zz, true))) return true;
+      const x0 = x - .27, x1 = x + .27, y0 = y + .00001, y1 = y + height - .00001;
+      const z0 = z - .27, z1 = z + .27;
+      for (let yy = Math.floor(y0); yy <= Math.floor(y1); yy++)
+        for (let zz = Math.floor(z0); zz <= Math.floor(z1); zz++)
+          for (let xx = Math.floor(x0); xx <= Math.floor(x1); xx++) {
+            const b = this.get(xx, yy, zz, true);
+            if (b === -1 || Voxel.intersects(b, xx, yy, zz, x0, y0, z0, x1, y1, z1)) return true;
+          }
       return false;
+    }
+    // Land precisely on half-height slabs and on steps, without hovering 0.5m in the air.
+    landingY(x, z, fromY, toY, height) {
+      let best = -Infinity;
+      for (let yy = Math.max(0, Math.floor(toY) - 1); yy <= Math.floor(fromY) + 1; yy++)
+        for (let zz = Math.floor(z - .27); zz <= Math.floor(z + .27); zz++)
+          for (let xx = Math.floor(x - .27); xx <= Math.floor(x + .27); xx++) {
+            const b = this.get(xx, yy, zz), parts = Voxel.shapeParts(b);
+            if (!solid(b)) continue;
+            for (const t of parts || [[0, 0, 0, 1, 1, 1]]) {
+              const top = yy + t[1] + t[4];
+              if (top > fromY + .035 || top < toY - .035 || top <= best) continue;
+              if (x + .27 <= xx + t[0] || x - .27 >= xx + t[0] + t[3] ||
+                  z + .27 <= zz + t[2] || z - .27 >= zz + t[2] + t[5]) continue;
+              if (!this.bounds(x, top, z, height)) best = top;
+            }
+          }
+      return best;
     }
     floorAt(x, z, y) {
       x = Math.floor(x);
@@ -356,6 +378,15 @@ const Game = (() => {
         if (!this.bounds(x, p.y, z, body)) p[axis] += d;
         else {
           if (nearSurface) atBank = true;
+          // Half slabs and the lower half of stairs can be stepped over smoothly.
+          if (this.grounded && !this.crouch && !wet && !this.fly &&
+              !this.bounds(x, p.y + .51, z, body)) {
+            const floor = this.landingY(x, z, p.y + .51, p.y, body);
+            if (floor > p.y && floor <= p.y + .51) {
+              p.y = floor; p[axis] += d; this.vy = 0;
+              continue;
+            }
+          }
           if (!this.bounds(x, p.y + 1.05, z, body)) blocked = true;
         }
       }
@@ -384,9 +415,8 @@ const Game = (() => {
       if (!this.bounds(p.x, ny, p.z, body)) p.y = ny;
       else {
         if (this.vy < 0) {
-          let top = Math.ceil(ny - 0.0001);
-          if (!this.bounds(p.x, top, p.z, body)) p.y = top;
-          this.grounded = true;
+          const top = this.landingY(p.x, p.z, p.y, ny, body);
+          if (Number.isFinite(top)) { p.y = top; this.grounded = true; }
           if (this.vy < -13 && !wet) this.damage(Math.round((-this.vy - 12) * 3), 'Queda');
         }
         this.vy = 0;
@@ -563,7 +593,7 @@ const Game = (() => {
         delete this.chests[k];
       }
       if (!this.creative) {
-        this.addDrop(x + 0.5, y + 0.12, z + 0.5, b === 39 ? 38 : b === 1 || b === 17 ? 2 : b, 1);
+        this.addDrop(x + 0.5, y + 0.12, z + 0.5, b === 39 ? 38 : b === 1 || b === 17 ? 2 : Voxel.itemId(b), 1);
         if (b === 6 || b === 18) this.addDrop(x + 0.5, y + 0.2, z + 0.5, 23, 1);
         if ([1, 17, 39, 40].includes(b)) this.addDrop(x + 0.5, y + 0.2, z + 0.5, 37, b === 40 ? 2 : 1);
         if (b === 5 || b === 27) this.goals.wood = true;
@@ -683,29 +713,53 @@ const Game = (() => {
       this.notify('Fabricado · ' + blocks[r[0]].name + ' ×' + r[1]);
       return true;
     }
+    equip(b) {
+      // Equip a crafted block directly: hotbar if present, otherwise swap from backpack.
+      let found = this.inv.findIndex((t) => t?.b === b);
+      if (found < 0) return false;
+      if (found >= 9) [this.inv[found], this.inv[this.selected]] = [this.inv[this.selected], this.inv[found]];
+      else this.selected = found;
+      this.changed();
+      return true;
+    }
+    preview() {
+      const t = this.inv[this.selected], h = this.hit;
+      if (!t || !blocks[t.b]?.placeable || !h) return null;
+      const pos = h.p.map((n, i) => n + h.normal[i]);
+      const [x, y, z] = pos, p = this.p, b = Voxel.orientBlock(t.b, p.yaw);
+      if (y <= 0 || y >= Voxel.H || (this.get(x,y,z,true) !== 0 && this.get(x,y,z) !== 7)) return null;
+      const occupied = Voxel.intersects(b, x, y, z, p.x - .28, p.y, p.z - .28, p.x + .28, p.y + 1.8, p.z + .28) ||
+        this.mobs.some(m => Math.abs(m.x-x-.5)<.85 && Math.abs(m.z-z-.5)<.85 && Math.abs(m.y-y)<1);
+      return { pos, b, valid: !occupied };
+    }
     use() {
       const t = this.inv[this.selected],
         h = this.hit;
+      const sneaking = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') || this.touchCrouch;
+      if (h && h.b >= 57 && h.b <= 64 && !sneaking) {
+        const opened = h.b <= 60 ? h.b + 4 : h.b - 4;
+        if (this.set(...h.p, opened)) { Sound.play('place', this.settings); this.signal('hud'); }
+        return;
+      }
       if (h && (h.b === 28 || h.b === 29)) {
         this.activateRuin(h);
         return;
       }
       if (
         h &&
-        !this.keys.has('ShiftLeft') &&
-        !this.keys.has('ShiftRight') &&
+        !sneaking &&
         [12, 14, 15].includes(h.b)
       ) {
         this.signal('station', h);
         return;
       }
-      if (h?.b === 46 && !this.keys.has('ShiftLeft')) {
+      if (h?.b === 46 && !sneaking) {
         this.bed = h.p.slice();
         this.notify('Ponto de retorno definido na cama');
         this.save();
         return;
       }
-      if (h?.b === 40 && !this.keys.has('ShiftLeft')) {
+      if (h?.b === 40 && !sneaking) {
         this.set(...h.p, 38);
         this.addDrop(h.p[0] + 0.5, h.p[1] + 1, h.p[2] + 0.5, 40, 1);
         this.addDrop(h.p[0] + 0.5, h.p[1] + 1, h.p[2] + 0.5, 37, 2);
@@ -739,26 +793,12 @@ const Game = (() => {
         return;
       }
       if (!h) return;
-      const pos = h.p.map((n, i) => n + h.normal[i]),
-        [x, y, z] = pos,
-        p = this.p;
-      if (this.get(x, y, z, true) !== 0 && this.get(x, y, z) !== 7) return;
-      if (
-        (x < p.x + 0.28 &&
-          x + 1 > p.x - 0.28 &&
-          z < p.z + 0.28 &&
-          z + 1 > p.z - 0.28 &&
-          y < p.y + 1.8 &&
-          y + 1 > p.y) ||
-        this.mobs.some(
-          (m) =>
-            Math.abs(m.x - x - 0.5) < 0.85 && Math.abs(m.z - z - 0.5) < 0.85 && Math.abs(m.y - y) < 1,
-        )
-      ) {
-        this.notify('Espaço ocupado');
-        return;
-      }
-      if (!this.set(x, y, z, t.b)) return;
+      const place = this.preview();
+      if (!place) return;
+      if (!place.valid) { this.notify('Espaço ocupado'); return; }
+      const { pos, b } = place;
+      const [x, y, z] = pos;
+      if (!this.set(x, y, z, b)) return;
       this.goals['place' + t.b] = true;
       if (t.b === 30) {
         this.notify('Farol Prisma aceso · aurora ativada');
@@ -770,6 +810,7 @@ const Game = (() => {
       Sound.play('place', this.settings);
       this.signal('blockPlaced');
       this.signal('hud');
+      return true;
     }
     aimMob() {
       let eye = this.eye(),
