@@ -626,11 +626,19 @@ const Game = (() => {
           this.attackCool = 0.45;
           if (this.inv[this.selected]?.b === 47 && --this.inv[this.selected].dur <= 0)
             this.inv[this.selected] = null;
-          mob.stun = 0.55;
+          mob.stun = 0.36;
+          mob.hurt = 0.36;
+          mob.knockback = 0.34;
+          // Knockback follows the contact direction, never the camera aim ray.
+          const pushX = mob.x - this.p.x, pushZ = mob.z - this.p.z;
+          const pushLen = Math.hypot(pushX, pushZ) || 1;
+          mob.pushX = pushX / pushLen;
+          mob.pushZ = pushZ / pushLen;
           Sound.play('mine', this.settings);
           this.signal('hitEnemy');
-          if (mob.hp <= 0) {
-            this.mobs = this.mobs.filter((m) => m !== mob);
+          if (mob.hp <= 0 && !mob.dying) {
+            mob.dying = 0.55;
+            mob.wind = 0;
             if (mob.kind === 'Guardião Prisma') this.goals.guardian = true;
             this.addDrop(
               mob.x,
@@ -1007,6 +1015,7 @@ const Game = (() => {
       let eye = this.eye(),
         d = View.basis(this.p).f;
       return this.mobs.find((m) => {
+        if (m.dying || m.hp <= 0) return false;
         let a = [m.x - eye[0], m.y + 0.6 - eye[1], m.z - eye[2]],
           dist = a.reduce((s, v, i) => s + v * d[i], 0);
         return (
@@ -1017,10 +1026,38 @@ const Game = (() => {
         );
       });
     }
+    // Small voxel actor collider. Respect non-cube block shapes and unloaded chunks;
+    // never permit movement through a closed door, fence, wall or the player.
+    mobMove(m, nx, nz, radius = 0.26, height = 1.05) {
+      const floor = this.floorAt(nx, nz, m.y + 1.1);
+      if (floor === null || floor > m.y + 1.01 || floor < m.y - 1.15) return false;
+      const x0 = nx - radius, x1 = nx + radius;
+      const z0 = nz - radius, z1 = nz + radius;
+      for (let y = Math.floor(floor); y <= Math.floor(floor + height - .015); y++)
+        for (let z = Math.floor(z0); z <= Math.floor(z1); z++)
+          for (let x = Math.floor(x0); x <= Math.floor(x1); x++) {
+            const b = this.get(x, y, z, true);
+            if (b < 0 || Voxel.intersects(b, x, y, z, x0, floor + .015, z0, x1, floor + height - .015, z1)) return false;
+          }
+      // Prevent creatures from clipping into the player, without trapping them on spawn.
+      if (Math.hypot(nx - this.p.x, nz - this.p.z) < radius + .26 && Math.abs(floor - this.p.y) < 1.6) return false;
+      // Small, local separation keeps actors from forming a single overlapping blob.
+      for (const other of this.mobs)
+        if (other !== m && !other.dying && Math.abs(other.y - floor) < 1.2 &&
+            (other.x - nx) ** 2 + (other.z - nz) ** 2 < (radius + (other.kind === 'Guardião Prisma' ? .39 : .25)) ** 2) return false;
+      m.x = nx;
+      m.z = nz;
+      m.y = floor;
+      return true;
+    }
     ai(dt) {
       const peaceful = this.creative || this.meta.difficulty === 'peaceful';
       const p = this.p,
         night = this.time < 0.215 || this.time > 0.81;
+      // All creatures reuse one small light list; never re-sort nearby lights for every mob.
+      const lights = this.lights();
+      const nearLight = (x, y, z, rad) => lights.some(l =>
+        (l[0] - x) ** 2 + (l[1] - y) ** 2 + (l[2] - z) ** 2 < rad * rad);
       this.spawnTick -= dt;
       if (this.spawnTick <= 0) {
         this.spawnTick = 10;
@@ -1044,112 +1081,123 @@ const Game = (() => {
           if (
             (!hostile || !peaceful) &&
             y !== null &&
-            !this.lights().some((l) => Math.hypot(l[0] - x, l[1] - y, l[2] - z) < 8) &&
+            !nearLight(x, y, z, 8) &&
             this.get(Math.floor(x), y, Math.floor(z)) === 0
           )
             this.mobs.push({
-              kind,
-              x,
-              y,
-              z,
+              kind, x, y, z,
               hp: kind === 'Vigia de Cascalho' ? 9 : 4,
-              wind: 0,
-              cool: 1,
+              wind: 0, cool: 1,
+              gait: 0, motion: 0, roamTimer: 0,
             });
         }
       }
-      for (let m of this.mobs) {
-        let dx = p.x - m.x,
-          dz = p.z - m.z,
-          d = Math.hypot(dx, dz);
-        m.stun = Math.max(0, (m.stun || 0) - dt);
-        m.cool = Math.max(0, m.cool - dt);
-        if (m.stun || !d || d > 30) continue;
-        const safe = this.lights().some((l) => Math.hypot(l[0] - m.x, l[1] - m.y, l[2] - m.z) < 4.4);
+      // Shared single-target navigation with cheap wall slide / sidestep. No pathfinder,
+      // extra workers, navmesh or per-creature meshes are required.
+      const walk = (m, vx, vz, speed, radius, height) => {
+        const len = Math.hypot(vx, vz);
+        if (len < .001 || speed <= 0) return false;
+        const dx = vx / len * dt * speed, dz = vz / len * dt * speed;
+        const sx = m.x, sz = m.z;
+        if (!this.mobMove(m, sx + dx, sz + dz, radius, height)) {
+          if (!this.mobMove(m, sx + dx, sz, radius, height) &&
+              !this.mobMove(m, sx, sz + dz, radius, height)) {
+            // Alternate sides every few seconds; avoids hugging corners forever.
+            const turn = (Math.floor(this.elapsed / 2 + sx + sz) % 2 ? 1 : -1);
+            this.mobMove(m, sx + -dz * turn, sz + dx * turn, radius, height);
+          }
+        }
+        const moved = Math.hypot(m.x - sx, m.z - sz);
+        if (moved > .0001) {
+          m.face = Math.atan2(m.x - sx, -(m.z - sz));
+          m.gait = (m.gait || 0) + moved * (m.kind === 'Saltim' ? 13 : 9);
+          return true;
+        }
+        return false;
+      };
+      const plots = Object.keys(this.plots);
+      for (const m of this.mobs) {
         const kind = m.kind || 'Raspejante';
-        const passive = ['Saltim', 'Musgato', 'Luzerrante'].includes(kind);
-        if (passive) {
-          let tx = m.x + Math.cos(this.elapsed * 0.4 + m.y) * 2,
-            tz = m.z + Math.sin(this.elapsed * 0.4 + m.y) * 2;
-          if ((kind === 'Saltim' && d < 6) || m.hp < 4) {
-            tx = m.x - dx;
-            tz = m.z - dz;
-          } else if (kind === 'Luzerrante' && this.destination) {
-            tx = this.destination.x;
-            tz = this.destination.z;
-          } else if (kind === 'Musgato' && Object.keys(this.plots).length) {
-            const a = Object.keys(this.plots)[0].split(',').map(Number);
-            tx = a[0];
-            tz = a[2];
-          }
-          const len = Math.max(0.5, Math.hypot(tx - m.x, tz - m.z)),
-            nx = m.x + ((tx - m.x) / len) * dt,
-            nz = m.z + ((tz - m.z) / len) * dt;
-          const floor = this.floorAt(nx, nz, m.y + 1);
-          if (
-            floor !== null &&
-            Math.abs(floor - m.y) <= 1 &&
-            !this.get(Math.floor(nx), floor + 1, Math.floor(nz))
-          ) {
-            m.face = Math.atan2(nx - m.x, -(nz - m.z));
-            m.x = nx;
-            m.z = nz;
-            m.y = floor;
-          }
+        const boss = kind === 'Guardião Prisma';
+        const radius = boss ? .38 : kind === 'Vigia de Cascalho' ? .33 : .24;
+        const height = boss ? 1.95 : kind === 'Vigia de Cascalho' ? 1.8 : 1.12;
+        m.hurt = Math.max(0, (m.hurt || 0) - dt);
+        m.attack = Math.max(0, (m.attack || 0) - dt);
+        m.stun = Math.max(0, (m.stun || 0) - dt);
+        m.cool = Math.max(0, (m.cool || 0) - dt);
+        if (m.dying) {
+          m.dying = Math.max(0, m.dying - dt);
+          m.motion = 0;
           continue;
         }
-        if (peaceful) continue;
-        const boss = kind === 'Guardião Prisma',
-          stage = boss ? (m.hp > 16 ? 1 : m.hp > 8 ? 2 : 3) : 1;
-        let dir = boss || kind === 'Vigia de Cascalho' ? 1 : safe || !night ? -1 : 1;
-        if (d < 1.75 && dir > 0 && Math.abs(p.y - m.y) < 1.3) {
-          if (m.cool === 0) {
-            if (!m.wind) {
-              m.wind = boss ? 1.05 : kind === 'Vigia de Cascalho' ? 0.85 : 0.48;
-              Sound.play('enemy', this.settings);
-              this.notify(kind + ' preparando ataque' + (boss ? ' · fase ' + stage : ''));
-            }
-            m.wind -= dt;
-            if (m.wind <= 0) {
-              const eye = [m.x, m.y + 0.65, m.z],
-                v = this.eye().map((n, i) => n - eye[i]),
-                len = Math.hypot(...v);
-              if (
-                !Voxel.ray(
-                  (x, y, z) => this.get(x, y, z, true),
-                  eye,
-                  v.map((n) => n / len),
-                  len,
-                  true,
-                )
-              )
-                this.damage(boss ? 10 + stage * 3 : kind === 'Vigia de Cascalho' ? 15 : 11, kind);
-              m.cool = boss ? 3 - stage * 0.5 : 2;
-              m.wind = 0;
-            }
-          }
-        } else {
-          m.wind = 0;
-          let step = dir * dt * (boss ? 1 + stage * 0.32 : night ? 1.42 : 0.95);
-          let x = m.x + (dx / d) * step,
-            z = m.z + (dz / d) * step;
-          const y = this.floorAt(x, z, m.y + 1.05);
-          if (
-            y !== null &&
-            y > m.y - 2.1 &&
-            y <= m.y + 1 &&
-            this.get(Math.floor(x), y + 1, Math.floor(z)) === 0
-          ) {
-            m.face = Math.atan2(x - m.x, -(z - m.z));
-            m.x = x;
-            m.z = z;
-            m.y = y;
-          }
+        if (m.hp <= 0) { m.dying = .01; continue; }
+        const dx = p.x - m.x, dz = p.z - m.z, d = Math.hypot(dx, dz);
+        if (m.knockback > 0) {
+          const amount = Math.min(dt, m.knockback);
+          walk(m, m.pushX || 0, m.pushZ || 0, 3.2 * amount / Math.max(dt, .001), radius, height);
+          m.knockback = Math.max(0, m.knockback - dt);
         }
+        let moved = false;
+        if (!m.stun && d > .001 && d < 30) {
+          const safe = nearLight(m.x, m.y, m.z, 4.4);
+          const passive = ['Saltim', 'Musgato', 'Luzerrante'].includes(kind);
+          if (passive) {
+            m.roamTimer = (m.roamTimer || 0) - dt;
+            if (m.roamTimer <= 0) {
+              m.roamTimer = 2 + Voxel.hash(Math.floor(m.x * 5), Math.floor(m.z * 5), this.seed ^ Math.floor(this.elapsed)) * 4;
+              m.roamAngle = Voxel.hash(Math.floor(m.x * 3), Math.floor(m.z * 3), this.seed ^ 771) * Math.PI * 2;
+            }
+            let vx = Math.cos(m.roamAngle || 0), vz = Math.sin(m.roamAngle || 0), speed = .72;
+            if ((kind === 'Saltim' && d < 6) || m.hp < 4) {
+              vx = -dx; vz = -dz; speed = kind === 'Saltim' ? 1.85 : 1.4;
+            } else if (kind === 'Luzerrante' && this.destination) {
+              vx = this.destination.x - m.x;
+              vz = this.destination.z - m.z;
+              speed = .8;
+            } else if (kind === 'Musgato' && plots.length) {
+              const [tx, , tz] = plots[0].split(',').map(Number);
+              if (Math.hypot(tx - m.x, tz - m.z) > 1.25) {
+                vx = tx - m.x; vz = tz - m.z; speed = .68;
+              } else speed = 0;
+            }
+            moved = walk(m, vx, vz, speed, radius, height);
+          } else if (!peaceful) {
+            const stage = boss ? (m.hp > 16 ? 1 : m.hp > 8 ? 2 : 3) : 1;
+            const dir = boss || kind === 'Vigia de Cascalho' ? 1 : safe || !night ? -1 : 1;
+            if (d < 1.75 && dir > 0 && Math.abs(p.y - m.y) < 1.3) {
+              if (m.cool <= 0) {
+                if (!m.wind) {
+                  m.wind = boss ? 1.05 : kind === 'Vigia de Cascalho' ? .85 : .48;
+                  Sound.play('enemy', this.settings);
+                  this.notify(kind + ' preparando ataque' + (boss ? ' · fase ' + stage : ''));
+                }
+                m.wind -= dt;
+                if (m.wind <= 0) {
+                  const eye = [m.x, m.y + .65, m.z],
+                    v = this.eye().map((n, i) => n - eye[i]),
+                    len = Math.hypot(...v);
+                  if (len > .01 && !Voxel.ray((x, y, z) => this.get(x, y, z, true), eye, v.map(n => n / len), len, true))
+                    this.damage(boss ? 10 + stage * 3 : kind === 'Vigia de Cascalho' ? 15 : 11, kind);
+                  m.cool = boss ? 3 - stage * .5 : 2;
+                  m.wind = 0;
+                  m.attack = .36;
+                }
+              }
+              m.face = Math.atan2(dx, -dz);
+            } else {
+              m.wind = 0;
+              // Hostiles can circle obstacles and pursue, but won't enter the player.
+              const speed = boss ? 1 + stage * .32 : night ? 1.42 : .95;
+              moved = walk(m, dx * dir, dz * dir, speed, radius, height);
+            }
+          }
+        } else if (m.wind && d >= 1.75) m.wind = 0;
+        const targetMotion = moved ? 1 : 0;
+        m.motion = (m.motion || 0) + (targetMotion - (m.motion || 0)) * Math.min(1, dt * 12);
       }
-      this.mobs = this.mobs.filter(
-        (m) => m.kind === 'Guardião Prisma' || Math.hypot(m.x - p.x, m.z - p.z) < (night ? 47 : 19),
-      );
+      this.mobs = this.mobs.filter(m =>
+        !((m.hp <= 0) && m.dying === 0) &&
+        (m.kind === 'Guardião Prisma' || Math.hypot(m.x - p.x, m.z - p.z) < (night ? 47 : 19)));
     }
     damage(n, why) {
       if (this.creative || this.damageCool > 0) return;

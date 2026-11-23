@@ -361,13 +361,21 @@ const View = (() => {
         const x=mob.x, y=mob.y, z=mob.z;
         const kind=mob.kind || 'Raspejante';
         const t=g.elapsed;
-        const moving=Math.sin(t * (kind==='Saltim'?10:7) + x*.6 + z*.2);
-        const bob=kind==='Saltim' ? Math.abs(Math.sin(t*4.5+x))*0.18 :
-          kind==='Luzerrante' ? .3+Math.sin(t*2.8+x)*.09 : Math.abs(moving)*.028;
-        const s=kind==='Guardião Prisma' ? 1.06 : kind==='Vigia de Cascalho' ? 1.02 : kind==='Saltim' ? .72 : .82;
+        const speed=Math.max(0,Math.min(1,mob.motion||0));
+        // Gait advances from travelled distance, not global time: stationary legs rest.
+        const step=Math.sin(mob.gait||0)*speed;
+        const hop=kind==='Saltim' ? Math.max(0,Math.sin(mob.gait||0))*speed*.23 : 0;
+        const wing=Math.sin(t*7+x)*.11;
+        const bob=hop+(kind==='Luzerrante' ? .23+Math.sin(t*2.5+x)*.075 : Math.abs(step)*.025);
+        const strike=Math.sin(Math.PI*Math.max(0,Math.min(1,1-(mob.attack||0)/.36)))*(mob.attack>0?1:0);
+        const wind=mob.wind>0?.22:0;
+        const recoil=(mob.hurt||0)>0?Math.sin((mob.hurt/.36)*Math.PI)*.12:0;
+        const dead=mob.hp<=0 ? Math.max(.10,Math.min(1,(mob.dying||0)/.55)) : 1;
+        const s=(kind==='Guardião Prisma' ? 1.06 : kind==='Vigia de Cascalho' ? 1.02 : kind==='Saltim' ? .72 : .82)*dead;
         const start=ent.length;
-        // All coordinates are relative to the mob's feet/center and rotate together.
-        const piece=(px,py,pz,sx,sy,sz,material)=>box(ent, px*s,(py+bob)*s,pz*s,sx*s,sy*s,sz*s,material);
+        // One shared vertex buffer, no extra draw calls or additional texture atlases.
+        const piece=(px,py,pz,sx,sy,sz,material)=>box(ent, px*s,(py+bob)*s,pz*s,sx*s,sy*s,sz*s,
+          recoil>.04&&material!==110 ? 113 : material);
         const eyes=(height,depth,material=110,spacing=.18,size=.09)=>{
           for (const side of [-1,1]) piece(side*spacing-size/2,height,-depth,size,size,size*.6,material);
         };
@@ -378,7 +386,7 @@ const View = (() => {
           for(const side of [-1,1]){
             piece(side*.23-.10,.91,-.17,.20,.24,.15,105); // expressive ears
             piece(side*.23-.13,.07,-.22,.23,.23,.23,113); // front paws
-            piece(side*.22-.13,.07,.17,.24,.22,.24,105);
+            piece(side*.22-.13,.07,.17+side*step*.16,.24,.22,.24,105);
             piece(side*.22-.04,.77,-.34,.08,.05,.08,112); // eyes
           }
           piece(-.12,.79,-.38,.24,.08,.08,106); // muzzle
@@ -391,10 +399,10 @@ const View = (() => {
           for (const side of [-1,1]) {
             piece(side*.24-.12,.98,-.25,.24,.25,.21,108); // pointed ears
             piece(side*.19-.09,.78,-.41,.18,.12,.07,111);
-            piece(side*.28-.14,.0,-.25,.25,.25,.24,108);
-            piece(side*.28-.14,.0,.21,.25,.25,.23,107);
+            piece(side*.28-.14,.0,-.25+side*step*.11,.25,.25,.24,108);
+            piece(side*.28-.14,.0,.21-side*step*.11,.25,.25,.23,107);
           }
-          piece(.33,.30,.22,.16,.13,.33,108); // curling tail
+          piece(.33,.30,.22+Math.sin(t*3.2+x)*.055,.16,.13,.33,108); // curling tail
           piece(.38,.38,.48,.12,.12,.18,107);
           piece(-.1,.66,-.43,.20,.12,.06,106);
         } else if (kind==='Luzerrante') {
@@ -402,7 +410,7 @@ const View = (() => {
           piece(-.27,.93,-.27,.54,.34,.54,111);
           piece(-.18,.48,-.25,.36,.16,.1,106);
           for(const side of [-1,1]){
-            piece(side*.35-.09,.54,-.10,.18,.53,.26,111); // spectral wings
+            piece(side*.35-.09,.54+wing*side,-.10,.18,.53,.26,111); // spectral wings
             piece(side*.18-.10,1.17,-.04,.2,.22,.18,114);
             piece(side*.15-.08,1.03,-.29,.16,.12,.08,110);
           }
@@ -413,8 +421,8 @@ const View = (() => {
           piece(-.22,1.47,-.38,.44,.15,.11,112);
           piece(-.12,.86,-.37,.24,.27,.1,113);
           for(const side of [-1,1]){
-            piece(side*.51-.18,.51,-.22,.35,.83,.45,3); // arms
-            piece(side*.22-.16,.02,-.22,.32,.55,.43,109); // legs
+            piece(side*.51-.18,.51,-.22+side*step*.17+strike*.25-wind,.35,.83,.45,3); // arms
+            piece(side*.22-.16,.02,-.22-side*step*.18,.32,.55,.43,109); // legs
             piece(side*.20-.08,1.57,-.38,.15,.13,.11,110); // amber eyes
             piece(side*.42-.1,1.2,-.15,.2,.28,.25,109);
           }
@@ -424,9 +432,9 @@ const View = (() => {
           piece(-.28,1.01,-.365,.56,.36,.08,111); // prism core
           piece(-.16,1.12,-.42,.32,.18,.10,110);
           for(const side of [-1,1]){
-            piece(side*.50-.20,.75,-.22,.4,.83,.45,109);
-            piece(side*.53-.13,.73,-.35,.26,.37,.12,113);
-            piece(side*.22-.14,.0,-.25,.28,.64,.42,109);
+            piece(side*.50-.20,.75,-.22+side*step*.12+strike*.36-wind,.4,.83,.45,109);
+            piece(side*.53-.13,.73,-.35+side*step*.12+strike*.36-wind,.26,.37,.12,113);
+            piece(side*.22-.14,.0,-.25-side*step*.15,.28,.64,.42,109);
             piece(side*.25-.10,1.87,-.17,.2,.43,.25,114); // horns
             piece(side*.18-.08,1.64,-.30,.16,.12,.09,111);
           }
@@ -434,12 +442,12 @@ const View = (() => {
         } else { // Raspejante: beetle-like hostile nocturnal crawler
           piece(-.40,.27,-.33,.8,.49,.66,108);
           piece(-.34,.59,-.32,.68,.29,.62,107);
-          piece(-.33,.71,-.30,.66,.17,.60,109);
+          piece(-.33,.71+wind*.3+strike*.12,-.30,.66,.17,.60,109);
           piece(-.25,.32,-.42,.5,.17,.13,112);
           for (const side of [-1,1]) {
             piece(side*.25-.07,.61,-.38,.14,.13,.11,110);
-            piece(side*.36-.12,.28,-.30,.24,.21,.21,108);
-            piece(side*.36-.12,.23,.13,.25,.25,107);
+            piece(side*.36-.12,.28,-.30+side*step*.15+strike*.24,.24,.21,.21,108);
+            piece(side*.36-.12,.23,.13-side*step*.15,.25,.25,107);
             piece(side*.30-.10,.72,-.22,.20,.22,.17,109);
           }
           piece(-.09,.84,-.05,.18,.26,.18,114); // dorsal crystal
@@ -738,11 +746,13 @@ const View = (() => {
         const kind=m.kind||'Raspejante', boss=kind==='Guardião Prisma';
         const col=({Saltim:'#d6a56a',Musgato:'#5a946b',Luzerrante:'#50efd4',
           'Vigia de Cascalho':'#687580','Guardião Prisma':'#677c83'})[kind]||'#366658';
-        const bob=kind==='Saltim'?Math.abs(Math.sin(g.elapsed*4))*0.12:
+        const bob=kind==='Saltim'?Math.max(0,Math.sin(m.gait||0))*(m.motion||0)*.14:
           kind==='Luzerrante'?.32+Math.sin(g.elapsed*3)*.07:0;
-        const scale=boss?1.5:kind==='Vigia de Cascalho'?1.15:.85;
-        drawSprite(m.x,m.y+.40+bob,m.z,.85*scale,col);
-        drawSprite(m.x,m.y+.84+bob,m.z,.53*scale,kind==='Musgato'?'#396e58':col);
+        const die=m.hp<=0?Math.max(.1,Math.min(1,(m.dying||0)/.55)):1;
+        const scale=(boss?1.5:kind==='Vigia de Cascalho'?1.15:.85)*die;
+        const color=m.hurt>0?'#efb169':col;
+        drawSprite(m.x,m.y+.40+bob,m.z,.85*scale,color);
+        drawSprite(m.x,m.y+.84+bob,m.z,.53*scale,m.hurt>0?'#ffe39e':kind==='Musgato'?'#396e58':col);
         for(const side of [-1,1]){
           drawSprite(m.x+side*.19*scale,m.y+1.02*scale+bob,m.z,.13*scale,
             kind==='Luzerrante'?'#b49fe7':kind==='Saltim'?'#d6a56a':'#394f58');

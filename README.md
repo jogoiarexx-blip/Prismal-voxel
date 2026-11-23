@@ -1,4 +1,12 @@
-# Mundo Prisma v0.9.3 — Criaturas, Tochas e Portas Altas
+# Mundo Prisma v0.9.4 — Animações e IA das criaturas
+
+## v0.9.4 — Animação e inteligência das criaturas
+
+- Saltim salta quando anda e foge do jogador; Musgato caminha com patas alternadas e procura canteiros; Luzerrante flutua e move as asas; Raspejante ganha marcha articulada; Vigia e Guardião movem pernas e braços, preparando ataques com movimento visível.
+- As animações usam deslocamento realmente percorrido, evitando que criaturas paradas patinem. Golpes produzem reação curta, recuo respeitando obstáculos e uma transição rápida antes de desaparecerem.
+- A IA respeita colisões com terreno, portas e peças de construção, o corpo do personagem e outros bichos, usando desvio local de obstáculos sem pathfinding pesado.
+- As luzes são consultadas uma vez por atualização de IA, e as animações continuam integradas ao mesmo buffer dinâmico de entidades WebGL. Sem arquivos de textura externos, novos modelos GLB ou chamadas de desenho extras.
+- Compatibilidade: saves schema 1 continuam funcionando; mobs antigos sem atributos de animação são inicializados com padrões neutros. Modos de jogo e construção anteriores mantidos.
 
 Mochila reorganizada em painéis de inventário e livro de receitas com filtros por categorias, preservando a fabricação, a transferência de itens e o catálogo criativo. Interface inicial e criação de mundos redesenhadas para combinar com a identidade voxel-fantasia dos conceitos aprovados: dourado, pedra escura, bordas ornamentadas, navegação superior funcional, cartões de modo e campos mais legíveis.
 
