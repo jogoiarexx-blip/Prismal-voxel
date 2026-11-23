@@ -16,6 +16,8 @@
     cfgBack = 'home',
     backPanel = 'home',
     bagSel = null,
+    bagStation = null,
+    bagRecipeTab = 'all',
     chestPos = null,
     debug = false,
     gesture = null,
@@ -129,6 +131,9 @@
       $('#expImage').innerHTML = img(next ? 28 : 30);
       $('#expTitle').textContent = next?.name || 'Farol Prisma';
       $('#expProgress').textContent = seals.filter(Boolean).length + ' de 3 selos';
+      document.querySelectorAll('.seal-track i').forEach((item, index) => {
+        item.classList.toggle('found', Boolean(seals[index]));
+      });
       return true;
     } catch {
       toast('Não foi possível ler os mundos salvos');
@@ -158,7 +163,7 @@
     dialog.className = wide ? 'wide' : '';
     dialog.dataset.screen = id;
     dialog.innerHTML =
-      '<small class="eyebrow">MUNDO PRISMA</small><div class="dialogTitle"><h2 id="panelTitle">' +
+      '<small class="eyebrow">' + (id === 'new' ? '✦ CRIAR MUNDO ✦' : '✦ MUNDO PRISMA ✦') + '</small><div class="dialogTitle"><h2 id="panelTitle">' +
       title +
       '</h2>' +
       (closable
@@ -188,6 +193,9 @@
   $('#worlds').onclick = () => showWorlds();
   $('#options').onclick = () => options('home');
   $('#guide').onclick = () => guide('home');
+  $('#navGuide').onclick = () => guide('home');
+  $('#navWorlds').onclick = () => showWorlds();
+  $('#navOptions').onclick = () => options('home');
   $('#pause').onclick = () => pauseMenu();
   $('#build').onclick = () => buildMenu();
   function newWorld(back) {
@@ -196,10 +204,42 @@
     panel(
       'new',
       'Novo mundo',
-      '<form id="newForm"><label class="field">Nome do mundo<input id="worldName" maxlength="48" required value="Meu mundo" autocomplete="off"></label><label class="field">Semente <small>Use a mesma semente para reencontrar a paisagem.</small><input id="worldSeed" maxlength="80" placeholder="Aleatória" autocomplete="off"></label><strong>Modo de jogo</strong><div class="modegrid"><button type="button" data-mode="survival" class="on" aria-pressed="true"><b>Sobrevivência</b><small>Colete e fabrique.</small></button><button type="button" data-mode="creative" aria-pressed="false"><b>Criativo</b><small>Construa e voe livremente.</small></button></div><label class="field" id="difficultyField">Ritmo da partida<select id="difficulty"><option value="normal">Normal · ciclo de 24 minutos</option><option value="short">Ciclo rápido · 4 minutos</option><option value="peaceful">Pacífico · sem criaturas hostis</option></select></label><button type="submit" class="primary fullwidth">' +
-        icon('play') +
-        'Criar e jogar</button></form>',
+      '<form id="newForm">' +
+        '<p class="new-lede">Configure seu mundo, escolha como jogar e comece sua própria aventura no Prisma.</p>' +
+        '<div class="world-fields">' +
+          '<label class="field"><span class="field-heading"><span class="field-badge" aria-hidden="true">▣</span> Nome do mundo</span>' +
+            '<input id="worldName" maxlength="48" required value="Meu mundo" autocomplete="off" placeholder="Nome do seu mundo"></label>' +
+          '<div class="field"><label class="field-heading" for="worldSeed"><span class="field-badge" aria-hidden="true">✦</span> Semente</label>' +
+            '<small>Use a mesma semente para reencontrar a paisagem.</small>' +
+            '<div class="seed-input"><input id="worldSeed" maxlength="80" placeholder="Aleatória" autocomplete="off">' +
+              '<button type="button" id="randomSeed" title="Gerar semente aleatória" aria-label="Gerar semente aleatória">⚄</button></div></div>' +
+        '</div>' +
+        '<div class="mode-heading"><span aria-hidden="true">✥</span> Modo de jogo</div>' +
+        '<div class="modegrid" role="group" aria-label="Modo de jogo">' +
+          '<button type="button" data-mode="survival" class="on" aria-pressed="true">' +
+            '<span class="mode-symbol" aria-hidden="true">⛏</span><span class="mode-info"><b>Sobrevivência</b>' +
+            '<small>Colete recursos, fabrique itens, construa e sobreviva aos desafios.</small></span>' +
+            '<span class="mode-check" aria-hidden="true">✓</span></button>' +
+          '<button type="button" data-mode="creative" aria-pressed="false">' +
+            '<span class="mode-symbol creative-symbol" aria-hidden="true">▧</span><span class="mode-info"><b>Criativo</b>' +
+            '<small>Construa livremente, sem limite de blocos, e voe para explorar.</small></span>' +
+            '<span class="mode-check" aria-hidden="true">✓</span></button>' +
+        '</div>' +
+        '<label class="field rhythm-field" id="difficultyField"><span class="field-heading"><span class="field-badge" aria-hidden="true">◷</span> Ritmo da partida</span>' +
+          '<select id="difficulty"><option value="normal">Normal · ciclo de 24 minutos</option>' +
+          '<option value="short">Ciclo rápido · 4 minutos</option>' +
+          '<option value="peaceful">Pacífico · sem criaturas hostis</option></select></label>' +
+        '<details class="new-help"><summary><span>⚙</span><span><b>Informações do mundo</b>' +
+          '<small>Como funcionam sementes, modos e construções.</small></span><span class="new-chevron">⌄</span></summary>' +
+          '<p>Cada semente gera um mapa reproduzível. No modo Criativo você pode erguer casas bloco a bloco, sem modelos obrigatórios. A qualidade gráfica e os controles ficam em <b>Opções</b> no menu principal.</p></details>' +
+        '<button type="submit" class="primary fullwidth create-play">' + icon('play') + 'Criar e jogar</button>' +
+      '</form>',
+      true,
     );
+    $('#randomSeed').onclick = () => {
+      $('#worldSeed').value = 'PR-' + Math.random().toString(36).slice(2, 9).toUpperCase();
+      $('#worldSeed').focus();
+    };
     $('#newForm').onsubmit = async (e) => {
       e.preventDefault();
       if (loading) return;
@@ -611,6 +651,37 @@
       '</button>'
     );
   }
+
+  const bagTabs = [
+    ['all', 'Todos', '▦'],
+    ['build', 'Blocos', '▣'],
+    ['tools', 'Ferramentas', '⛏'],
+    ['utility', 'Utilidades', '⚒'],
+    ['decor', 'Decoração', '▤'],
+    ['survival', 'Sobrevivência', '✦'],
+  ];
+  function recipeCategory(id) {
+    if ([22, 42, 43, 44, 45, 47, 89, 90].includes(id)) return 'tools';
+    if ([12, 13, 14, 15, 24, 25, 30, 31, 67].includes(id)) return 'utility';
+    if ([38, 41, 46].includes(id)) return 'survival';
+    if ([77, 78, 79, 83, 84, 85, 87, 88].includes(id)) return 'decor';
+    return 'build';
+  }
+  function blockCategory(id) {
+    return recipeCategory(id);
+  }
+  function matchesBagTab(id, tab) {
+    return tab === 'all' || recipeCategory(id) === tab;
+  }
+  function bagTabsMarkup(active = bagRecipeTab) {
+    return '<div class="recipe-tabs" role="tablist" aria-label="Categorias de receitas">' +
+      bagTabs.map(([id, label, glyph]) =>
+        '<button class="recipe-tab' + (active === id ? ' on' : '') + '" data-act="crafttab:' + id + '" role="tab" aria-selected="' + (active === id) + '" title="' + esc(label) + '">' +
+        '<span class="recipe-tab-glyph" aria-hidden="true">' + glyph + '</span>' +
+        '<span class="recipe-tab-label">' + esc(label) + '</span></button>'
+      ).join('') + '</div>';
+  }
+
   function buildMenu(category = buildCategory) {
     if (!g) return;
     buildCategory = Math.max(0, Math.min(Voxel.buildCategories.length - 1, Number(category) || 0));
@@ -674,77 +745,107 @@
   }
   function inventory(reset = true, station = null) {
     if (reset) bagSel = null;
+    if (station !== null) bagStation = station;
+    const activeStation = station !== null ? station : bagStation;
     const sel = bagSel?.type === 'inv' ? bagSel.i : -1;
     const inv = g.inv;
-    let grid = (start, end) =>
-      '<div class="slots">' +
+    const grid = (start, end, hot = false) =>
+      '<div class="slots' + (hot ? ' hotbar-row' : ' inventory-row') + '">' +
       inv
         .slice(start, end)
-        .map((t, n) => slotButton(t, n + start, 'inv', sel === n + start, n + start < 9))
+        .map((t, n) => slotButton(t, n + start, 'inv', sel === n + start, hot && n + start < 9))
         .join('') +
       '</div>';
+    const selectedRecipe = Voxel.recipes.find((r) => matchesBagTab(r[0], bagRecipeTab));
+    const quickPreview = selectedRecipe
+      ? '<div class="quickcraft-preview">' + img(selectedRecipe[0]) + '<b>' + esc(name(selectedRecipe[0])) + '</b><small>×' + selectedRecipe[1] + '</small></div>'
+      : '<div class="quickcraft-preview empty"><small>Selecione uma categoria para ver receitas.</small></div>';
     let right;
     if (g.creative) {
+      const catalog = Voxel.blocks
+        .filter((t) => t.id > 0 && t.placeable && Voxel.itemId(t.id) === t.id && ![28, 29, 39].includes(t.id))
+        .filter((b) => bagRecipeTab === 'all' || blockCategory(b.id) === bagRecipeTab)
+        .map((b) =>
+          '<button class="slot catalog-slot" data-act="catalog:' +
+          b.id +
+          '" title="' +
+          esc(b.name) +
+          '" aria-label="' +
+          esc(b.name) +
+          '">' +
+          img(b.id) +
+          '</button>'
+        )
+        .join('');
       right =
-        '<div class="sectionhead">Blocos para construir livremente</div>' + btn('buildmenu', '▦ Todos os materiais', 'secondary') + '<div class="catalog">' +
-        Voxel.blocks
-          .filter((t) => t.id > 0 && t.placeable && Voxel.itemId(t.id) === t.id && ![28, 29, 39].includes(t.id))
-          .map(
-            (b) =>
-              '<button class="slot" data-act="catalog:' +
-              b.id +
-              '" title="' +
-              b.name +
-              '" aria-label="' +
-              b.name +
-              '">' +
-              img(b.id) +
-              '</button>',
-          )
-          .join('') +
-        '</div><p class="smallnote">Escolha um material para o espaço ativo da barra.</p>';
+        '<div class="bag-panel bag-side-panel">' +
+          '<div class="sectionhead bag-side-title">Catálogo Prisma</div>' +
+          '<p class="smallnote bag-copy">Escolha um material para colocar diretamente no espaço ativo da barra rápida.</p>' +
+          bagTabsMarkup() +
+          '<div class="catalog bag-catalog">' + catalog + '</div>' +
+        '</div>';
     } else {
+      const recipeCards = Voxel.recipes
+        .map((r, i) => [r, i])
+        .filter(([r]) => matchesBagTab(r[0], bagRecipeTab))
+        .map(([r, i]) => {
+          const ava = g.canCraft(r);
+          const needsStation = r[3] && !g.nearStation(r[3]);
+          const stationText = needsStation ? ' · Requer ' + name(r[3]) : '';
+          const sealText = g.sealCount < (r[4] || 0) ? ' · Requer ' + r[4] + ' selo(s)' : '';
+          return (
+            '<button class="recipe" data-act="craft:' +
+            i +
+            '" ' +
+            (ava ? '' : 'disabled') +
+            '>' +
+            '<span class="recipe-icon">' + img(r[0]) + '</span>' +
+            '<span><b>' + esc(name(r[0])) + ' ×' + r[1] + '</b><small>' +
+            r[2].map(([b, n]) => n + ' ' + esc(name(b)).toLowerCase()).join(' + ') +
+            stationText + sealText +
+            '</small></span><strong>+</strong></button>'
+          );
+        })
+        .join('');
       right =
-        '<div class="sectionhead">Receitas</div>' + btn('buildmenu', '▦ Construção livre', 'secondary') + '<div class="recipes">' +
-        Voxel.recipes
-          .map((r, i) => {
-            const ava = g.canCraft(r);
-            const station = r[3] && !g.nearStation(r[3]) ? ' · Requer ' + name(r[3]) : '';
-            return (
-              '<button class="recipe" data-act="craft:' +
-              i +
-              '" ' +
-              (ava ? '' : 'disabled') +
-              '>' +
-              img(r[0]) +
-              '<span><b>' +
-              name(r[0]) +
-              ' ×' +
-              r[1] +
-              '</b><small>' +
-              r[2].map(([b, n]) => n + ' ' + name(b).toLowerCase()).join(' + ') +
-              station +
-              (g.sealCount < (r[4] || 0) ? ' · Requer ' + r[4] + ' selo(s)' : '') +
-              '</small></span><strong>+</strong></button>'
-            );
-          })
-          .join('') +
+        '<div class="bag-panel bag-side-panel">' +
+          '<div class="quickcraft-box">' +
+            '<div class="sectionhead bag-side-title">Criação rápida</div>' +
+            '<div class="quickcraft-shell">' +
+              '<div class="mini-craft-grid" aria-hidden="true"><i></i><i></i><i></i><i></i></div>' +
+              '<span class="quickcraft-arrow">→</span>' +
+              '<div class="mini-craft-output">' + quickPreview + '</div>' +
+            '</div>' +
+            '<p class="smallnote bag-copy">Receitas conhecidas aparecem à direita. Toque em <b>+</b> para fabricar imediatamente quando tiver materiais e estiver perto da estação correta.</p>' +
+          '</div>' +
+          '<div class="recipe-book-head">' +
+            '<div class="sectionhead bag-side-title">Livro de receitas</div>' +
+            '<div class="recipe-book-actions">' + btn('buildmenu', '▦ Construção livre', 'secondary') + '</div>' +
+          '</div>' +
+          bagTabsMarkup() +
+          '<div class="recipes bag-recipes">' + recipeCards + '</div>' +
         '</div>';
     }
     panel(
       'bag',
-      station ? name(station) : 'Mochila',
-      '<div class="invgrid"><div><div class="sectionhead">Barra rápida</div>' +
-        grid(0, 9) +
-        '<div class="sectionhead">Mochila</div>' +
-        grid(9, 36) +
-        '<p class="smallnote">' +
-        (bagSel
-          ? 'Selecione o destino de ' + esc(name(inv[bagSel.i]?.b)) + '.'
-          : 'Clique no item e no destino para mover. Clique direito divide a pilha em um espaço vazio.') +
-        '</p></div><div>' +
+      activeStation ? name(activeStation) : 'Mochila',
+      '<div class="bag-hero"></div>' +
+      '<div class="invgrid prisma-bag-layout">' +
+        '<div class="bag-panel bag-main-panel">' +
+          '<div class="sectionhead bag-main-title">Barra rápida</div>' +
+          grid(0, 9, true) +
+          '<div class="inventory-headline"><div class="sectionhead bag-main-title">Inventário</div><small>3 × 9 (27 espaços)</small></div>' +
+          grid(9, 45, false) +
+          '<div class="bag-help-strip">' +
+            '<span>◉ Clique em um item e depois no destino para mover.</span>' +
+            '<span>◉ Clique direito em um espaço vazio para dividir a pilha.</span>' +
+          '</div>' +
+          (bagSel
+            ? '<p class="smallnote bag-copy">Item selecionado: <b>' + esc(name(inv[bagSel.i]?.b)) + '</b>. Escolha para onde mover.</p>'
+            : '<p class="smallnote bag-copy">Visual inspirado no inventário clássico de sandbox, com o estilo dourado e prisma do jogo.</p>') +
+        '</div>' +
         right +
-        '</div></div>',
+      '</div>',
       true,
     );
     bindSlots();
@@ -949,7 +1050,7 @@
     $('#debug').hidden = !debug;
     if (debug)
       $('#debug').textContent =
-        'PRISMA 0.8.0 · ' +
+        'PRISMA 0.9.1 · ' +
         renderer.type +
         '\n' +
         Math.round(fps) +
@@ -1030,7 +1131,11 @@
         transfer(a, +i, e.shiftKey);
         break;
       case 'craft':
-        if (g.craft(+i)) inventory(true);
+        if (g.craft(+i)) inventory(true, bagStation);
+        break;
+      case 'crafttab':
+        bagRecipeTab = i;
+        inventory(false, bagStation);
         break;
       case 'buildmenu':
         buildMenu();

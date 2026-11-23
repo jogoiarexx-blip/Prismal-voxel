@@ -1,3 +1,15 @@
+# Mundo Prisma v0.9.1 — Menus Premium
+
+Interface inicial e criação de mundos redesenhadas para combinar com a identidade voxel-fantasia dos conceitos aprovados: dourado, pedra escura, bordas ornamentadas, navegação superior funcional, cartões de modo e campos mais legíveis.
+
+**Sem mudança de mecânicas:** construção livre, salvamento e controles da versão 0.9.0 foram preservados. O menu "Informações do mundo" é explicativo; não inventa opções não suportadas. O botão ao lado da semente gera um código aleatório. A navegação superior abre as telas existentes do jogo.
+
+**Otimização:** o visual usa a arte WebP já incluída e efeitos CSS; nenhuma biblioteca externa, fonte adicional ou imagem pesada foi acrescentada. O CSS inclui redução de efeitos em telas pequenas e respeita a preferência por movimento reduzido.
+
+**Instalação:** extraia os arquivos na raiz de um servidor estático ou repositório GitHub Pages, mantendo `index.html` ao lado de `style.css`, `art/`, `js/` e `offline.js`. Faça recarregamento completo para obter a versão nova do cache offline.
+
+---
+
 # Mundo Prisma 0.9.0
 
 Explore seis biomas, descubra as ruínas e construa o Farol Prisma. Nos mundos novos, as Dunas de Vidro têm obeliscos com cristal no topo.

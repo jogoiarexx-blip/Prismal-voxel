@@ -1,6 +1,6 @@
 'use strict';
 const PREFIX = 'prisma-pages:' + self.registration.scope + ':';
-const CACHE = PREFIX + '0.9.0',
+const CACHE = PREFIX + '0.9.1',
   FILES = [
     './',
     './index.html',
