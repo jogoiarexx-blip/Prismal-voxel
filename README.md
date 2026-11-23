@@ -1,3 +1,11 @@
+# Mundo Prisma — documentação de desenvolvimento
+
+📘 **[GDD original v1.0](docs/GDD_MUNDO_PRISMA_VOXEL_SHADERS_v1.0.md)** (22 seções, 19/11/2026) · **[Auditoria GDD × jogo v0.9.21](docs/STATUS_GDD_VS_JOGO_v0.9.21.md)**
+
+**Novidade v0.9.21:** painel F3 com FPS médio, 1% low e p95, relatório de desempenho copiável em Pausa e teste de geração determinística por seed. A prioridade para a v1.0 continua sendo preservar mundos e validar o desempenho em dispositivos reais. O P2P permanece experimental.
+
+---
+
 # Mundo Prisma v0.9.20 — recuperação e desempenho — Recuperação P2P e inventários duráveis — Proteção de progresso e cooperação
 
 **Estabilização:** a gravação do mundo agora faz novas tentativas com espera crescente (5 a 120 segundos) caso a gravação local falhe. Mudanças feitas durante uma gravação continuam pendentes e são salvas novamente. Partidas solo criam um checkpoint a cada 45 segundos; o anfitrião de P2P, a cada 30 segundos. Há um botão “Salvar progresso agora” no menu de pausa, com o status da gravação. As transferências de baú são serializadas por mundo, evitando conflitos entre operações simultâneas; o convidado recebe uma resposta explícita se o baú estiver ocupado. O inventário e os mundos existentes permanecem compatíveis.

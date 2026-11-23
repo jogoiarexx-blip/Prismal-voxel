@@ -40,6 +40,7 @@
     lastFrame = 0,
     acc = 0,
     fps = 60,
+    perfFrames = new PrismaPerf.FrameHistory(),
     toastTimer = 0,
     loading = false,
     edition = 'survival',
@@ -999,6 +1000,7 @@
     }
   }
   async function launch(rec, fresh, temporary = false) {
+    perfFrames.reset();
     if (loading) return;
     loading = true;
     Sound.start();
@@ -1160,6 +1162,41 @@
       '<p class="smallnote">Atalhos: <kbd>H</kbd> abrir navegador · <kbd>N</kbd> alternar Casa/Objetivo. Toque na barra da bússola no celular.</p>'+
       btn('resume','Voltar ao jogo','primary'),true);
   }
+  function diagnosticText() {
+    if (!g) return 'Nenhuma partida aberta';
+    const perf = perfFrames.snapshot();
+    const qualityNames = ['Baixa','Média','Alta'];
+    return [
+      'MUNDO PRISMA · DIAGNÓSTICO LOCAL v0.9.21',
+      'Gerado: ' + new Date().toISOString(),
+      'Motor: ' + renderer.type + ' · qualidade: ' + (qualityNames[settings.quality] || settings.quality),
+      'FPS médio: ' + perf.averageFPS + ' · FPS 1% low: ' + perf.low1FPS,
+      'Quadro médio: ' + perf.avgMs + ' ms · p95: ' + perf.p95Ms + ' ms · amostras: ' + perf.samples,
+      'Resolução dinâmica: ' + Math.round((renderer.dynamicScale || 1) * 100) + '%',
+      'Draw calls: ' + renderer.calls + ' · triângulos: ' + renderer.tris,
+      'Chunks: ' + g.chunks.size + ' · jobs pendentes: ' + g.pending.size + ' · worker ocupado: ' + !!g.busy,
+      'XYZ: ' + [g.p.x,g.p.y,g.p.z].map(v=>Math.floor(v)).join(', ') + ' · chunk: ' + g.cx + ',' + g.cz,
+      'Bioma: ' + ($('#biome').textContent || '-') + ' · seed: ' + g.meta.seed,
+      'Estado do salvamento: ' + g.saveState,
+      'P2P: ' + (mpRole || 'solo') + ' · conexão: ' + (mp?.connected ? 'ativa' : 'inativa'),
+      'Este relatório foi criado localmente. Nenhum dado é enviado pelo jogo.',
+    ].join('\n');
+  }
+  function copyDiagnostic() {
+    const report = diagnosticText();
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(report)
+        .then(() => toast('Diagnóstico copiado. Você pode colá-lo ao relatar um problema.'))
+        .catch(() => showDiagnosticReport(report));
+    } else showDiagnosticReport(report);
+  }
+  function showDiagnosticReport(report) {
+    panel('diagnostic', 'Diagnóstico técnico',
+      '<p class="smallnote">Selecione o texto e copie para relatar um problema.</p>' +
+      '<textarea id="diagText" rows="13" readonly class="diag-text">' + esc(report) + '</textarea>' +
+      btn('back', 'Voltar', 'secondary'),true);
+    const area = $('#diagText'); area?.focus(); area?.select();
+  }
   function pauseMenu() {
     if (!g) return;
     panel(
@@ -1181,6 +1218,7 @@
         btn('guidegame', icon('book') + 'Guia de campo') +
         btn('housemenu', '◇ Navegar: casa e objetivos') +
         btn('save-now', '◉ Salvar progresso agora', 'secondary') +
+        btn('diagnostic-copy', '▤ Copiar diagnóstico de desempenho', 'secondary') +
         '<p class="smallnote">Salvamento: '+esc(g.saveState)+'</p>'+
         (mpRole==='guest' && mpGuestProfile?.recoveryBackup ?
           btn('mp-backup-inv','↓ Exportar itens pendentes da reconexão','secondary') : '')+
@@ -1357,7 +1395,7 @@
         '</ul><p>O primeiro selo libera a pedra rúnica. Com os três, use a bancada para combinar cristal, cobre e vidro em um Farol Prisma. Coloque-o para acender uma aurora sobre sua base.</p></div>';
     } else
       body =
-        '<p>Mundo Prisma é um sandbox voxel de exploração, sobrevivência e construção. Explore os Campos de Âmbar, a Floresta de Névoa e as Dunas de Vidro. Nas dunas, procure os obeliscos com cristais no topo.</p><p class="muted">Versão jogável 0.9.20 · Solo e multiplayer experimental<br>Arte, sprites, tipografia de título e efeitos sonoros criados para Mundo Prisma. Seu progresso é salvo neste navegador.</p>';
+        '<p>Mundo Prisma é um sandbox voxel de exploração, sobrevivência e construção. Explore os Campos de Âmbar, a Floresta de Névoa e as Dunas de Vidro. Nas dunas, procure os obeliscos com cristais no topo.</p><p class="muted">Versão jogável 0.9.21 · Solo e multiplayer experimental<br>Arte, sprites, tipografia de título e efeitos sonoros criados para Mundo Prisma. Seu progresso é salvo neste navegador.</p>';
     panel(
       'guide',
       'Guia de campo',
@@ -1921,11 +1959,11 @@
     $('#debug').hidden = !debug;
     if (debug)
       $('#debug').textContent =
-        'PRISMA 0.9.20 · ' +
+        'PRISMA 0.9.21 · ' +
         renderer.type +
         '\n' +
-        Math.round(fps) +
-        ' FPS · ' +
+        perfFrames.snapshot().averageFPS +
+        ' FPS médio · 1% low ' + perfFrames.snapshot().low1FPS + ' · p95 ' + perfFrames.snapshot().p95Ms + ' ms\n' +
         renderer.calls +
         ' chamadas · ' +
         renderer.tris +
@@ -2042,6 +2080,9 @@
         break;
       case 'mp-backup-inv':
         exportGuestRecovery();
+        break;
+      case 'diagnostic-copy':
+        copyDiagnostic();
         break;
       case 'save-now':
         if(g)g.save().then(ok=>{
@@ -2549,9 +2590,11 @@
   });
   function frame(now) {
     requestAnimationFrame(frame);
-    let dt = Math.min(0.1, (now - (lastFrame || now)) / 1000);
+    const frameSeconds = (now - (lastFrame || now)) / 1000;
+    const dt = Math.min(0.1, frameSeconds);
     lastFrame = now;
     if (!g || !g.ready || g.paused) return;
+    if (!document.hidden) perfFrames.push(frameSeconds);
     // Sync local journal is a best-effort safety net for abrupt tab closures.
     // Normal IndexedDB autosaves remain the authoritative persistent record.
     if(!g.temporary && mpRole!=='guest' && now-lastEmergencyAt>15000) {
