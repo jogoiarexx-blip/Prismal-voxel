@@ -129,6 +129,7 @@ const Game = (() => {
       this.alive = true;
       this.saveChain = Promise.resolve();
       this.dirtySave = false;
+      this.changeVersion = 0;
       this.creative = this.meta.mode === 'creative';
       this.resetMining();
       this.lastBlueprint = null;
@@ -1367,20 +1368,30 @@ const Game = (() => {
       }
       if (this.bed) {
         const [x, y, z] = this.bed;
-        const blockAt = (yy) =>
-          this.edits[key(x >> 4, z >> 4)]?.[idx(x & 15, yy, z & 15)] ??
-          Voxel.generate(x >> 4, z >> 4, this.seed, this.sites, this.generator).a[
-            idx(x & 15, yy, z & 15)
-          ];
-        const lower=blockAt(y), offset=Voxel.bedFoot(lower)?Voxel.bedOffset(lower):null;
-        const paired=!offset || this.bedPair(x,y,z,lower)?.valid ||
-          // On respawn the bed can be in an unloaded chunk; use saved edits.
-          (()=>{const hx=x+offset[0],hz=z+offset[2], hk=key(hx>>4,hz>>4);
-            return this.edits[hk]?.[idx(hx&15,y,hz&15)]===lower+4;})();
-        if ((lower === 46 || Voxel.bedFoot(lower)) && paired && !blockAt(y + 1) && !blockAt(y + 2)) {
+        const nearbyTerrain = new Map();
+        // World chunks can be unloaded while the player is away from home.
+        // Read saved edits first and regenerate each needed chunk only once.
+        const blockAt = (bx, by, bz) => {
+          if (by <= 0 || by >= Voxel.H) return 3;
+          const cx = bx >> 4, cz = bz >> 4, k = key(cx, cz), i = idx(bx & 15, by, bz & 15);
+          const edited = this.edits[k]?.[i];
+          if (edited !== undefined) return edited;
+          const loaded = this.chunks.get(k)?.a;
+          if (loaded) return loaded[i];
+          if (!nearbyTerrain.has(k)) nearbyTerrain.set(k,
+            Voxel.generate(cx, cz, this.seed, this.sites, this.generator).a);
+          return nearbyTerrain.get(k)[i];
+        };
+        const lower = blockAt(x, y, z);
+        const offset = Voxel.bedFoot(lower) ? Voxel.bedOffset(lower) : null;
+        const paired = !offset || blockAt(x + offset[0], y, z + offset[2]) === lower + 4;
+        if ((lower === 46 || Voxel.bedFoot(lower)) && paired &&
+            !blockAt(x, y + 1, z) && !blockAt(x, y + 2, z)) {
           p.x = x + 0.5;
           p.y = y + 1.01;
           p.z = z + 0.5;
+        } else {
+          this.notify('Cama obstruída ou incompleta: retorno ao ponto inicial.');
         }
       }
       p.life = p.food = p.air = 100;
@@ -1393,6 +1404,7 @@ const Game = (() => {
       this.save();
     }
     changed() {
+      this.changeVersion++;
       this.dirtySave = true;
       this.signal('hud');
       clearTimeout(this.debounce);
@@ -1430,6 +1442,7 @@ const Game = (() => {
       if (this.temporary) { clearTimeout(this.debounce); this.dirtySave=false; return Promise.resolve(true); }
       clearTimeout(this.debounce);
       const data = this.snapshot();
+      const savedVersion = this.changeVersion;
       this.saveState = 'Salvando';
       this.saveChain = this.saveChain
         .catch(() => {})
@@ -1437,7 +1450,7 @@ const Game = (() => {
         .then(
           () => {
             this.saveState = 'Em dia';
-            this.dirtySave = false;
+            this.dirtySave = this.changeVersion !== savedVersion;
             return true;
           },
           () => {

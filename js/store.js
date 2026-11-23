@@ -32,7 +32,10 @@ const Saves = (() => {
       if (method === 'get') return JSON.parse(localStorage.getItem(prefix + 'world:' + arg) || 'null');
       return Object.keys(localStorage)
         .filter((k) => k.startsWith(prefix + 'world:'))
-        .map((k) => JSON.parse(localStorage.getItem(k)));
+        .flatMap((k) => {
+          try { const rec = JSON.parse(localStorage.getItem(k)); return rec && typeof rec === 'object' ? [rec] : []; }
+          catch { return []; } // One damaged local backup must not hide all other worlds.
+        });
     }
     return new Promise((yes, no) => {
       const tx = db.transaction('worlds', method === 'put' ? 'readwrite' : 'readonly'),
@@ -43,7 +46,8 @@ const Saves = (() => {
     });
   }
   async function list() {
-    return (await perform('getAll')).sort((a, b) => b.saved - a.saved);
+    return (await perform('getAll')).filter((w) => w && typeof w === 'object')
+      .sort((a, b) => (b.saved || 0) - (a.saved || 0));
   }
   const defaults = {
     quality: 1,

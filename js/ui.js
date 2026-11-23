@@ -243,7 +243,7 @@
       '<label class="field">Nome do mundo<input id="mpWorldName" value="Aventura em dupla" maxlength="48"></label>'+
       '<label class="field">Modo<select id="mpWorldMode"><option value="survival">Sobrevivência</option><option value="creative">Criativo (blocos ilimitados)</option></select></label></div>'+
       '<button class="primary fullwidth" id="mpMakeInvite">Gerar convite P2P</button>'+
-      '<p class="smallnote">Compartilhe o convite apenas com alguém de confiança: ele poderá alterar seus blocos. Faça um backup de mundos importantes.</p>',true);
+      '<p class="smallnote">Compartilhe o convite apenas com alguém de confiança. Antes de abrir um mundo importante, use Meus mundos → Backup. O Criativo é recomendado para construir em dupla.</p>',true);
     const sel=$('#mpWorldSelect'), fresh=$('#mpNewWorldFields');
     sel.onchange=()=>{fresh.hidden=sel.value!=='__new__';};
     $('#mpMakeInvite').onclick=async()=>{
@@ -372,8 +372,13 @@
   async function sendHostWorld() {
     if(!g||!mp?.connected||mpStartSent)return;
     mpStartSent=true;
-    try { await mp.send({t:'world',rec:g.snapshot()}); }
-    catch(e){toast('Mundo grande demais para sincronizar nesta versão P2P.');console.error(e);}
+    try {
+      const ok = await mp.send({t:'world',rec:g.snapshot()});
+      if (!ok) throw Error('Canal de dados encerrado antes da transmissão do mundo.');
+    } catch(e) {
+      mpStartSent=false;
+      toast('Falha ao enviar o mundo ao amigo. Reconecte a sala.');console.error(e);
+    }
   }
   function multiplayerChat() {
     if(!mp?.connected)return toast('Conecte-se primeiro a uma sala.');
@@ -464,17 +469,76 @@
                   ' · ' +
                   new Date(w.saved).toLocaleDateString('pt-BR') +
                   '</small></div>' +
-                  btn('load:' + esc(w.id), 'Abrir') +
-                  '</div>',
+                  '<div class="world-actions">' + btn('load:' + esc(w.id), 'Abrir') +
+                  btn('exportworld:' + esc(w.id), '↓ Backup', 'secondary') + '</div>' +
+                  '</div>', 
               )
               .join('') +
             '</div><div class="btns">' +
             btn('newworld', icon('plus') + 'Novo mundo', 'primary') +
+            btn('importworld', '↑ Importar mundo salvo', 'secondary') +
             '</div>'
         : '<p>Seu primeiro mundo começa aqui. Escolha um nome e um modo para explorar.</p><div class="btns">' +
             btn('newworld', icon('plus') + 'Novo mundo', 'primary') +
+            btn('importworld', '↑ Importar mundo salvo', 'secondary') +
             '</div>',
     );
+    dialog.insertAdjacentHTML('beforeend', '<input id="worldImportFile" type="file" accept=".json,.prisma,application/json" hidden>');
+    // The file picker is outside gameplay; a selected file never alters an existing save.
+    $('#worldImportFile').onchange = async (e) => {
+      const file=e.target.files?.[0]; if (!file) return;
+      await importWorld(file);
+    };
+  }
+  async function exportWorld(id) {
+    try {
+      const rec = await Saves.get(id);
+      if (!rec) return toast('Mundo não encontrado para backup.');
+      const data = JSON.stringify({kind:'mundo-prisma-backup', version:1,
+        exported:new Date().toISOString(), world:rec});
+      const url=URL.createObjectURL(new Blob([data],{type:'application/json'}));
+      const link=document.createElement('a');
+      link.href=url;
+      link.download=(String(rec.name || 'mundo').normalize('NFKD')
+        .replace(/[^a-zA-Z0-9_-]+/g,'-').slice(0,44) || 'mundo') + '-backup.prisma.json';
+      document.body.append(link);
+      link.click(); link.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),2000);
+      toast('Backup de ' + String(rec.name).slice(0,32) + ' preparado.');
+    } catch(e) {console.error(e); toast('Falha ao exportar mundo.');}
+  }
+  function validateBackup(rec) {
+    if (!rec || rec.schema !== 1 || ![1,2,3].includes(rec.generator) ||
+        typeof rec.seed !== 'string' || rec.seed.length > 150 ||
+        typeof rec.name !== 'string' || !rec.name.trim() ||
+        !['survival','creative'].includes(rec.mode) ||
+        !rec.p || ![rec.p.x,rec.p.y,rec.p.z,rec.p.yaw,rec.p.pitch].every(Number.isFinite) ||
+        Math.max(Math.abs(rec.p.x),Math.abs(rec.p.z)) > 100000 ||
+        rec.p.y < 0 || rec.p.y >= Voxel.H ||
+        !Array.isArray(rec.inv) || rec.inv.length !== 36 ||
+        rec.inv.some(t=>t && (!Number.isSafeInteger(t.b) || t.b < 0 || t.b >= Voxel.blocks.length ||
+          !Number.isSafeInteger(t.n) || t.n < 1 || t.n > 64)) ||
+        ![rec.p.life,rec.p.food,rec.p.air].every(v=>Number.isFinite(v)&&v>=0&&v<=100) ||
+        !Number.isSafeInteger(rec.selected) || rec.selected < 0 || rec.selected > 8 ||
+        !rec.edits || Array.isArray(rec.edits) || typeof rec.edits !== 'object' ||
+        Object.keys(rec.edits).length > 1500)
+      throw Error('Backup de mundo inválido ou incompatível.');
+    return true;
+  }
+  async function importWorld(file) {
+    if (file.size > 10*1024*1024) return toast('Backup acima de 10 MB: arquivo não importado.');
+    try {
+      const input=JSON.parse(await file.text());
+      const rec=input?.kind==='mundo-prisma-backup' && input.version===1 ? input.world : input;
+      validateBackup(rec);
+      const imported=structuredClone(rec);
+      imported.id=crypto.randomUUID?.() || 'mundo-importado-'+Date.now().toString(36);
+      imported.name=String(rec.name).slice(0,35)+' (importado)';
+      imported.saved=Date.now();
+      await Saves.put(imported);
+      await showWorlds();
+      toast('Backup importado em novo mundo, sem sobrescrever o original.');
+    } catch(e) { console.error(e); toast(e?.message?.startsWith('Backup')?e.message:'Não foi possível importar esse arquivo.'); }
   }
   async function loadWorld(id) {
     if (loading) return;
@@ -812,7 +876,7 @@
         '</ul><p>O primeiro selo libera a pedra rúnica. Com os três, use a bancada para combinar cristal, cobre e vidro em um Farol Prisma. Coloque-o para acender uma aurora sobre sua base.</p></div>';
     } else
       body =
-        '<p>Mundo Prisma é um sandbox voxel de exploração, sobrevivência e construção. Explore os Campos de Âmbar, a Floresta de Névoa e as Dunas de Vidro. Nas dunas, procure os obeliscos com cristais no topo.</p><p class="muted">Versão jogável 0.9.8 · Solo e multiplayer experimental<br>Arte, sprites, tipografia de título e efeitos sonoros criados para Mundo Prisma. Seu progresso é salvo neste navegador.</p>';
+        '<p>Mundo Prisma é um sandbox voxel de exploração, sobrevivência e construção. Explore os Campos de Âmbar, a Floresta de Névoa e as Dunas de Vidro. Nas dunas, procure os obeliscos com cristais no topo.</p><p class="muted">Versão jogável 0.9.9 · Solo e multiplayer experimental<br>Arte, sprites, tipografia de título e efeitos sonoros criados para Mundo Prisma. Seu progresso é salvo neste navegador.</p>';
     panel(
       'guide',
       'Guia de campo',
@@ -1298,7 +1362,7 @@
     $('#debug').hidden = !debug;
     if (debug)
       $('#debug').textContent =
-        'PRISMA 0.9.8 · ' +
+        'PRISMA 0.9.9 · ' +
         renderer.type +
         '\n' +
         Math.round(fps) +
@@ -1373,6 +1437,12 @@
         break;
       case 'load':
         loadWorld(i);
+        break;
+      case 'exportworld':
+        exportWorld(i);
+        break;
+      case 'importworld':
+        $('#worldImportFile')?.click();
         break;
       case 'newworld':
         newWorld('worlds');

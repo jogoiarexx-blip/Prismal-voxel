@@ -119,14 +119,14 @@ const PrismaNet = (() => {
     }
     function send(message) {
       queue=queue.catch(()=>{}).then(async()=>{
-        if(!ch || ch.readyState!=='open') return false;
+        if(!ch || ch.readyState!=='open') throw Error('Conexão P2P encerrada durante o envio.');
         const raw=JSON.stringify(message);
         if(raw.length>MAX_PAYLOAD) throw Error('Mundo muito grande para sincronizar nesta versão P2P.');
         if(raw.length<=11000) { ch.send(raw); return true; }
         const id=nextId++, n=Math.ceil(raw.length/11000);
         for(let i=0;i<n;i++) {
           while(ch.bufferedAmount>180000 && ch.readyState==='open') await wait(20);
-          if(ch.readyState!=='open') return false;
+          if(ch.readyState!=='open') throw Error('Conexão P2P interrompida.');
           ch.send(JSON.stringify({t:'part',id,i,n,d:raw.slice(i*11000,(i+1)*11000)}));
         }
         return true;

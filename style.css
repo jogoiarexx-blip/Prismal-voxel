@@ -2183,3 +2183,13 @@ body.touchgame .game-tools .build-trigger span { display:none; }
 @media(max-width:760px){#houseCompass{left:8px;top:140px;transform:none;min-height:28px;max-width:52vw;
  padding:5px 8px;font-size:10px;}}
 @media(max-height:430px) and (orientation:landscape){#houseCompass{top:77px;left:auto;right:8px;max-width:40vw;}}
+
+/* v0.9.9 — Safe world backups remain reachable on small mobile screens. */
+#dialog[data-screen='worlds'] .worldrow {flex-wrap:wrap;}
+#dialog[data-screen='worlds'] .world-actions {display:flex;flex-wrap:wrap;gap:7px;justify-content:flex-end;}
+#dialog[data-screen='worlds'] .world-actions button {min-height:38px;white-space:nowrap;}
+#dialog[data-screen='worlds'] .world-actions .secondary {border-color:#bd9257;color:#ffe0a5;}
+@media(max-width:550px) {
+  #dialog[data-screen='worlds'] .world-actions {width:100%;justify-content:stretch;}
+  #dialog[data-screen='worlds'] .world-actions button {flex:1 1 110px;}
+}

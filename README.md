@@ -1,4 +1,20 @@
-# Mundo Prisma v0.9.8 — Multiplayer experimental, cama dupla e localização
+# Mundo Prisma v0.9.9 — Auditoria, backups e estabilidade
+
+## Melhorias desta atualização
+
+- **Backup e importação:** em *Meus mundos*, exporte qualquer mundo para JSON e restaure o arquivo como um **novo** mundo, preservando o original. Arquivos incompatíveis são rejeitados e há limite de 10 MB para importação.
+- **Retorno à cama dupla:** validação das duas metades e do espaço de renascimento, mesmo quando o quarto está fora dos chunks carregados. Geração do terreno reutilizada em vez de recriar um chunk várias vezes ao morrer.
+- **Salvamento:** alterações feitas durante uma gravação pendente continuam marcadas como não salvas até que sejam gravadas; mundos locais corrompidos não escondem todos os demais no fallback sem IndexedDB.
+- **P2P experimental:** erro explícito quando a transmissão é interrompida e mensagem recomendando backup antes de abrir um mundo compartilhado.
+- **Otimização:** alterações inteiramente em JavaScript/HTML, sem texturas, bibliotecas ou modelos 3D adicionais.
+
+### Limitações conhecidas
+
+Multiplayer ainda é uma demonstração experimental de dois participantes por códigos WebRTC manuais. Inventários/animais não são autoritativamente sincronizados e pode ser necessário TURN em algumas redes. O anfitrião guarda o mundo. Desempenho real em celulares requer medição.
+
+---
+
+# Mundo Prisma v0.9.9 — Multiplayer experimental, cama dupla e localização
 
 ## Novidades desta edição
 
@@ -89,7 +105,7 @@ Use uma cama para definir o ponto de retorno. Na mochila, clique com o botão di
 
 ## Itens do GDD ainda em aberto
 
-Persistência entre dispositivos por exportação/importação, remapeamento de teclas, equipamentos de proteção, portas orientáveis, luz voxel propagada, reconstrução por seção e shaders Ultra seguem pendentes. As metas de desempenho em três classes de hardware e os testes longos de Alpha e Beta ainda precisam de medição. Multiplayer e automação pertencem à etapa posterior ao lançamento.
+Persistência entre dispositivos por exportação/importação, remapeamento de teclas, equipamentos de proteção, portas orientáveis, luz voxel propagada, reconstrução por seção e shaders Ultra seguem pendentes. As metas de desempenho em três classes de hardware e os testes longos de Alpha e Beta ainda precisam de medição. Automação pertence a uma etapa futura. O multiplayer experimental P2P está descrito acima.
 
 ## Atualização 0.5.0 — jogabilidade no celular
 
@@ -144,7 +160,7 @@ Sem novos modelos, texturas ou bibliotecas: mantém malha voxel compartilhada e 
 - Ao quebrar um bloco de suporte, tochas novas anexadas a ele se soltam.
 
 
-## Multiplayer P2P (experimental) — v0.9.8
+## Multiplayer P2P (experimental) — v0.9.9
 
 O botão **Multiplayer P2P** no menu inicial abre duas opções: **Criar sala** e **Entrar na sala**. O anfitrião escolhe um mundo existente ou cria um mundo novo e compartilha o convite copiado. O convidado cola o convite, gera uma resposta e a devolve. O anfitrião cola a resposta. Quando o canal WebRTC abre, o mundo é transferido, com sincronização de **posições dos dois jogadores, blocos construídos/destruídos e conversa**. Apenas o anfitrião salva a partida no navegador dele; o convidado joga sem salvar cópias no próprio navegador. As alterações remotas são incorporadas ao mundo do anfitrião.
 
@@ -163,7 +179,7 @@ O botão **Multiplayer P2P** no menu inicial abre duas opções: **Criar sala** 
 Nenhum GLB ou textura foi adicionado. O avatar remoto usa a geometria voxel existente e o mesmo buffer de entidades; atualizações de posição são limitadas a cerca de 9 por segundo. Edições são enviadas individualmente, com transferência da cena inicial fragmentada em mensagens pequenas. O modo offline não estabelece P2P sem rede.
 
 
-## v0.9.8 — Cama dupla e localização da casa
+## v0.9.9 — Cama dupla e localização da casa
 
 - A cama de campo **nova** ocupa dois blocos horizontais, orientados com a câmera e com a rotação de construção (tecla G), incluindo pés visíveis, estrado, cabeceira, travesseiro e coberta. A colocação exige chão, espaço livre e nenhuma criatura/jogador obstruindo os dois blocos. Colocar consome apenas **uma cama** da mochila.
 - Quebrar qualquer metade remove as duas e devolve um único item no modo Sobrevivência. Em Criativo, desfazer restaura os dois blocos.
