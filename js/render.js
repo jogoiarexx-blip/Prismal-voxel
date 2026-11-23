@@ -110,10 +110,19 @@ const View = (() => {
  if(m==73.){if(fract(uv.x*5.)<.05)col*=.7;pat*=.7;}
  if(m==67.){col=mix(col,vec3(1.,.82,.43),.36);pat*=.3;}
  if(m==77.){if(fract(w.y*3.)<.13)col*=.52;else if(rnd(floor(uv*7.))>.42)col=mix(col,vec3(.61,.42,.25),.5);}
+ // Character-only pixel patterns: no external creature textures, no texture memory.
+ if(m>=105.&&m<=114.){
+    float fleck=rnd(floor(uv*9.)+vec2(m*.13,m*.27));
+    pat=(fleck-.5)*.11;
+    if(m==105.||m==107.||m==109.)col*=fleck>.71?.82:1.06;
+    if(m==111.){pat*=.33;col+=vec3(.045,.23,.19)*(0.4+0.6*sin(time*2.2+uv.x*4.));}
+    if(m==110.){pat=0.;col*=1.26;}
+    if(m==114.){col*=rnd(floor(uv*5.))>.5?1.14:.91;}
+ }
 
  col+=pat;float shade=f==2.?1.05:(f==3.?.50:(f==0.||f==5.?.83:.68));vec3 lighting=mix(vec3(.28,.34,.55),vec3(1.03,1.00,.90),light)*shade*amb;
  float torch=0.;for(int i=0;i<8;i++){if(float(i)<numLamps)torch=max(torch,max(0.,1.-length(w-lamps[i])/7.));}
- lighting+=torch*vec3(.89,.61,.32);if(m==25.||m==13.||m==29.||m==30.||m==67.)lighting=max(lighting,vec3(1.06,.98,.76));
+ lighting+=torch*vec3(.89,.61,.32);if(m==25.||m==13.||m==29.||m==30.||m==67.||m==110.||m==111.)lighting=max(lighting,vec3(1.06,.98,.76));
  col*=lighting;
  float horizon=1.-clamp(abs(normalize(w-eye).y)*2.,0.,1.);
  col+=.018*horizon*vec3(.88,.72,.47)*light;
@@ -346,76 +355,104 @@ const View = (() => {
           ent[i + 2] = z + xx * Math.sin(yaw) + zz * Math.cos(yaw);
         }
       }
-      for (let mob of g.mobs) {
-        const x = mob.x,
-          y = mob.y,
-          z = mob.z,
-          a = Math.sin(g.elapsed * 7) * 0.08;
-        if (mob.kind && mob.kind !== 'Raspejante') {
-          const mat = {
-            Saltim: 4,
-            Musgato: 19,
-            Luzerrante: 29,
-            'Vigia de Cascalho': 3,
-            'Guardião Prisma': 31,
-          }[mob.kind];
-          const scale =
-            mob.kind === 'Guardião Prisma' ? 1.55 : mob.kind === 'Vigia de Cascalho' ? 1.15 : 0.72;
-          const lift =
-            mob.kind === 'Saltim'
-              ? Math.abs(Math.sin(g.elapsed * 3)) * 0.16
-              : mob.kind === 'Luzerrante'
-                ? 0.45
-                : 0;
-          box(
-            ent,
-            x - 0.38 * scale,
-            y + lift,
-            z - 0.3 * scale,
-            0.76 * scale,
-            0.64 * scale,
-            0.6 * scale,
-            mat,
-          );
-          box(
-            ent,
-            x - 0.25 * scale,
-            y + lift + 0.63 * scale,
-            z - 0.29 * scale,
-            0.5 * scale,
-            0.37 * scale,
-            0.5 * scale,
-            mat,
-          );
-          for (const sign of [-1, 1])
-            box(
-              ent,
-              x + sign * 0.17 * scale,
-              y + lift + 0.94 * scale,
-              z - 0.17 * scale,
-              0.1 * scale,
-              0.28 * scale,
-              0.14 * scale,
-              mob.kind === 'Guardião Prisma' ? 11 : mat,
-            );
-          continue;
+      // Each creature has its own lightweight voxel anatomy and patterned palette.
+      // No GLB models, image atlases or additional draw calls are necessary.
+      for (const mob of g.mobs) {
+        const x=mob.x, y=mob.y, z=mob.z;
+        const kind=mob.kind || 'Raspejante';
+        const t=g.elapsed;
+        const moving=Math.sin(t * (kind==='Saltim'?10:7) + x*.6 + z*.2);
+        const bob=kind==='Saltim' ? Math.abs(Math.sin(t*4.5+x))*0.18 :
+          kind==='Luzerrante' ? .3+Math.sin(t*2.8+x)*.09 : Math.abs(moving)*.028;
+        const s=kind==='Guardião Prisma' ? 1.06 : kind==='Vigia de Cascalho' ? 1.02 : kind==='Saltim' ? .72 : .82;
+        const start=ent.length;
+        // All coordinates are relative to the mob's feet/center and rotate together.
+        const piece=(px,py,pz,sx,sy,sz,material)=>box(ent, px*s,(py+bob)*s,pz*s,sx*s,sy*s,sz*s,material);
+        const eyes=(height,depth,material=110,spacing=.18,size=.09)=>{
+          for (const side of [-1,1]) piece(side*spacing-size/2,height,-depth,size,size,size*.6,material);
+        };
+        if(kind==='Saltim') {
+          piece(-.36,.29,-.34,.72,.50,.68,105); // amber round body
+          piece(-.29,.32,-.36,.58,.24,.13,106); // bright underside
+          piece(-.29,.75,-.29,.58,.28,.56,105);
+          for(const side of [-1,1]){
+            piece(side*.23-.10,.91,-.17,.20,.24,.15,105); // expressive ears
+            piece(side*.23-.13,.07,-.22,.23,.23,.23,113); // front paws
+            piece(side*.22-.13,.07,.17,.24,.22,.24,105);
+            piece(side*.22-.04,.77,-.34,.08,.05,.08,112); // eyes
+          }
+          piece(-.12,.79,-.38,.24,.08,.08,106); // muzzle
+          piece(-.08,.79,-.40,.16,.07,.06,109); // nose
+          piece(-.09,.44,.33,.18,.2,.19,106); // tail
+        } else if (kind==='Musgato') {
+          piece(-.39,.20,-.36,.78,.57,.72,107);
+          piece(-.34,.65,-.38,.68,.42,.44,107);
+          piece(-.3,.38,-.37,.6,.18,.10,106);
+          for (const side of [-1,1]) {
+            piece(side*.24-.12,.98,-.25,.24,.25,.21,108); // pointed ears
+            piece(side*.19-.09,.78,-.41,.18,.12,.07,111);
+            piece(side*.28-.14,.0,-.25,.25,.25,.24,108);
+            piece(side*.28-.14,.0,.21,.25,.25,.23,107);
+          }
+          piece(.33,.30,.22,.16,.13,.33,108); // curling tail
+          piece(.38,.38,.48,.12,.12,.18,107);
+          piece(-.1,.66,-.43,.20,.12,.06,106);
+        } else if (kind==='Luzerrante') {
+          piece(-.22,.45,-.21,.44,.48,.42,111);
+          piece(-.27,.93,-.27,.54,.34,.54,111);
+          piece(-.18,.48,-.25,.36,.16,.1,106);
+          for(const side of [-1,1]){
+            piece(side*.35-.09,.54,-.10,.18,.53,.26,111); // spectral wings
+            piece(side*.18-.10,1.17,-.04,.2,.22,.18,114);
+            piece(side*.15-.08,1.03,-.29,.16,.12,.08,110);
+          }
+          piece(-.11,1.37,-.10,.22,.21,.20,111); // crown crystal
+        } else if(kind==='Vigia de Cascalho') {
+          piece(-.39,.53,-.35,.78,.84,.70,109);
+          piece(-.34,1.36,-.31,.68,.47,.62,3);
+          piece(-.22,1.47,-.38,.44,.15,.11,112);
+          piece(-.12,.86,-.37,.24,.27,.1,113);
+          for(const side of [-1,1]){
+            piece(side*.51-.18,.51,-.22,.35,.83,.45,3); // arms
+            piece(side*.22-.16,.02,-.22,.32,.55,.43,109); // legs
+            piece(side*.20-.08,1.57,-.38,.15,.13,.11,110); // amber eyes
+            piece(side*.42-.1,1.2,-.15,.2,.28,.25,109);
+          }
+        } else if(kind==='Guardião Prisma') {
+          piece(-.34,.58,-.34,.68,.88,.68,109);
+          piece(-.26,1.49,-.26,.52,.42,.52,112);
+          piece(-.28,1.01,-.365,.56,.36,.08,111); // prism core
+          piece(-.16,1.12,-.42,.32,.18,.10,110);
+          for(const side of [-1,1]){
+            piece(side*.50-.20,.75,-.22,.4,.83,.45,109);
+            piece(side*.53-.13,.73,-.35,.26,.37,.12,113);
+            piece(side*.22-.14,.0,-.25,.28,.64,.42,109);
+            piece(side*.25-.10,1.87,-.17,.2,.43,.25,114); // horns
+            piece(side*.18-.08,1.64,-.30,.16,.12,.09,111);
+          }
+          piece(-.19,2.10,-.14,.38,.27,.28,114); // crystal crown
+        } else { // Raspejante: beetle-like hostile nocturnal crawler
+          piece(-.40,.27,-.33,.8,.49,.66,108);
+          piece(-.34,.59,-.32,.68,.29,.62,107);
+          piece(-.33,.71,-.30,.66,.17,.60,109);
+          piece(-.25,.32,-.42,.5,.17,.13,112);
+          for (const side of [-1,1]) {
+            piece(side*.25-.07,.61,-.38,.14,.13,.11,110);
+            piece(side*.36-.12,.28,-.30,.24,.21,.21,108);
+            piece(side*.36-.12,.23,.13,.25,.25,107);
+            piece(side*.30-.10,.72,-.22,.20,.22,.17,109);
+          }
+          piece(-.09,.84,-.05,.18,.26,.18,114); // dorsal crystal
         }
-        box(ent, x - 0.41, y + 0.24, z - 0.36, 0.82, 0.5, 0.72, 18);
-        box(ent, x - 0.3, y + 0.59, z - 0.28, 0.6, 0.46, 0.55, 11);
-        box(ent, x - 0.27, y + 0.72, z - 0.3, 0.15, 0.13, 0.6, 13);
-        box(ent, x + 0.12, y + 0.72, z - 0.3, 0.15, 0.13, 0.6, 13);
-        for (let i of [-1, 1])
-          for (let j of [-1, 1])
-            box(
-              ent,
-              x + i * 0.27 - 0.1,
-              y + Math.max(0, a * i * j),
-              z + j * 0.23 - 0.1,
-              0.19,
-              0.34,
-              0.19,
-              12,
-            );
+        // Orient faces and limbs toward the mob's last heading (or toward player).
+        const yaw=Number.isFinite(mob.face) ? mob.face : Math.atan2(g.p.x-x,-(g.p.z-z));
+        const sin=Math.sin(yaw),cos=Math.cos(yaw);
+        for(let i=start;i<ent.length;i+=6){
+          const px=ent[i],pz=ent[i+2];
+          ent[i]=x+px*cos-pz*sin;
+          ent[i+1]+=y;
+          ent[i+2]=z+px*sin+pz*cos;
+        }
       }
       for (const p of g.fragments) box(ent, p.x, p.y, p.z, 0.1, 0.1, 0.1, p.b);
       for (let d of g.drops) {
@@ -697,20 +734,23 @@ const View = (() => {
           }
       }
       for (const m of g.mobs) {
-        drawSprite(
-          m.x,
-          m.y + 0.45,
-          m.z,
-          m.kind === 'Guardião Prisma' ? 1.45 : 0.9,
-          {
-            Saltim: '#cfa968',
-            Musgato: '#739358',
-            Luzerrante: '#86f8d6',
-            'Vigia de Cascalho': '#878987',
-            'Guardião Prisma': '#539f9a',
-          }[m.kind] || '#557969',
-        );
-        drawSprite(m.x, m.y + 0.85, m.z, 0.52, '#ba88c9');
+        // The low-end software renderer also keeps recognizable silhouettes.
+        const kind=m.kind||'Raspejante', boss=kind==='Guardião Prisma';
+        const col=({Saltim:'#d6a56a',Musgato:'#5a946b',Luzerrante:'#50efd4',
+          'Vigia de Cascalho':'#687580','Guardião Prisma':'#677c83'})[kind]||'#366658';
+        const bob=kind==='Saltim'?Math.abs(Math.sin(g.elapsed*4))*0.12:
+          kind==='Luzerrante'?.32+Math.sin(g.elapsed*3)*.07:0;
+        const scale=boss?1.5:kind==='Vigia de Cascalho'?1.15:.85;
+        drawSprite(m.x,m.y+.40+bob,m.z,.85*scale,col);
+        drawSprite(m.x,m.y+.84+bob,m.z,.53*scale,kind==='Musgato'?'#396e58':col);
+        for(const side of [-1,1]){
+          drawSprite(m.x+side*.19*scale,m.y+1.02*scale+bob,m.z,.13*scale,
+            kind==='Luzerrante'?'#b49fe7':kind==='Saltim'?'#d6a56a':'#394f58');
+          drawSprite(m.x+side*.13*scale,m.y+.92*scale+bob,m.z-.14,.09*scale,'#ffe174');
+        }
+        if(kind==='Luzerrante') for(const side of [-1,1])
+          drawSprite(m.x+side*.39,m.y+.55+bob,m.z,.42,'#81dacb');
+        if(boss) drawSprite(m.x,m.y+1.59,m.z,.34,'#b49fe7');
       }
       for (const p of g.fragments) drawSprite(p.x, p.y, p.z, 0.11, '#' + Voxel.blocks[p.b].hex);
       for (const d of g.drops) drawSprite(d.x, d.y + 0.25, d.z, 0.28, '#' + Voxel.blocks[d.b].hex);

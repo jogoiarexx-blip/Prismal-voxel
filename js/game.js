@@ -235,7 +235,7 @@ const Game = (() => {
       let [cx, cz] = k.split(',').map(Number),
         arr = [];
       for (const [i, b] of Object.entries(this.edits[k] || {}))
-        if (b === 13 || b === 25 || b === 29 || b === 30 || b === 67) {
+        if (b === 13 || b === 25 || Voxel.torchWall(b) || b === 29 || b === 30 || b === 67) {
           let n = Number(i);
           const position = [cx * 16 + (n & 15) + 0.5, (n >> 8) + 0.6, cz * 16 + ((n >> 4) & 15) + 0.5];
           position.block = b;
@@ -310,9 +310,8 @@ const Game = (() => {
         if (kind === 'cabin') {
           const edge = x === cx-2 || x === cx+2 || z === cz-2 || z === cz+2;
           if (edge) for (let h = 1; h <= 3; h++) {
-            if (x === entranceX && z === entranceZ && h === 2) continue;
-            const id = x === entranceX && z === entranceZ && h === 1
-              ? Voxel.orientBlock(57, this.p.yaw)
+            const id = x === entranceX && z === entranceZ && h <= 2
+              ? Voxel.orientBlock(57, this.p.yaw) + (h === 2 ? 40 : 0)
               : h === 2 && ((x === cx && Math.abs(z-cz) === 2) || (z === cz && Math.abs(x-cx) === 2))
                 ? 56 : 8;
             add(x, floor + h, z, id);
@@ -322,6 +321,7 @@ const Game = (() => {
       }
       const costs = {};
       for (const [, , , id] of ops) {
+        if (Voxel.doorUpper(id)) continue; // two-block door costs one crafted door
         const item = Voxel.itemId(id);
         costs[item] = (costs[item] || 0) + 1;
       }
@@ -674,8 +674,29 @@ const Game = (() => {
       if (this.progress < 1) return;
       const [x, y, z] = hit.p,
         b = hit.b;
+      const doorUpper = Voxel.doorUpper(b);
+      const lowerY = doorUpper ? y - 1 : y;
+      const doorBase = this.get(x,lowerY,z,true);
+      const linkedDoor = Voxel.doorLower(doorBase) && this.get(x,lowerY+1,z,true) === doorBase+40;
+      const removed = linkedDoor
+        ? [[x,lowerY,z,0],[x,lowerY+1,z,0]]
+        : [[x,y,z,0]];
+      // Keep mounted torches attached to solid supports; drop them when the wall/floor disappears.
+      if (!linkedDoor) for (const [dx,dy,dz] of [[1,0,0],[-1,0,0],[0,0,1],[0,0,-1],[0,1,0]]) {
+        const tx=x+dx, ty=y+dy, tz=z+dz, id=this.get(tx,ty,tz,true);
+        const support=Voxel.torchSupport(id);
+        const wallLegacy = id === 25 && dy === 0 && !blocks[this.get(tx,ty-1,tz,true)]?.solid &&
+          ![[1,0,0],[-1,0,0],[0,0,1],[0,0,-1]].some(([ax,ay,az]) =>
+            (tx+ax!==x || ty+ay!==y || tz+az!==z) &&
+            blocks[this.get(tx+ax,ty+ay,tz+az,true)]?.solid &&
+            !Voxel.specialShape(this.get(tx+ax,ty+ay,tz+az,true)));
+        if ((support && tx+support[0]===x && ty+support[1]===y && tz+support[2]===z) || wallLegacy) {
+          removed.push([tx,ty,tz,0]);
+          if (!this.creative) this.addDrop(tx+.5,ty+.1,tz+.5,25,1);
+        }
+      }
       delete this.plots[k];
-      this.set(x, y, z, 0);
+      this.applyBlockBatch(removed);
       if (this.settings.motion) {
         for (let i = 0; i < 6; i++) {
           this.fragments.push({
@@ -849,15 +870,17 @@ const Game = (() => {
     }
     undoFreeBlock() {
       if (!this.creative || !this.lastFreeBlock) return false;
-      const { pos, b } = this.lastFreeBlock;
+      const { pos, b, twoHigh } = this.lastFreeBlock;
       const [x, y, z] = pos;
       const storage = this.chests[pos.join(',')];
-      if (this.get(x, y, z, true) !== b || storage?.some(Boolean)) {
+      if (this.get(x, y, z, true) !== b ||
+          (twoHigh && this.get(x,y+1,z,true) !== b+40) || storage?.some(Boolean)) {
         this.notify('O bloco foi alterado ou contém itens');
         this.lastFreeBlock = null;
         return false;
       }
-      if (!this.set(x, y, z, 0)) return false;
+      if (twoHigh) this.applyBlockBatch([[x,y,z,0],[x,y+1,z,0]]);
+      else if (!this.set(x,y,z,0)) return false;
       if (storage) delete this.chests[pos.join(',')];
       this.lastFreeBlock = null;
       this.signal('hud');
@@ -867,11 +890,19 @@ const Game = (() => {
       const t = this.inv[this.selected], h = this.hit;
       if (!t || !blocks[t.b]?.placeable || !h) return null;
       const pos = h.p.map((n, i) => n + h.normal[i]);
-      const [x, y, z] = pos, p = this.p, b = Voxel.orientBlock(t.b, p.yaw + this.buildRotation * Math.PI / 2);
+      const [x, y, z] = pos, p = this.p;
+      let b = Voxel.orientBlock(t.b, p.yaw + this.buildRotation * Math.PI / 2);
+      if (t.b === 25) {
+        if (h.normal[1] < 0 || !blocks[h.b]?.solid || Voxel.specialShape(h.b)) return null;
+        b = Voxel.torchIdForNormal(h.normal);
+      }
       if (y <= 0 || y >= Voxel.H || (this.get(x,y,z,true) !== 0 && this.get(x,y,z) !== 7)) return null;
+      const isDoor = Voxel.doorLower(b);
+      const headFree = !isDoor || (y < Voxel.H - 1 && this.get(x,y+1,z,true) === 0);
       const occupied = Voxel.intersects(b, x, y, z, p.x - .28, p.y, p.z - .28, p.x + .28, p.y + 1.8, p.z + .28) ||
-        this.mobs.some(m => Math.abs(m.x-x-.5)<.85 && Math.abs(m.z-z-.5)<.85 && Math.abs(m.y-y)<1);
-      return { pos, b, valid: !occupied };
+        (isDoor && Voxel.intersects(b+40,x,y+1,z,p.x-.28,p.y,p.z-.28,p.x+.28,p.y+1.8,p.z+.28)) ||
+        this.mobs.some(m => Math.abs(m.x-x-.5)<.85 && Math.abs(m.z-z-.5)<.85 && Math.abs(m.y-y)<2);
+      return { pos, b, valid: headFree && !occupied };
     }
     use(forcePlace = false) {
       const t = this.inv[this.selected],
@@ -884,9 +915,19 @@ const Game = (() => {
         if (this.set(...h.p, h.b === 85 ? 86 : 85)) Sound.play('place', this.settings);
         return;
       }
-      if (h && h.b >= 57 && h.b <= 64 && !sneaking && !placing) {
-        const opened = h.b <= 60 ? h.b + 4 : h.b - 4;
-        if (this.set(...h.p, opened)) { Sound.play('place', this.settings); this.signal('hud'); }
+      if (h && (Voxel.doorLower(h.b) || Voxel.doorUpper(h.b)) && !sneaking && !placing) {
+        const upper = Voxel.doorUpper(h.b);
+        const bottom = [h.p[0], h.p[1] - (upper ? 1 : 0), h.p[2]];
+        const bottomId = this.get(...bottom, true);
+        const top = [bottom[0], bottom[1] + 1, bottom[2]];
+        const topId = this.get(...top, true);
+        if (!Voxel.doorLower(bottomId) || (upper && topId !== bottomId + 40)) return;
+        const opened = bottomId <= 60 ? bottomId + 4 : bottomId - 4;
+        if (topId === bottomId + 40) {
+          this.applyBlockBatch([[...bottom,opened],[...top,opened+40]]);
+        } else if (!upper) this.set(...bottom,opened); // legacy one-block doors remain usable
+        Sound.play('place', this.settings);
+        this.signal('hud');
         return;
       }
       if (h && (h.b === 28 || h.b === 29) && !placing) {
@@ -946,8 +987,9 @@ const Game = (() => {
       if (!place.valid) { this.notify('Espaço ocupado'); return; }
       const { pos, b } = place;
       const [x, y, z] = pos;
-      if (!this.set(x, y, z, b)) return;
-      this.lastFreeBlock = this.creative ? { pos: pos.slice(), b } : null;
+      if (Voxel.doorLower(b)) this.applyBlockBatch([[x,y,z,b],[x,y+1,z,b+40]]);
+      else if (!this.set(x, y, z, b)) return;
+      this.lastFreeBlock = this.creative ? { pos: pos.slice(), b, twoHigh: Voxel.doorLower(b) } : null;
       this.goals['place' + t.b] = true;
       if (t.b === 30) {
         this.notify('Farol Prisma aceso · aurora ativada');
@@ -1049,6 +1091,7 @@ const Game = (() => {
             Math.abs(floor - m.y) <= 1 &&
             !this.get(Math.floor(nx), floor + 1, Math.floor(nz))
           ) {
+            m.face = Math.atan2(nx - m.x, -(nz - m.z));
             m.x = nx;
             m.z = nz;
             m.y = floor;
@@ -1097,6 +1140,7 @@ const Game = (() => {
             y <= m.y + 1 &&
             this.get(Math.floor(x), y + 1, Math.floor(z)) === 0
           ) {
+            m.face = Math.atan2(x - m.x, -(z - m.z));
             m.x = x;
             m.z = z;
             m.y = y;

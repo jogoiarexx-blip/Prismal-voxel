@@ -99,20 +99,43 @@ const Voxel = (() => {
     ['Pá de pedra', 'a2a69b', 0], // 90
     ['Viga de madeira', '89623c', 0.85], // 91
     ['Janela emoldurada', '95c7c7', 0.36], // 92
+    ['Tocha de parede (oeste)', 'ffbe55', 0.15], // 93
+    ['Tocha de parede (leste)', 'ffbe55', 0.15], // 94
+    ['Tocha de parede (norte)', 'ffbe55', 0.15], // 95
+    ['Tocha de parede (sul)', 'ffbe55', 0.15], // 96
+    ['Porta alta superior', 'aa794c', 0.75], // 97-100: fechada
+    ['Porta alta superior', 'aa794c', 0.75],
+    ['Porta alta superior', 'aa794c', 0.75],
+    ['Porta alta superior', 'aa794c', 0.75],
+    ['Porta alta aberta superior', 'aa794c', 0.75], // 101-104
+    ['Porta alta aberta superior', 'aa794c', 0.75],
+    ['Porta alta aberta superior', 'aa794c', 0.75],
+    ['Porta alta aberta superior', 'aa794c', 0.75],
+    // Lightweight creature palette (render materials; never terrain blocks)
+    ['Pele de âmbar', 'd5a05c', 0], // 105
+    ['Barriga creme', 'f1d69e', 0], // 106
+    ['Pelo de musgo', '4e845d', 0], // 107
+    ['Pelo de sombra', '2b5448', 0], // 108
+    ['Pele de rocha', '667178', 0], // 109
+    ['Olhos de âmbar', 'ffe174', 0], // 110
+    ['Núcleo bioluminescente', '50efd4', 0], // 111
+    ['Runa escura', '25344b', 0], // 112
+    ['Carapaça dourada', 'cf9c59', 0], // 113
+    ['Cristal violeta', 'b49fe7', 0], // 114
   ];
   const blocks = data.map(([name, hex, hard], id) => ({
     id,
     name,
     hex,
     hard,
-    solid: !!id && ![7, 21, 22, 23, 24, 25, 35, 36, 37, 41, 42, 43, 44, 45, 47, 80, 81, 82, 88, 89, 90].includes(id),
+    solid: !!id && ![7, 21, 22, 23, 24, 25, 35, 36, 37, 41, 42, 43, 44, 45, 47, 80, 81, 82, 88, 89, 90].includes(id) && !(id >= 93 && id <= 96) && id < 105,
     placeable:
-      id > 0 && ![7, 21, 22, 23, 24, 28, 29, 35, 37, 39, 40, 41, 42, 43, 44, 45, 47, 50, 51, 52, 58, 59, 60, 61, 62, 63, 64, 70, 71, 72, 80, 81, 82, 86, 89, 90].includes(id),
+      id > 0 && id < 93 && ![7, 21, 22, 23, 24, 28, 29, 35, 37, 39, 40, 41, 42, 43, 44, 45, 47, 50, 51, 52, 58, 59, 60, 61, 62, 63, 64, 70, 71, 72, 80, 81, 82, 86, 89, 90].includes(id),
   }));
   // A few detailed architectural pieces are built from tiny boxes only when placed.
   // Regular terrain still uses greedy meshing, without textures or new draw calls.
   const shapes = new Map();
-  const box = (x, y, z, w, h, d) => [x, y, z, w, h, d];
+  const box = (x, y, z, w, h, d, material) => material == null ? [x,y,z,w,h,d] : [x,y,z,w,h,d,material];
   for (const base of [49, 69]) {
     for (let orientation = 0; orientation < 4; orientation++) {
       const upper = [
@@ -124,6 +147,25 @@ const Voxel = (() => {
       shapes.set(base + orientation, [box(0, 0, 0, 1, .5, 1), upper]);
     }
   }
+  // A floor torch has a dark wooden stalk and a luminous voxel flame.
+  // Wall torches lean from the supporting face, rather than floating in the middle.
+  shapes.set(25, [box(.44, .06, .44, .12, .52, .12, 21), box(.40, .54, .40, .20, .23, .20, 25)]);
+  // 93 / 94 support on the x- / x+ face; 95 / 96 support on z- / z+.
+  for (const [id, axis, side] of [[93,'x',0],[94,'x',1],[95,'z',0],[96,'z',1]]) {
+    const alongX = axis === 'x';
+    const stick = side === 0 ? .13 : .73;
+    const tip = side === 0 ? .36 : .55;
+    const pieces = alongX ? [
+      box(stick,.24,.42,.15,.26,.16,21),
+      box(tip,.47,.43,.13,.22,.14,21),
+      box(tip-.025,.67,.405,.18,.20,.19,25),
+    ] : [
+      box(.42,.24,stick,.16,.26,.15,21),
+      box(.43,.47,tip,.14,.22,.13,21),
+      box(.405,.67,tip-.025,.19,.20,.18,25),
+    ];
+    shapes.set(id, pieces);
+  }
   shapes.set(53, [box(0, 0, 0, 1, .5, 1)]);
   shapes.set(54, [box(0, 0, 0, 1, .5, 1)]);
   shapes.set(55, [box(.34, 0, .34, .32, 1, .32), box(0, .33, .40, 1, .13, .20), box(.40, .33, 0, .20, .13, 1), box(0, .73, .40, 1, .10, .20), box(.40, .73, 0, .20, .10, 1)]);
@@ -131,6 +173,21 @@ const Voxel = (() => {
   for (let facing = 0; facing < 4; facing++) {
     shapes.set(57 + facing, [facing % 2 ? box(.4, 0, 0, .2, 1, 1) : box(0, 0, .4, 1, 1, .2)]);
     shapes.set(61 + facing, [facing % 2 ? box(0, 0, facing === 1 ? .08 : .75, 1, 1, .17) : box(facing === 0 ? .08 : .75, 0, 0, .17, 1, 1)]);
+  }
+  // Upper halves have a small glazed window framed in wood. The panels use
+  // the existing transparent material, so they add no texture dependencies.
+  for (let facing = 0; facing < 8; facing++) {
+    const lower = 57 + facing;
+    const p = shapes.get(lower)[0], [x,,z,w,,d] = p;
+    shapes.set(97 + facing, w > d ? [
+      box(x,0,z,w,.19,d),box(x,.83,z,w,.17,d),
+      box(x,0,z,.18,1,d),box(x+w-.18,0,z,.18,1,d),
+      box(x+.17,.18,z+.03,w-.34,.67,Math.max(.04,d-.06),56),
+    ] : [
+      box(x,0,z,w,.19,d),box(x,.83,z,w,.17,d),
+      box(x,0,z,w,1,.18),box(x,0,z+d-.18,w,1,.18),
+      box(x+.03,.18,z+.17,Math.max(.04,w-.06),.67,d-.34,56),
+    ]);
   }
   shapes.set(67, [box(.31, .02, .31, .38, .75, .38), box(.23, .06, .23, .54, .09, .54), box(.4, .77, .4, .2, .17, .2)]);
   shapes.set(76, [box(.42, 0, .02, .16, 1, .96), box(.43, .25, 0, .14, .09, 1), box(.43, .73, 0, .14, .09, 1)]);
@@ -146,7 +203,12 @@ const Voxel = (() => {
   shapes.set(92, [box(.04, 0, .43, .92, .10, .14), box(.04, .90, .43, .92, .10, .14), box(.04, 0, .43, .10, 1, .14), box(.86, 0, .43, .10, 1, .14), box(.45, 0, .45, .10, 1, .10)]);
   const shapeParts = (id) => shapes.get(id) || null;
   const specialShape = (id) => shapes.has(id);
-  const itemId = (id) => id >= 49 && id <= 52 ? 49 : id >= 57 && id <= 64 ? 57 : id >= 69 && id <= 72 ? 69 : id === 86 ? 85 : id;
+  const doorLower = (id) => id >= 57 && id <= 64;
+  const doorUpper = (id) => id >= 97 && id <= 104;
+  const torchWall = (id) => id >= 93 && id <= 96;
+  const torchIdForNormal = (normal) => normal[0] === 1 ? 93 : normal[0] === -1 ? 94 : normal[2] === 1 ? 95 : normal[2] === -1 ? 96 : 25;
+  const torchSupport = (id) => id === 93 ? [-1,0,0] : id === 94 ? [1,0,0] : id === 95 ? [0,0,-1] : id === 96 ? [0,0,1] : id === 25 ? [0,-1,0] : null;
+  const itemId = (id) => id >= 49 && id <= 52 ? 49 : id >= 57 && id <= 64 || doorUpper(id) ? 57 : id >= 69 && id <= 72 ? 69 : torchWall(id) ? 25 : id === 86 ? 85 : id;
   const orientBlock = (id, yaw) => {
     const dir = ((Math.round(yaw / (Math.PI / 2)) % 4) + 4) % 4;
     return id === 49 || id === 57 || id === 69 ? id + dir : id;
@@ -729,13 +791,6 @@ const Voxel = (() => {
               let t = origin.slice();
               t[u] += du;
               t[v] += dv;
-              if (b === 25) {
-                t[0] = pTorch(t[0], axis === 0 ? l : i);
-                const bz = axis === 2 ? l : axis === 1 ? j : i;
-                t[2] = pTorch(t[2], bz);
-                const by = axis === 1 ? l : j;
-                t[1] = by + (t[1] - by) * 0.74;
-              }
               buf.push(
                 t[0] + ox,
                 t[1] - (b === 7 && f === 2 ? 0.1 : 0),
@@ -759,20 +814,31 @@ const Voxel = (() => {
           const n = directions[f], other = at(x + n[0], y + n[1], z + n[2]);
           if (other && !specialShape(other) && !transparent(other)) continue;
         }
-        const out = transparent(id) ? alpha : solid;
+        const material = shape[6] ?? id;
+        const out = transparent(material) ? alpha : solid;
         for (const [a,b] of [[0,0],[1,0],[1,1],[0,0],[1,1],[0,1]]) {
           const q = [shape[0], shape[1], shape[2]];
           q[axis] = boundary;
           q[u] += a * dims[u];
           q[v] += b * dims[v];
-          out.push(x + q[0] + ox, y + q[1], z + q[2] + oz, id, f, 1);
+          out.push(x + q[0] + ox, y + q[1], z + q[2] + oz, material, f, 1);
         }
       }
     }
     for (let z = 0; z < 16; z++) for (let x = 0; x < 16; x++)
       for (let y = 1; y <= highest && y < H; y++) {
         const id = center[idx(x, y, z)];
-        if (specialShape(id)) for (const shape of shapeParts(id)) emitSmallBox(x, y, z, shape, id);
+        if (!specialShape(id)) continue;
+        // Legacy torches placed beside a wall before v0.9.3 are reattached visually
+        // when they lack floor support, preserving their saved block ID.
+        let shapeId = id;
+        if (id === 25 && !blocks[at(x,y-1,z)]?.solid) {
+          for (const [dx,dz,variant] of [[-1,0,93],[1,0,94],[0,-1,95],[0,1,96]]) {
+            const support = at(x+dx,y,z+dz);
+            if (blocks[support]?.solid && !specialShape(support)) { shapeId = variant; break; }
+          }
+        }
+        for (const shape of shapeParts(shapeId)) emitSmallBox(x, y, z, shape, id);
       }
     // Small crossed quads follow the edited surface without adding collision objects.
     function blade(x, y, z, angle, width, h, id, shade) {
@@ -823,9 +889,6 @@ const Voxel = (() => {
       alpha: new Float32Array(alpha),
     };
   }
-  function pTorch(value, base) {
-    return base + 0.39 + (value - base) * 0.22;
-  }
   function ray(get, o, d, max = 5, solidOnly = false) {
     let p = o.map(Math.floor),
       step = d.map((n) => (n < 0 ? -1 : 1)),
@@ -856,6 +919,11 @@ const Voxel = (() => {
     shapeParts,
     specialShape,
     itemId,
+    doorLower,
+    doorUpper,
+    torchWall,
+    torchIdForNormal,
+    torchSupport,
     orientBlock,
     buildCategories,
     intersects,

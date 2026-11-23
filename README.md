@@ -1,8 +1,8 @@
-# Mundo Prisma v0.9.2 — Mochila Premium e Menus Premium
+# Mundo Prisma v0.9.3 — Criaturas, Tochas e Portas Altas
 
 Mochila reorganizada em painéis de inventário e livro de receitas com filtros por categorias, preservando a fabricação, a transferência de itens e o catálogo criativo. Interface inicial e criação de mundos redesenhadas para combinar com a identidade voxel-fantasia dos conceitos aprovados: dourado, pedra escura, bordas ornamentadas, navegação superior funcional, cartões de modo e campos mais legíveis.
 
-**Sem mudança de mecânicas:** construção livre, salvamento e controles da versão 0.9.0 foram preservados. O menu "Informações do mundo" é explicativo; não inventa opções não suportadas. O botão ao lado da semente gera um código aleatório. A navegação superior abre as telas existentes do jogo.
+**Base preservada:** construção livre, salvamento, menus premium e controles da versão 0.9.2 continuam disponíveis; a v0.9.3 acrescenta as melhorias descritas abaixo. O menu "Informações do mundo" é explicativo; não inventa opções não suportadas. O botão ao lado da semente gera um código aleatório. A navegação superior abre as telas existentes do jogo.
 
 **Otimização:** o visual usa a arte WebP já incluída e efeitos CSS; nenhuma biblioteca externa, fonte adicional ou imagem pesada foi acrescentada. O CSS inclui redução de efeitos em telas pequenas e respeita a preferência por movimento reduzido.
 
@@ -99,3 +99,12 @@ A construção bloco a bloco é o modo principal: qualquer terreno, casa de qual
 No celular, selecione **Blocos**, escolha o material e volte ao mundo. Toque para posicionar na face apontada, segure Colocar para construir em sequência, segure Quebrar para remover, e arraste para olhar. O botão **Girar** altera orientação de portas e escadas de 90 em 90 graus sem girar o personagem. No PC, pressione **G** para girar, **P** para copiar o bloco mirado (no Criativo, copia para a barra; na Sobrevivência, equipa se possuir) e **Z** para desfazer a última colocação individual no Criativo, desde que não tenha sido alterada ou preenchida com itens.
 
 Sem novos modelos, texturas ou bibliotecas: mantém malha voxel compartilhada e limite de colocação contínua para dispositivos móveis. A compatibilidade dos mundos salvos (schema 1) é mantida.
+
+
+## v0.9.3 — criaturas e construção
+
+- Modelos voxel distintos para Saltim, Musgato, Luzerrante, Vigia de Cascalho, Raspejante e Guardião Prisma, com pequenas cores e padrões procedurais (sem novos downloads de texturas ou modelos).
+- Tochas de chão pequenas; quando colocadas na parede ficam presas à face e emitem luz. As antigas tochas sem piso também tentam usar paredes vizinhas visualmente.
+- Novas portas passam a ocupar dois blocos verticais; exigem espaço livre, abrem juntas, quebram juntas e gastam apenas uma unidade. Portas antigas de um bloco nos mundos salvos continuam funcionando.
+- Projetos de cabana passam a usar portas duplas, sem cobrar o topo como uma segunda porta.
+- Ao quebrar um bloco de suporte, tochas novas anexadas a ele se soltam.
