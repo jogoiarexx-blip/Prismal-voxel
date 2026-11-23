@@ -467,7 +467,15 @@
       return;
     } else if(msg.t==='chest-action' && mpRole==='host' && mpWorldReady && g?.ready) {
       const pos=msg.pos;
-      if(msg.id!==mpHostGuestId || !validSharedChest(pos) || mpChestBusy)return;
+      if(msg.id!==mpHostGuestId || !validSharedChest(pos)) {
+        mp.send({t:'chest-error',pos,reason:'Baú indisponível. Aproxime-se e tente novamente.'}).catch(()=>{});
+        return;
+      }
+      if(mpChestBusy){
+        // Never leave the guest locked on "Aguardando" when the host is saving.
+        mp.send({t:'chest-error',pos,reason:'Baú ocupado. Aguarde e tente novamente.'}).catch(()=>{});
+        return;
+      }
       mpChestBusy=true;
       PrismaCoop.transact(g,mpHostGuestId,pos,msg,Game.Session.chestMove,Voxel.blocks.length)
         .then(result=>{
@@ -891,6 +899,7 @@
       g.networkGuest = mpRole==='guest';
       g.networkHost = mpRole==='host';
       g.temporary = temporary;
+      mpLastHostCheckpoint = performance.now();
       g.remotePlayer = mpRemote;
       $('#mpChatBtn').hidden = !mp?.connected;
       if (fresh && !temporary) {
@@ -1019,6 +1028,8 @@
         btn('opgame', icon('gear') + 'Opções') +
         btn('guidegame', icon('book') + 'Guia de campo') +
         btn('housemenu', '⌂ Localizar minha casa') +
+        btn('save-now', '◉ Salvar progresso agora', 'secondary') +
+        '<p class="smallnote">Salvamento: '+esc(g.saveState)+'</p>'+
         (mpRole==='host' && !mp?.connected ? btn('mp-rehost','♻ Recriar convite P2P','secondary') : '')+
         btn('savequit', icon('world') + 'Salvar e voltar ao menu') +
         '</div>' +
@@ -1192,7 +1203,7 @@
         '</ul><p>O primeiro selo libera a pedra rúnica. Com os três, use a bancada para combinar cristal, cobre e vidro em um Farol Prisma. Coloque-o para acender uma aurora sobre sua base.</p></div>';
     } else
       body =
-        '<p>Mundo Prisma é um sandbox voxel de exploração, sobrevivência e construção. Explore os Campos de Âmbar, a Floresta de Névoa e as Dunas de Vidro. Nas dunas, procure os obeliscos com cristais no topo.</p><p class="muted">Versão jogável 0.9.14 · Solo e multiplayer experimental<br>Arte, sprites, tipografia de título e efeitos sonoros criados para Mundo Prisma. Seu progresso é salvo neste navegador.</p>';
+        '<p>Mundo Prisma é um sandbox voxel de exploração, sobrevivência e construção. Explore os Campos de Âmbar, a Floresta de Névoa e as Dunas de Vidro. Nas dunas, procure os obeliscos com cristais no topo.</p><p class="muted">Versão jogável 0.9.15 · Solo e multiplayer experimental<br>Arte, sprites, tipografia de título e efeitos sonoros criados para Mundo Prisma. Seu progresso é salvo neste navegador.</p>';
     panel(
       'guide',
       'Guia de campo',
@@ -1759,7 +1770,7 @@
     $('#debug').hidden = !debug;
     if (debug)
       $('#debug').textContent =
-        'PRISMA 0.9.14 · ' +
+        'PRISMA 0.9.15 · ' +
         renderer.type +
         '\n' +
         Math.round(fps) +
@@ -1861,6 +1872,12 @@
         break;
       case 'savequit':
         quit();
+        break;
+      case 'save-now':
+        if(g)g.save().then(ok=>{
+          toast(ok ? 'Progresso gravado com sucesso.' : 'Gravação falhou. Verifique o espaço do navegador.');
+          if(screen==='pause')pauseMenu();
+        });
         break;
       case 'opgame':
         options('pause');
@@ -2367,8 +2384,11 @@
     }
     smoothRemote(dt,now);
     if(mp?.connected && now-mpLastHud>1200) {mpLastHud=now;updateP2PHud();}
-    if(mpRole==='host' && g?.ready && now-mpLastHostCheckpoint>30000) {
-      mpLastHostCheckpoint=now;g.save().catch(()=>{});
+    // Host and solo games checkpoint positions, hunger, day/night and all world
+    // edits regularly, even when no block was placed during this session.
+    if(!g.temporary && now-mpLastHostCheckpoint>(mpRole==='host' ? 30000 : 45000)) {
+      mpLastHostCheckpoint=now;
+      g.save().catch(()=>{});
     }
     if(mpRole==='guest' && mpWorldReady && now-mpLastGuestSync>4500) {
       mpLastGuestSync=now;guestInventorySync();saveGuestCheckpoint();

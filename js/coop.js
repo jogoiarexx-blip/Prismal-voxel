@@ -20,7 +20,17 @@ const PrismaCoop = (() => {
     return {t:'chest-state',pos,rev:game.chestRevisions[pos]||0,
       items:game.chests[pos],inv:profile.inv,profileRev:profile.rev,tx};
   }
-  async function transact(game,id,pos,msg,chestMove,maxId=256) {
+  // Serialize even if multiple reliable messages arrive before an IndexedDB
+  // transaction completes. A single world must never have two chest commits in flight.
+  const transactionQueues = new WeakMap();
+  function transact(game,id,pos,msg,chestMove,maxId=256) {
+    if (!game || typeof game !== 'object') return Promise.resolve({status:'invalid'});
+    const previous = transactionQueues.get(game) || Promise.resolve();
+    const current = previous.catch(() => {}).then(() => transactUnlocked(game,id,pos,msg,chestMove,maxId));
+    transactionQueues.set(game, current.catch(() => {}));
+    return current;
+  }
+  async function transactUnlocked(game,id,pos,msg,chestMove,maxId=256) {
     const profile=validId(id) && game.guestProfiles[id];
     const chest=game.chests[pos];
     if(!profile || !validInventory(profile.inv,36,maxId) || !validInventory(chest,18,maxId))

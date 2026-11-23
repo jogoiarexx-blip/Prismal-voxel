@@ -1,0 +1,63 @@
+'use strict';
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const vm=require('node:vm');
+const path=require('node:path').resolve(__dirname,'..')+'/';
+const Coop=require(path+'js/coop.js');
+const Voxel=require(path+'js/world.js');
+global.Voxel=Voxel;
+let put = async()=>{};
+global.Saves={put:(data)=>put(data)};
+const Game=vm.runInThisContext(fs.readFileSync(path+'js/game.js','utf8')+'\nGame');
+const blank=n=>Array(n).fill(null);
+const id='guest-uuid-reliability-01',pos='10,65,10';
+const world={guestProfiles:{},chests:{[pos]:blank(18)},chestRevisions:{[pos]:0},changed(){},
+  save: async()=>true};
+world.chests[pos][0]={b:8,n:24};
+Coop.ensureProfile(world,id,blank(36),Voxel.blocks.length);
+const action=(tx,rev,profileRev)=>({tx,rev,profileRev,from:'chest',index:0,to:'inv',target:0,quick:false,split:false});
+async function run(){
+  let finish;
+  world.save=()=>new Promise(resolve=>{finish=resolve});
+  const p1=Coop.transact(world,id,pos,action(1,0,0),Game.Session.chestMove,Voxel.blocks.length);
+  const p2=Coop.transact(world,id,pos,action(2,0,0),Game.Session.chestMove,Voxel.blocks.length);
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(world.chests[pos][0],null,'first transfer in progress');
+  assert.equal(world.guestProfiles[id].rev,1,'second request must not mutate profile while first save pending');
+  finish(true);
+  const first=await p1,second=await p2;
+  assert.equal(first.status,'committed');
+  assert.equal(second.status,'conflict','stale requests never commit in parallel');
+  assert.equal(world.guestProfiles[id].inv[0].n,24);
+  assert.equal(world.chestRevisions[pos],1);
+  assert.equal((await Coop.transact(world,id,pos,action(1,0,0),Game.Session.chestMove,Voxel.blocks.length)).status,'duplicate');
+  const failedCalls=[];
+  let shouldFail=true;
+  put=async(data)=>{failedCalls.push(data);if(shouldFail)throw Error('QuotaExceededError');};
+  const fake={alive:true,temporary:false,changeVersion:1,saveChain:Promise.resolve(),
+    dirtySave:true,saveState:'Em dia',saveFailures:0,saveRetry:null,debounce:null,
+    snapshot:()=>({a:1}), notify:()=>{}};
+  const save=()=>Game.Session.prototype.save.call(fake);
+  assert.equal(await save(),false,'save error must be reported');
+  assert.equal(fake.dirtySave,true,'failed save must remain dirty');
+  assert.match(fake.saveState,/Falha ao salvar/);
+  assert.equal(fake.saveFailures,1);
+  assert(fake.saveRetry,'save retry should be scheduled');
+  shouldFail=false;
+  assert.equal(await save(),true,'the retry can recover');
+  assert.equal(fake.dirtySave,false);
+  assert.equal(fake.saveFailures,0);
+  assert.equal(fake.saveRetry,null);
+  let finishWrite;
+  put=()=>new Promise(resolve=>{finishWrite=resolve});
+  const inFlight=save();
+  await new Promise(resolve=>setImmediate(resolve));
+  fake.changeVersion=2;
+  finishWrite();
+  assert.equal(await inFlight,true);
+  assert.equal(fake.dirtySave,true,'edits during save remain pending');
+  assert(fake.debounce,'new edits schedule another save');
+  clearTimeout(fake.debounce);clearTimeout(fake.saveRetry);
+  console.log('PASS: P2P chest concurrency, duplicate message, failed save backoff, retry, dirty edit follow-up (12 assertions)');
+}
+run().catch(e=>{console.error(e);process.exitCode=1;});

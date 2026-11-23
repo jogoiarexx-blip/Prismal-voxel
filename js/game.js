@@ -143,6 +143,8 @@ const Game = (() => {
       this.alive = true;
       this.saveChain = Promise.resolve();
       this.dirtySave = false;
+      this.saveFailures = 0;
+      this.saveRetry = null;
       this.changeVersion = 0;
       this.creative = this.meta.mode === 'creative';
       this.resetMining();
@@ -1663,6 +1665,7 @@ const Game = (() => {
       this.signal('hud');
       clearTimeout(this.debounce);
       this.debounce = setTimeout(() => {
+        this.debounce = null;
         if (this.alive) this.save();
       }, 1400);
     }
@@ -1698,21 +1701,42 @@ const Game = (() => {
     save() {
       if (this.temporary) { clearTimeout(this.debounce); this.dirtySave=false; return Promise.resolve(true); }
       clearTimeout(this.debounce);
+      clearTimeout(this.saveRetry);
+      this.saveRetry = null;
       const data = this.snapshot();
       const savedVersion = this.changeVersion;
       this.saveState = 'Salvando';
+      // A failed IndexedDB write never makes the world look successfully saved.
+      // Writes remain ordered so an older snapshot cannot replace a newer one.
       this.saveChain = this.saveChain
         .catch(() => {})
         .then(() => Saves.put(data))
         .then(
           () => {
+            this.saveFailures = 0;
             this.dirtySave = this.changeVersion !== savedVersion;
             this.saveState = this.dirtySave ? 'Alterações pendentes' : 'Em dia';
+            if (this.dirtySave && this.alive && !this.debounce) {
+              this.debounce = setTimeout(() => {
+                this.debounce = null;
+                if (this.alive && this.dirtySave) this.save();
+              }, 1400);
+            }
             return true;
           },
           () => {
-            this.saveState = 'Falha ao salvar';
-            this.notify('Não foi possível salvar. Verifique o espaço do navegador.');
+            this.dirtySave = true;
+            this.saveState = 'Falha ao salvar · nova tentativa pendente';
+            this.saveFailures++;
+            if (this.saveFailures === 1 || this.saveFailures % 4 === 0)
+              this.notify('Não foi possível salvar. Libere espaço no navegador; uma nova tentativa será feita.');
+            if (this.alive) {
+              const backoff = Math.min(120000, 5000 * 2 ** Math.min(5, this.saveFailures - 1));
+              this.saveRetry = setTimeout(() => {
+                this.saveRetry = null;
+                if (this.alive && this.dirtySave) this.save();
+              }, backoff);
+            }
             return false;
           },
         );
@@ -1723,6 +1747,7 @@ const Game = (() => {
       this.paused = true;
       this.keys.clear();
       clearTimeout(this.debounce);
+      clearTimeout(this.saveRetry);
       this.worker?.terminate();
       this.renderer.reset();
     }
