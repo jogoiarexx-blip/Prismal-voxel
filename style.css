@@ -2259,3 +2259,75 @@ body.touchgame .game-tools .build-trigger span { display:none; }
 @media(max-width:760px){#houseCompass{top:137px;left:8px;max-width:min(64vw,300px);min-height:43px;padding:5px 9px;gap:0 6px;grid-template-columns:18px minmax(0,1fr);}#houseCompass i{font-size:17px;width:18px;height:18px;}#houseCompass span{font-size:10px;}#navDirection{font-size:10px;}.nav-choices{grid-template-columns:1fr;}#dialog .nav-choice{min-height:62px;padding-top:9px;padding-bottom:9px;}}
 @media(max-height:430px) and (orientation:landscape){#houseCompass{top:74px;left:auto;right:8px;max-width:min(46vw,315px);}}
 @media(prefers-reduced-motion:reduce){#houseCompass i{transition:none;}}
+
+
+/* v0.9.19 — Bússola de orientação horizontal inspirada em HUDs de FPS.
+   Elementos planos, sem canvas adicional, fontes/texturas externas ou draw calls. */
+#game #expCompass{display:none!important;}
+#gamehud #houseCompass{
+  top:15px;left:50%;right:auto;transform:translateX(-50%);
+  width:min(470px,44vw);max-width:none;min-height:0;min-width:220px;
+  display:flex;flex-direction:column;gap:0;align-items:stretch;
+  padding:0 9px 5px;border:none;border-top:1px solid #d6b56e4d;border-radius:0;
+  background:linear-gradient(180deg,#0a141ac4,#101c237a 72%,transparent);
+  box-shadow:none;text-align:center;color:#f5e7be;
+  font:700 11px/1.1 var(--mono);overflow:visible;z-index:4;
+}
+#gamehud #houseCompass.tracking{background:linear-gradient(180deg,#0a141acb,#101c2399 72%,transparent);border-color:#d6b56e80;}
+#gamehud #houseCompass.arrived{background:linear-gradient(180deg,#0d2923da,#172a2ba1 72%,transparent);}
+#gamehud #houseCompass .compass-ruler{height:31px;display:block;position:relative;width:100%;overflow:hidden;
+  -webkit-mask-image:linear-gradient(90deg,transparent 0%,black 10%,black 90%,transparent 100%);
+  mask-image:linear-gradient(90deg,transparent 0%,black 10%,black 90%,transparent 100%);}
+#gamehud #houseCompass .compass-marks{position:absolute;inset:0;display:block;pointer-events:none;}
+#gamehud #houseCompass .compass-mark{position:absolute;top:18px;display:block!important;width:1px;height:9px;
+  background:#d5dad5a3;transform:translateX(-50%);}
+#gamehud #houseCompass .compass-mark[hidden]{display:none!important;}
+#gamehud #houseCompass .compass-mark.major{height:13px;top:15px;background:#d2e1dfc2;}
+#gamehud #houseCompass .compass-mark.cardinal{height:13px;top:15px;background:#d7c28f;}
+#gamehud #houseCompass .compass-mark b{position:absolute;bottom:15px;left:50%;transform:translateX(-50%);
+  color:#f1e1bc;font:700 12px/1 var(--mono);text-shadow:0 1px 3px #000;}
+#gamehud #houseCompass .compass-front{position:absolute;top:3px;left:50%;transform:translateX(-50%);
+  height:24px;width:1px;background:#f1c77355;box-shadow:0 0 5px #ffdf9a80;pointer-events:none;}
+#gamehud #houseCompass .compass-front::after{content:'';position:absolute;left:-4px;top:21px;
+  border-width:0 4px 6px;border-style:solid;border-color:transparent transparent #ffd17e;}
+#gamehud #houseCompass .compass-waypoint{position:absolute;top:0;transform:translateX(-50%);
+  display:block;font:900 15px/1 monospace;color:#ffca5a;text-shadow:0 0 7px #ffd46d,0 1px 2px #000;z-index:3;}
+#gamehud #houseCompass .compass-waypoint[hidden]{display:none!important;}
+#gamehud #houseCompass .compass-waypoint[data-side='left']::after{content:'◀';font-size:10px;margin-left:3px;}
+#gamehud #houseCompass .compass-waypoint[data-side='right']::after{content:'▶';font-size:10px;margin-left:3px;}
+#gamehud #houseCompass .compass-caption{display:grid;gap:2px;min-width:0;white-space:nowrap;}
+#gamehud #houseCompass #compassTitle{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  color:#ffd58d;font:800 11px/1.2 'Segoe UI',sans-serif;letter-spacing:.025em;}
+#gamehud #houseCompass #navDirection{display:block;grid-column:auto;font:600 10px/1.15 'Segoe UI',sans-serif;
+  color:#c6e0d8;white-space:nowrap;}
+#gamehud #houseCompass:hover{filter:brightness(1.17);}
+@media (max-width:850px){
+  #gamehud #houseCompass{top:64px;width:min(420px,70vw);min-width:0;}
+  #gamehud #quest{top:131px;max-width:55vw;}
+  #gamehud .mp-status{top:135px;}
+}
+@media (max-width:480px){
+  #gamehud #houseCompass{top:62px;width:min(345px,84vw);padding:0 4px 5px;}
+  #gamehud #houseCompass .compass-ruler{height:29px;}
+  #gamehud #houseCompass .compass-mark b{font-size:10px;}
+  #gamehud #houseCompass #compassTitle{font-size:10px;}
+  #gamehud #quest{top:128px;max-width:72vw;}
+}
+@media (max-height:440px) and (orientation:landscape){
+  #gamehud #houseCompass{top:9px;width:min(285px,43vw);}
+  #gamehud #houseCompass .compass-ruler{height:23px;}
+  #gamehud #houseCompass .compass-mark{top:14px;height:6px;}
+  #gamehud #houseCompass .compass-mark.major,#gamehud #houseCompass .compass-mark.cardinal{top:11px;height:10px;}
+  #gamehud #houseCompass .compass-mark b{bottom:11px;font-size:9px;}
+  #gamehud #houseCompass .compass-front{height:16px;}
+  #gamehud #houseCompass .compass-front::after{top:15px;}
+  #gamehud #quest{top:65px;}
+}
+@media (prefers-reduced-motion:reduce){#gamehud #houseCompass .compass-waypoint{transition:none;}}
+
+#gamehud #houseCompass .compass-mark{overflow:visible!important;}
+#gamehud #houseCompass .compass-marks{overflow:visible;}
+#gamehud #houseCompass .compass-ruler{
+  -webkit-mask-image:linear-gradient(90deg,transparent,black 4%,black 96%,transparent);
+  mask-image:linear-gradient(90deg,transparent,black 4%,black 96%,transparent);
+}

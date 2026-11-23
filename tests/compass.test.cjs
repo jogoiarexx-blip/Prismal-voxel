@@ -1,0 +1,18 @@
+'use strict';
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const path=require('node:path');
+const vm=require('node:vm');
+const Voxel=require('../js/world.js');
+const Navigation=vm.runInNewContext(fs.readFileSync(path.resolve(__dirname,'../js/navigation.js'),'utf8')+'\nNavigation',{Voxel,Math,Number});
+let n=0;const check=(desc,f)=>{f();n++;console.log('PASS compass:',desc)};
+check('shows north in front when looking north',()=>{const a=Navigation.compassMarks(0);assert.equal(a.find(x=>x.label==='N').left,50)});
+check('shows east at center when player looks east',()=>{const a=Navigation.compassMarks(Math.PI/2);assert.equal(a.find(x=>x.label==='L').left,50)});
+check('shows west at center looking west',()=>{const a=Navigation.compassMarks(-Math.PI/2);assert.equal(a.find(x=>x.label==='O').left,50)});
+check('wraps correctly across 0/360',()=>{const a=Navigation.compassMarks(359*Math.PI/180);assert.ok(a.find(x=>x.label==='N').left>50);assert.ok(a.find(x=>x.label==='NO').left<50)});
+check('waypoint ahead remains centered',()=>{assert.equal(Navigation.waypointPosition(0).left,50)});
+check('right and left waypoints remain distinguishable',()=>{const r=Navigation.waypointPosition(Math.PI/2);const l=Navigation.waypointPosition(-Math.PI/2);assert.equal(r.side,'right');assert.equal(l.side,'left');assert.ok(r.left>l.left)});
+check('preserves destination when navigation is off',()=>{const t=Navigation.target({navMode:'off',house:{x:3,z:5}});assert.equal(t,null);assert.ok(Navigation.compassMarks(0).length>0)});
+check('ruler contains only visible marks',()=>{for(const mark of Navigation.compassMarks(0))assert.ok(mark.left>=0&&mark.left<=100)});
+check('HUD and style wired',()=>{const h=fs.readFileSync(path.resolve(__dirname,'../index.html'),'utf8');const u=fs.readFileSync(path.resolve(__dirname,'../js/ui.js'),'utf8');const css=fs.readFileSync(path.resolve(__dirname,'../style.css'),'utf8');assert.match(h,/id="compassMarks"/);assert.match(h,/id="compassWaypoint"/);assert.match(u,/drawCompass\(g\.p\.yaw,nav\)/);assert.match(css,/#gamehud #houseCompass \.compass-mark/);});
+console.log('TOTAL compass PASS',n);

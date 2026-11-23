@@ -49,5 +49,27 @@ const Navigation = (() => {
     return {distance:Math.round(horizontal),height,turn,angle,arrived,
       dy:Math.round(dy),key:target.key};
   }
-  return {normalize,target,guidance,radians};
+  // Top-screen military-style compass. Yaw zero faces north (-Z),
+  // positive yaw rotates clockwise toward east (+X). Keep this independent
+  // from the waypoint so cardinal directions remain visible when guidance is off.
+  const directions = ['N', 'NE', 'L', 'SE', 'S', 'SO', 'O', 'NO'];
+  const degrees = (a) => ((a % 360) + 360) % 360;
+  const heading = (yaw) => degrees((Number.isFinite(yaw) ? yaw : 0) * 180 / Math.PI);
+  const relative = (bearing, current) => ((bearing - current + 540) % 360) - 180;
+  function compassMarks(yaw, view=70) {
+    const current=heading(yaw), visible=[];
+    for(let deg=0;deg<360;deg+=5) {
+      const diff=relative(deg,current);
+      if(Math.abs(diff)>view)continue;
+      visible.push({deg,left:50+diff*50/view,label:deg%45===0?directions[deg/45]:'',major:deg%45===0||deg%30===0});
+    }
+    return visible;
+  }
+  function waypointPosition(angle, view=70) {
+    if(!Number.isFinite(angle))return null;
+    const deg=angle*180/Math.PI;
+    return {left:Math.max(5,Math.min(95,50+deg*50/view)),
+      side:deg < -view?'left':deg>view?'right':'center'};
+  }
+  return {normalize,target,guidance,radians,heading,compassMarks,waypointPosition};
 })();

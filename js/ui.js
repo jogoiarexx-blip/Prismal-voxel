@@ -132,6 +132,37 @@
   $('#expCard').onclick = () => guide('home', 2);
   $('#expCompass').onclick = () => navigateTo('objective');
   $('#houseCompass').onclick = () => houseMenu();
+  // Fixed 72 nodes (no new DOM allocation while playing). 7 HUD updates/sec.
+  const compassNodes=[];
+  for (let i=0;i<72;i++) {
+    const node=document.createElement('span');
+    node.className='compass-mark';
+    node.dataset.deg=String(i*5);
+    const label=i*5%45===0;
+    if(label)node.classList.add('cardinal');
+    else if(i*5%30===0)node.classList.add('major');
+    if(label){const text=document.createElement('b');node.append(text);}
+    $('#compassMarks').append(node);
+    compassNodes.push(node);
+  }
+  function drawCompass(yaw, nav) {
+    const marks=Navigation.compassMarks(yaw);
+    const byDeg=new Map(marks.map(m=>[m.deg,m]));
+    for(const el of compassNodes) {
+      const mark=byDeg.get(Number(el.dataset.deg));
+      el.hidden=!mark;
+      if(!mark)continue;
+      el.style.left=mark.left.toFixed(2)+'%';
+      if(mark.label)el.firstElementChild.textContent=mark.label;
+    }
+    const pin=$('#compassWaypoint');
+    const position=nav && Navigation.waypointPosition(nav.angle);
+    pin.hidden=!position;
+    if(position){
+      pin.style.left=position.left.toFixed(2)+'%';
+      pin.dataset.side=position.side;
+    }
+  }
   const motes = $('.motes');
   for (let i = 0; i < 15; i++) {
     let n = document.createElement('i');
@@ -1326,7 +1357,7 @@
         '</ul><p>O primeiro selo libera a pedra rúnica. Com os três, use a bancada para combinar cristal, cobre e vidro em um Farol Prisma. Coloque-o para acender uma aurora sobre sua base.</p></div>';
     } else
       body =
-        '<p>Mundo Prisma é um sandbox voxel de exploração, sobrevivência e construção. Explore os Campos de Âmbar, a Floresta de Névoa e as Dunas de Vidro. Nas dunas, procure os obeliscos com cristais no topo.</p><p class="muted">Versão jogável 0.9.18 · Solo e multiplayer experimental<br>Arte, sprites, tipografia de título e efeitos sonoros criados para Mundo Prisma. Seu progresso é salvo neste navegador.</p>';
+        '<p>Mundo Prisma é um sandbox voxel de exploração, sobrevivência e construção. Explore os Campos de Âmbar, a Floresta de Névoa e as Dunas de Vidro. Nas dunas, procure os obeliscos com cristais no topo.</p><p class="muted">Versão jogável 0.9.19 · Solo e multiplayer experimental<br>Arte, sprites, tipografia de título e efeitos sonoros criados para Mundo Prisma. Seu progresso é salvo neste navegador.</p>';
     panel(
       'guide',
       'Guia de campo',
@@ -1833,19 +1864,16 @@
           : '';
     const navTarget=Navigation.target(g);
     const nav=Navigation.guidance(g.p,navTarget);
-    const compass=$('#expCompass');
-    const activeRuins=g.destination;
-    compass.querySelector('i').style.transform='rotate(0rad)';
-    compass.querySelector('span').textContent=activeRuins ?
-      '◇ Objetivo · '+esc(Voxel.ruins[activeRuins.id]?.name||'Ruína') :
-      (g.goals.place30?'Expedição concluída':'3 selos · Fabrique o farol');
-    const navBtn=$('#houseCompass'), navLabel=navBtn.querySelector('span'),navArrow=navBtn.querySelector('i'),navText=$('#navDirection');
+    // Compass strip replaces the two floating arrows, but keeps their
+    // shortcuts: H selects any destination; N selects the next objective.
+    drawCompass(g.p.yaw,nav);
+    const navBtn=$('#houseCompass'), navLabel=$('#compassTitle'),navText=$('#navDirection');
     if(navTarget && nav){
-      navArrow.style.transform='rotate('+nav.angle+'rad)';
       navLabel.textContent=(navTarget.type==='home'?'⌂ ':navTarget.type==='bag'?'▣ ':'◇ ')+navTarget.label+' · '+nav.distance+' m';
       navText.textContent=nav.arrived?'✓ Você chegou':nav.turn+(nav.height?' · '+nav.height:'');
       navBtn.classList.add('tracking');
       navBtn.classList.toggle('arrived',nav.arrived);
+      navBtn.setAttribute('aria-label','Navegação: '+navTarget.label+', '+nav.distance+' metros. Abrir destinos (H)');
       if(nav.arrived && navArrivedKey!==nav.key){
         navArrivedKey=nav.key;
         toast('Destino alcançado: '+navTarget.label);
@@ -1853,10 +1881,10 @@
         navArrivedKey=null;
       }
     } else {
-      navArrow.style.transform='rotate(0rad)';
       navLabel.textContent=g.navMode==='off'?'Navegação desligada':'Escolher destino (H)';
-      navText.textContent='Casa · ruínas · mochila';
+      navText.textContent='H: destinos · N: objetivo';
       navBtn.classList.remove('tracking','arrived');
+      navBtn.setAttribute('aria-label','Abrir navegador de destinos (H)');
     }
     $('#breakbar').hidden = !g.holding || !g.progress;
     $('#breakbar span').style.width = Math.max(0, g.progress) * 100 + '%';
@@ -1893,7 +1921,7 @@
     $('#debug').hidden = !debug;
     if (debug)
       $('#debug').textContent =
-        'PRISMA 0.9.18 · ' +
+        'PRISMA 0.9.19 · ' +
         renderer.type +
         '\n' +
         Math.round(fps) +

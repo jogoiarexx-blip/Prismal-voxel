@@ -65,7 +65,7 @@
             <button id="guide"><i data-ico="book"></i>Guia de campo</button
             ><button id="quickNew" hidden><i data-ico="plus"></i>Novo mundo</button>
           </div>
-          <span class="version"><b></b>VERSÃO 0.9.18</span>
+          <span class="version"><b></b>VERSÃO 0.9.19</span>
         </footer>
       </section>
       <section id="game" hidden aria-label="Mundo jogável">
@@ -95,8 +95,16 @@
           <button id="expCompass" title="Seguir o próximo objetivo (atalho N)" aria-label="Seguir o próximo objetivo">
             <i aria-hidden="true">▲</i><span></span>
           </button>
-          <button id="houseCompass" title="Escolher destino (H)" aria-label="Abrir navegador de destinos">
-            <i aria-hidden="true">▲</i><span>Escolher destino</span><small id="navDirection" aria-live="off"></small>
+          <button id="houseCompass" title="Escolher destino (H)" aria-label="Abrir navegador de destinos" type="button">
+            <span class="compass-ruler" aria-hidden="true">
+              <span id="compassMarks" class="compass-marks"></span>
+              <span id="compassWaypoint" class="compass-waypoint" hidden>◆</span>
+              <span class="compass-front"></span>
+            </span>
+            <span class="compass-caption">
+              <strong id="compassTitle">Escolher destino (H)</strong>
+              <small id="navDirection" aria-live="off">Norte · leste · sul · oeste</small>
+            </span>
           </button>
           <div id="cameraHint" hidden></div>
           <div id="cross"></div>
