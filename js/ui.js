@@ -44,7 +44,18 @@
     mp = null, mpRole = null, mpRecord = null, mpFresh = false,
     mpStartSent = false, mpRemote = null, mpMessages = [], mpLastPose = 0,
     mpLoading = false, mpGuest = false, mpWorldReady = false,
-    mpEditBuffer = [], mpGuestEdits = [], mpLastHud = 0, mpLastSeq = -1, mpPoseSeq = 0;
+    mpEditBuffer = [], mpGuestEdits = [], mpLastHud = 0, mpLastSeq = -1, mpPoseSeq = 0,
+    mpLastEntity = 0, mpEntitySeq = 0, mpLastRemoteHit = 0, mpLootSends = new Set();
+  // A shareable URL fragment carries signaling data without a backend.
+  // Remove it from the address bar after reading; it is never sent to GitHub Pages.
+  const mpInviteFromUrl = (() => {
+    try {
+      if (!location.hash.startsWith('#join=')) return '';
+      const code=decodeURIComponent(location.hash.slice(6));
+      history.replaceState(null,'',location.pathname+location.search);
+      return code.startsWith('PRISMA1:') && code.length<170000 ? code : '';
+    } catch { return ''; }
+  })();
   const esc = (s) =>
     String(s ?? '').replace(
       /[&<>"']/g,
@@ -212,6 +223,8 @@
     mpRole=null; mpRecord=null; mpFresh=false; mpStartSent=false;
     mpGuest=false; mpLoading=false; mpMessages=[];
     mpWorldReady=false;mpEditBuffer=[];mpGuestEdits=[];mpLastSeq=-1;mpPoseSeq=0;
+    mpLastEntity=0;mpEntitySeq=0;mpLastRemoteHit=0;mpLootSends.clear();
+    if (g) {g.networkGuest=false;g.networkHost=false;}
     if (mpRemote) mpRemote.active=false;
     mpRemote=null;
     $('#mpChatBtn').hidden=true;
@@ -232,7 +245,7 @@
         '<button class="mp-choice" data-act="mp-join"><span class="mp-emoji">◇</span><b>Entrar na sala</b><small>Cole o convite de quem criou.</small></button>' +
       '</div>' +
       '<div class="mp-hint"><strong>Como funciona?</strong> Duas pessoas trocam convite e resposta. Não é preciso criar conta nem instalar aplicativos. Sem um servidor de sinalização, o código é longo, mas a conexão é direta.</div>' +
-      '<p class="smallnote">Versão experimental para 2 pessoas: posições, blocos e chat sincronizados. O anfitrião salva o mundo. Pode falhar com alguns roteadores ou redes móveis sem TURN.</p>',
+      '<p class="smallnote">Cooperação experimental para duas pessoas: jogadores, criaturas, combate, coleta e construções. O anfitrião salva o mundo. Algumas redes móveis exigem TURN.</p>',
       true);
   }
   async function multiplayerHostPanel() {
@@ -267,7 +280,7 @@
         panel('mp-offer','Seu convite está pronto',
           '<p class="mp-lead">1. Envie este convite ao amigo, por mensagem. Ele deve abrir <b>Multiplayer → Entrar na sala</b>.</p>'+
           '<textarea id="mpShareCode" class="mp-code" readonly aria-label="Convite P2P">'+esc(invite)+'</textarea>'+
-          '<div class="btns">'+btn('mp-copy','Copiar convite','primary')+'</div>'+
+          '<div class="btns">'+btn('mp-copy','Copiar código','secondary')+btn('mp-copy-link','Copiar link do convite','primary')+'</div>'+
           '<p class="mp-lead">2. Quando receber a resposta dele, cole abaixo para conectar.</p>'+
           '<textarea id="mpAnswerIn" class="mp-code" placeholder="Cole aqui o código de resposta do seu amigo" aria-label="Resposta P2P"></textarea>'+
           btn('mp-accept','Conectar e começar a jogar','primary fullwidth')+
@@ -280,7 +293,7 @@
     panel('mp-join','Entrar na sala',
       '<p class="mp-lead">Peça o convite a quem criou a sala. O código pode ser longo porque esta versão não usa servidor de sinalização.</p>'+
       '<label class="field">Seu apelido<input id="mpNickname" maxlength="28" value="Explorador" autocomplete="off"></label>'+
-      '<label class="field">Código do convite<textarea id="mpOfferIn" class="mp-code" placeholder="Cole o convite completo enviado pelo anfitrião"></textarea></label>'+
+      '<label class="field">Código do convite<textarea id="mpOfferIn" class="mp-code" placeholder="Cole o convite ou abra o link enviado pelo anfitrião">'+esc(mpInviteFromUrl)+'</textarea></label>'+
       btn('mp-answer','Criar resposta','primary fullwidth')+
       '<p class="smallnote">A partida do convidado não sobrescreve seus mundos locais. Quem criou a sala conserva o mundo salvo.</p>',true);
   }
@@ -309,6 +322,16 @@
       code.focus();code.select();toast('Selecione o texto e copie manualmente.');
     });
     else{code.focus();code.select();toast('Texto selecionado. Use Ctrl+C para copiar.');}
+  }
+  function multiplayerCopyLink() {
+    const value=$('#mpShareCode')?.value;
+    if (!value || mpRole!=='host')return;
+    const url=location.origin+location.pathname+location.search+'#join='+encodeURIComponent(value);
+    if (url.length>18000) return toast('Convite muito longo para um link. Use Copiar código.');
+    if(navigator.clipboard?.writeText)navigator.clipboard.writeText(url)
+      .then(()=>toast('Link copiado! O amigo abrirá Entrar na sala automaticamente.'))
+      .catch(()=>toast('Não foi possível copiar o link. Use Copiar código.'));
+    else toast('Seu navegador não permite copiar links automaticamente. Use Copiar código.');
   }
   async function multiplayerAccept() {
     if(!mp || mpRole!=='host')return;
@@ -347,7 +370,7 @@
     if(!mp || !msg || typeof msg!=='object')return;
     if(msg.t==='hello') {toast('Conectado com '+mp.remoteName);return;}
     if(msg.t==='world-ready' && mpRole==='host' && g) {
-      mpWorldReady=true;flushHostEdits();toast('Mundo sincronizado com '+mp.remoteName);return;
+      mpWorldReady=true;mpLastEntity=0;flushHostEdits();toast('Mundo sincronizado com '+mp.remoteName);return;
     }
     if(msg.t==='world' && mpRole==='guest' && !g) {
       const src=msg.rec;
@@ -368,7 +391,9 @@
           (seq===null || seq>mpLastSeq)) {
         if(seq!==null)mpLastSeq=seq;
         Object.assign(mpRemote,{targetX:x,targetY:y,targetZ:z,targetYaw:yaw,
-          moving:!!moving,crouch:!!msg.crouch,sprint:!!msg.sprint,
+          moving:!!moving,crouch:!!msg.crouch,sprint:!!msg.sprint,swing:!!msg.swing,
+          life:Number.isFinite(msg.life)?Math.max(0,Math.min(100,msg.life)):100,
+          held:Number.isInteger(msg.held)?msg.held:0,
           lastPacket:performance.now(),active:true});
         if(!Number.isFinite(mpRemote.x))Object.assign(mpRemote,{x,y,z,yaw});
       }
@@ -385,6 +410,48 @@
     } else if(msg.t==='batch' && g && Array.isArray(msg.ops) && msg.ops.length<=300) {
       if(mpRole==='host' && (!mpWorldReady || !mpRemote?.active || !msg.ops.every(v=>Array.isArray(v)&&v.length===4&&v.every(Number.isInteger)&&Math.hypot(v[0]-mpRemote.x,v[1]-mpRemote.y,v[2]-mpRemote.z)<12)))return;
       g.applyRemoteBatch(msg.ops);
+    } else if (msg.t==='entities' && mpRole==='guest' && g?.ready) {
+      g.applyNetworkEntities(msg);
+    } else if (msg.t==='mob-hit' && mpRole==='host' && mpWorldReady && g?.ready && mpRemote?.active) {
+      const id=msg.id;
+      const now=performance.now();
+      const mob=g.mobs.find(m=>m.id===id && m.hp>0 && !m.dying);
+      if(!Number.isSafeInteger(id)||!mob || now-mpLastRemoteHit<400 ||
+          Math.hypot(mob.x-mpRemote.x,mob.y-(mpRemote.y+0.8),mob.z-mpRemote.z)>3.9)return;
+      const eye=[mpRemote.x,mpRemote.y+1.6,mpRemote.z];
+      const v=[mob.x-eye[0],mob.y+.6-eye[1],mob.z-eye[2]];
+      const len=Math.hypot(...v);
+      if(len>.01 && Voxel.ray((x,y,z)=>g.get(x,y,z,true),eye,v.map(n=>n/len),len,true))return;
+      mpLastRemoteHit=now;
+      const damage=msg.weapon===47?5:Voxel.durability[msg.weapon]?2:1;
+      g.strikeMob(mob,damage,mpRemote.x,mpRemote.z);
+    } else if (msg.t==='mob-feed' && mpRole==='host' && mpWorldReady && g?.ready && mpRemote?.active) {
+      const mob=g.mobs.find(m=>m.id===msg.id && m.hp>0 && !m.dying);
+      if(!mob || !Voxel.farmAnimals.includes(mob.kind) || mob.fed>0 ||
+         msg.food!==Voxel.farmFood[mob.kind] || mpRemote.held!==msg.food ||
+         Math.hypot(mob.x-mpRemote.x,mob.y-mpRemote.y,mob.z-mpRemote.z)>4)return;
+      mob.hp=Math.min(Voxel.farmHealth[mob.kind],mob.hp+2);
+      mob.fed=5; mob.flee=0;mob.graze=0;g.changed();
+      mp.send({t:'feed-ok',id:mob.id,food:msg.food,kind:mob.kind}).catch(()=>{});
+    } else if (msg.t==='feed-ok' && mpRole==='guest' && g?.ready) {
+      const item=g.inv[g.selected];
+      if(!item || item.b!==msg.food || !Voxel.farmAnimals.includes(msg.kind))return;
+      if(!g.creative && !--item.n)g.inv[g.selected]=null;
+      g.notify(msg.kind+' alimentado(a)');g.changed();
+    } else if (msg.t==='mob-damage' && mpRole==='guest' && g?.ready &&
+               Number.isFinite(msg.n) && msg.n>0 && msg.n<=24 && typeof msg.why==='string') {
+      g.damage(msg.n,msg.why.slice(0,32));
+    } else if (msg.t==='pickup' && mpRole==='host' && mpWorldReady && g?.ready && mpRemote?.active) {
+      const d=g.drops.find(d=>d.id===msg.id && d.n>0);
+      if(!d || mpLootSends.has(d.id) || !Number.isInteger(msg.cap) || msg.cap<1 || msg.cap>64 ||
+         Math.hypot(d.x-mpRemote.x,d.z-mpRemote.z)>2.6 || Math.abs(d.y-mpRemote.y)>2.6)return;
+      const n=Math.min(d.n,msg.cap);
+      mpLootSends.add(d.id);
+      mp.send({t:'loot-grant',id:d.id,b:d.b,n,dur:d.dur}).then(()=>{
+        d.n-=n;g.drops=g.drops.filter(v=>v.n>0);g.changed();
+      }).catch(()=>{}).finally(()=>mpLootSends.delete(d.id));
+    } else if(msg.t==='loot-grant' && mpRole==='guest' && g?.ready) {
+      g.receiveNetworkLoot(msg);
     } else if(msg.t==='chat' && typeof msg.text==='string') {
       const body=msg.text.slice(0,280);
       mpMessages.push({from:mp.remoteName,text:body});mpMessages=mpMessages.slice(-40);
@@ -642,6 +709,8 @@
       home.hidden = true;
       game.hidden = false;
       g = new Game.Session(rec, renderer, settings, toast, signal);
+      g.networkGuest = mpRole==='guest';
+      g.networkHost = mpRole==='host';
       g.temporary = temporary;
       g.remotePlayer = mpRemote;
       $('#mpChatBtn').hidden = !mp?.connected;
@@ -943,7 +1012,7 @@
         '</ul><p>O primeiro selo libera a pedra rúnica. Com os três, use a bancada para combinar cristal, cobre e vidro em um Farol Prisma. Coloque-o para acender uma aurora sobre sua base.</p></div>';
     } else
       body =
-        '<p>Mundo Prisma é um sandbox voxel de exploração, sobrevivência e construção. Explore os Campos de Âmbar, a Floresta de Névoa e as Dunas de Vidro. Nas dunas, procure os obeliscos com cristais no topo.</p><p class="muted">Versão jogável 0.9.10 · Solo e multiplayer experimental<br>Arte, sprites, tipografia de título e efeitos sonoros criados para Mundo Prisma. Seu progresso é salvo neste navegador.</p>';
+        '<p>Mundo Prisma é um sandbox voxel de exploração, sobrevivência e construção. Explore os Campos de Âmbar, a Floresta de Névoa e as Dunas de Vidro. Nas dunas, procure os obeliscos com cristais no topo.</p><p class="muted">Versão jogável 0.9.11 · Solo e multiplayer experimental<br>Arte, sprites, tipografia de título e efeitos sonoros criados para Mundo Prisma. Seu progresso é salvo neste navegador.</p>';
     panel(
       'guide',
       'Guia de campo',
@@ -1304,6 +1373,14 @@
       if(mp?.connected && !g?.applyingRemoteEdit) queueWorldEdit([[v.x,v.y,v.z,v.b]]);
     } else if (s === 'worldBatch') {
       if(mp?.connected && !g?.applyingRemoteEdit) queueWorldEdit(v);
+    } else if(s==='p2pHitMob' && mpRole==='guest' && mp?.connected) {
+      mp.send({t:'mob-hit',id:v.id,weapon:v.weapon}).catch(()=>toast('Golpe não enviado.'));
+    } else if(s==='p2pFeedMob' && mpRole==='guest' && mp?.connected) {
+      mp.send({t:'mob-feed',id:v.id,food:v.food}).catch(()=>toast('Não foi possível alimentar o animal.'));
+    } else if(s==='p2pDamage' && mpRole==='host' && mpWorldReady && mp?.connected) {
+      mp.send({t:'mob-damage',n:v.n,why:v.why}).catch(()=>{});
+    } else if(s==='p2pPickup' && mpRole==='guest' && mp?.connected) {
+      mp.send({t:'pickup',id:v.id,cap:v.cap}).catch(()=>{});
     } else if (s === 'hud') {
       if (screen === 'play') hud();
     } else if (s === 'station') {
@@ -1322,7 +1399,7 @@
     el.hidden=false;
     const ping=Number.isFinite(mp.latencyMs)?mp.latencyMs+' ms':'medindo…';
     const dist=mpRemote?.active?Math.round(Math.hypot(g.p.x-mpRemote.x,g.p.z-mpRemote.z))+' m':'aguardando';
-    el.textContent='◈ '+mp.remoteName+' · '+dist+' · '+ping;
+    el.textContent='◈ '+mp.remoteName+' · '+dist+' · '+ping+(mpRemote?.active?' · ♥'+Math.round(mpRemote.life??100):'');
   }
   function hud() {
     if (!g) return;
@@ -1441,7 +1518,7 @@
     $('#debug').hidden = !debug;
     if (debug)
       $('#debug').textContent =
-        'PRISMA 0.9.10 · ' +
+        'PRISMA 0.9.11 · ' +
         renderer.type +
         '\n' +
         Math.round(fps) +
@@ -1488,6 +1565,9 @@
         break;
       case 'mp-join':
         multiplayerJoinPanel();
+        break;
+      case 'mp-copy-link':
+        multiplayerCopyLink();
         break;
       case 'mp-copy':
         multiplayerCopy();
@@ -2015,12 +2095,19 @@
     }
     if (mp?.connected && now-mpLastPose>95) {
       mpLastPose=now; const p=g.p;
-      mp.sendFast({t:'pose',seq:++mpPoseSeq,x:+p.x.toFixed(2),y:+p.y.toFixed(2),z:+p.z.toFixed(2),yaw:+p.yaw.toFixed(2),moving:g.moveSpeed>0.1,crouch:!!g.crouch,sprint:g.moveSpeed>5});
+      mp.sendFast({t:'pose',seq:++mpPoseSeq,x:+p.x.toFixed(2),y:+p.y.toFixed(2),z:+p.z.toFixed(2),yaw:+p.yaw.toFixed(2),moving:g.moveSpeed>0.1,crouch:!!g.crouch,sprint:g.moveSpeed>5,
+        life:Math.round(p.life),held:g.inv[g.selected]?.b || 0,swing:g.attackCool>0});
+    }
+    if(mpRole==='host' && mpWorldReady && mp?.connected && now-mpLastEntity>320) {
+      mpLastEntity=now;
+      mp.sendFast({t:'entities',seq:++mpEntitySeq,
+        mobs:g.networkMobState(),drops:g.networkDropState()});
     }
     smoothRemote(dt,now);
     if(mp?.connected && now-mpLastHud>1200) {mpLastHud=now;updateP2PHud();}
     renderer.draw(g, settings, Math.min(1, acc * 60));
   }
+  if(mpInviteFromUrl)setTimeout(()=>multiplayerJoinPanel(),120);
   requestAnimationFrame(frame);
   if ('serviceWorker' in navigator && location.protocol !== 'file:')
     navigator.serviceWorker.register('./offline.js').catch(() => {});

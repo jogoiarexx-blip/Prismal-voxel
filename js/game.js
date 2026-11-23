@@ -97,8 +97,17 @@ const Game = (() => {
       this.eyeHeight = 1.62;
       this.previousEye = null;
       this.chests = rec.chests || {};
-      this.drops = rec.drops || [];
       this.mobs = rec.mobs || [];
+      // IDs survive saves and let the host address creatures without ambiguity.
+      this.nextMobId = Math.max(1, ...this.mobs.map(m => Number.isSafeInteger(m.id) ? m.id + 1 : 1));
+      this.mobs.forEach(m => { if (!Number.isSafeInteger(m.id) || m.id <= 0) m.id = this.nextMobId++; });
+      this.drops = rec.drops || [];
+      this.nextDropId = Math.max(1, ...this.drops.map(d => Number.isSafeInteger(d.id) ? d.id + 1 : 1));
+      this.drops.forEach(d => { if (!Number.isSafeInteger(d.id) || d.id <= 0) d.id = this.nextDropId++; });
+      this.networkGuest = false;
+      this.networkHost = false;
+      this.lastNetworkMobSeq = -1;
+      this.guestPickupPending = new Map();
       this.bag = rec.bag;
       this.goals = rec.goals || {};
       this.renderer = renderer;
@@ -646,8 +655,13 @@ const Game = (() => {
           }
         }
       }
-      this.ai(dt);
-      this.loot(dt);
+      if (!this.networkGuest) {
+        this.ai(dt);
+        this.loot(dt);
+      } else {
+        this.interpolateNetworkMobs(dt);
+        this.requestNearbyLoot();
+      }
       this.hudTick -= dt;
       if (this.hudTick <= 0) {
         this.hudTick = 0.14;
@@ -659,6 +673,106 @@ const Game = (() => {
         this.save();
       }
     }
+    strikeMob(mob, damage, fromX, fromZ) {
+      if (!mob || mob.hp <= 0 || mob.dying) return false;
+      mob.hp -= Math.max(1, Math.min(5, damage));
+      mob.stun = mob.hurt = .36;
+      mob.knockback = .34;
+      if (isFarm(mob.kind)) { mob.flee = 4.5; mob.graze = 0; }
+      const dx = mob.x - fromX, dz = mob.z - fromZ;
+      const dist = Math.hypot(dx, dz) || 1;
+      mob.pushX = dx / dist; mob.pushZ = dz / dist;
+      Sound.play('mine', this.settings);
+      this.signal('hitEnemy');
+      if (mob.hp <= 0 && !mob.dying) {
+        mob.dying = .55; mob.wind = 0;
+        if (mob.kind === 'Guardião Prisma') this.goals.guardian = true;
+        const farmDrop = { Ovelha: 123, Porco: 124, Vaca: 125 }[mob.kind];
+        this.addDrop(mob.x, mob.y + .15, mob.z,
+          farmDrop || (mob.kind === 'Saltim' ? 23 : mob.kind === 'Musgato' ? 36 : 11),
+          farmDrop ? (mob.kind === 'Vaca' ? 2 : 1) : 1);
+        this.changed();
+      }
+      return true;
+    }
+    // Host produces the authoritative creature state; guests only interpolate it.
+    networkMobState() {
+      return this.mobs.slice(0,24).map(m => ({
+        id:m.id, kind:m.kind,
+        x:+m.x.toFixed(2), y:+m.y.toFixed(2), z:+m.z.toFixed(2),
+        hp:Math.max(0,m.hp), face:+(m.face || 0).toFixed(2),
+        motion:+(m.motion || 0).toFixed(2), gait:+(m.gait || 0).toFixed(2),
+        hurt:+(m.hurt || 0).toFixed(2), attack:+(m.attack || 0).toFixed(2),
+        dying:+(m.dying || 0).toFixed(2), wind:+(m.wind || 0).toFixed(2),
+      }));
+    }
+    networkDropState() {
+      return this.drops.slice(0,32).map(d => ({id:d.id, x:+d.x.toFixed(2),
+        y:+d.y.toFixed(2), z:+d.z.toFixed(2), b:d.b, n:d.n, dur:d.dur}));
+    }
+    applyNetworkEntities(msg) {
+      if (!this.networkGuest || !Array.isArray(msg?.mobs) || msg.mobs.length > 24 ||
+          !Number.isSafeInteger(msg.seq) || msg.seq <= this.lastNetworkMobSeq) return false;
+      const allowed = new Set(['Saltim','Musgato','Luzerrante','Raspejante','Vigia de Cascalho',
+        'Guardião Prisma','Ovelha','Porco','Vaca']);
+      const old = new Map(this.mobs.map(m => [m.id,m]));
+      const out=[];
+      for (const row of msg.mobs) {
+        if (!Number.isSafeInteger(row.id) || row.id<1 || !allowed.has(row.kind) ||
+            ![row.x,row.y,row.z,row.hp,row.face,row.motion,row.gait,row.hurt,row.attack,row.dying].every(Number.isFinite) ||
+            Math.max(Math.abs(row.x),Math.abs(row.z))>100000 || row.y<0 || row.y>Voxel.H ||
+            row.hp<-5 || row.hp>100 || out.some(v => v.id===row.id)) continue;
+        const m=old.get(row.id) || {...row};
+        const dist=Math.hypot(row.x-m.x,row.y-m.y,row.z-m.z);
+        if (dist>9) Object.assign(m,{x:row.x,y:row.y,z:row.z});
+        m.netX=row.x;m.netY=row.y;m.netZ=row.z;
+        Object.assign(m,{id:row.id,kind:row.kind,hp:row.hp,face:row.face,
+          motion:row.motion,gait:row.gait,hurt:row.hurt,attack:row.attack,dying:row.dying,
+          wind:Number.isFinite(row.wind)?row.wind:0});
+        out.push(m);
+      }
+      this.mobs=out;
+      this.lastNetworkMobSeq=msg.seq;
+      if (Array.isArray(msg.drops) && msg.drops.length<=32) {
+        this.drops=msg.drops.filter(d=>Number.isSafeInteger(d.id) && d.id>0 &&
+          [d.x,d.y,d.z,d.b,d.n].every(Number.isFinite) && Math.abs(d.x)<100000 &&
+          Math.abs(d.z)<100000 && d.y>=0 && d.y<Voxel.H &&
+          Number.isInteger(d.b) && d.b>0 && d.b<Voxel.blocks.length &&
+          Number.isInteger(d.n) && d.n>0 && d.n<=64);
+        const visible=new Set(this.drops.map(d=>d.id));
+        for(const id of this.guestPickupPending.keys()) if(!visible.has(id)) this.guestPickupPending.delete(id);
+      }
+      return true;
+    }
+    interpolateNetworkMobs(dt) {
+      const t=1-Math.exp(-dt*12);
+      for(const m of this.mobs)
+        for(const [p,d] of [['x','netX'],['y','netY'],['z','netZ']])
+          if(Number.isFinite(m[d]))m[p]+=(m[d]-m[p])*t;
+    }
+    requestNearbyLoot() {
+      if (!this.networkGuest || this.creative) return;
+      const now=this.elapsed;
+      for (const d of this.drops) {
+        if (this.guestPickupPending.get(d.id)>now ||
+            Math.hypot(d.x-this.p.x,d.z-this.p.z)>2 || Math.abs(d.y-this.p.y)>2.3)continue;
+        const capacity=this.inv.reduce((n,v)=> n + (!v ? (Voxel.durability[d.b]?1:64) :
+          v.b===d.b && !Voxel.durability[d.b] ? Math.max(0,64-v.n):0),0);
+        if (!capacity)continue;
+        this.guestPickupPending.set(d.id,now+1.3);
+        this.signal('p2pPickup',{id:d.id,cap:Math.min(64,capacity)});
+      }
+    }
+    receiveNetworkLoot(item) {
+      if (!this.networkGuest || !Number.isInteger(item?.b) ||
+          item.b<=0 || item.b>=Voxel.blocks.length || !Number.isInteger(item.n) ||
+          item.n<1 || item.n>64) return false;
+      const remaining=fill(this.inv,item.b,item.n,item.dur);
+      if(remaining) this.notify('Mochila cheia: parte da coleta não coube');
+      if(remaining!==item.n) { this.notify('+'+(item.n-remaining)+' '+blocks[item.b].name);this.changed(); }
+      this.guestPickupPending.delete(item.id);
+      return remaining===0;
+    }
     resetMining() {
       this.mineKey = '';
       this.progress = 0;
@@ -669,36 +783,15 @@ const Game = (() => {
       if (mob) {
         this.progress = 0;
         if (!this.attackCool) {
-          mob.hp -=
-            this.inv[this.selected]?.b === 47 ? 5 : Voxel.durability[this.inv[this.selected]?.b] ? 2 : 1;
-          this.attackCool = 0.45;
-          if (this.inv[this.selected]?.b === 47 && --this.inv[this.selected].dur <= 0)
-            this.inv[this.selected] = null;
-          mob.stun = 0.36;
-          mob.hurt = 0.36;
-          mob.knockback = 0.34;
-          if (isFarm(mob.kind)) {
-            mob.flee = 4.5;
-            mob.graze = 0;
-          }
-          // Knockback follows the contact direction, never the camera aim ray.
-          const pushX = mob.x - this.p.x, pushZ = mob.z - this.p.z;
-          const pushLen = Math.hypot(pushX, pushZ) || 1;
-          mob.pushX = pushX / pushLen;
-          mob.pushZ = pushZ / pushLen;
-          Sound.play('mine', this.settings);
-          this.signal('hitEnemy');
-          if (mob.hp <= 0 && !mob.dying) {
-            mob.dying = 0.55;
-            mob.wind = 0;
-            if (mob.kind === 'Guardião Prisma') this.goals.guardian = true;
-            const farmDrop = { Ovelha: 123, Porco: 124, Vaca: 125 }[mob.kind];
-            this.addDrop(
-              mob.x, mob.y + .15, mob.z,
-              farmDrop || (mob.kind === 'Saltim' ? 23 : mob.kind === 'Musgato' ? 36 : 11),
-              farmDrop ? (mob.kind === 'Vaca' ? 2 : 1) : 1,
-            );
-            this.changed();
+          this.attackCool = .45;
+          const item = this.inv[this.selected];
+          if (this.networkGuest) {
+            this.signal('p2pHitMob', {id:mob.id, weapon:item?.b || 0});
+            this.signal('hitEnemy');
+          } else {
+            const damage = item?.b === 47 ? 5 : Voxel.durability[item?.b] ? 2 : 1;
+            this.strikeMob(mob, damage, this.p.x, this.p.z);
+            if (item?.b === 47 && --item.dur <= 0) this.inv[this.selected] = null;
           }
         }
         return;
@@ -798,7 +891,7 @@ const Game = (() => {
       this.signal('hud');
     }
     addDrop(x, y, z, b, n, dur) {
-      this.drops.push({ x, y, z, b, n, dur });
+      this.drops.push({ id:this.nextDropId++, x, y, z, b, n, dur });
     }
     loot(dt) {
       const p = this.p;
@@ -863,7 +956,7 @@ const Game = (() => {
       ) {
         if (!this.mobs.some((m) => m.kind === 'Guardião Prisma')) {
           this.mobs.push({
-            kind: 'Guardião Prisma',
+            id:this.nextMobId++, kind: 'Guardião Prisma',
             x: x + 2.5,
             y: site.y,
             z: z + 1.5,
@@ -1007,6 +1100,10 @@ const Game = (() => {
       // The same right-click/tap works with the existing inventory and touch UI.
       const animal = !forcePlace && this.aimMob();
       if (animal && isFarm(animal.kind) && t?.b === Voxel.farmFood[animal.kind]) {
+        if (this.networkGuest) {
+          this.signal('p2pFeedMob',{id:animal.id,food:t.b});
+          return true;
+        }
         if ((animal.fed || 0) > 0) {
           this.notify(animal.kind + ' já está alimentado(a)');
           return true;
@@ -1153,6 +1250,9 @@ const Game = (() => {
           }
       // Prevent creatures from clipping into the player, without trapping them on spawn.
       if (Math.hypot(nx - this.p.x, nz - this.p.z) < radius + .26 && Math.abs(floor - this.p.y) < 1.6) return false;
+      const otherPlayer = this.networkHost && this.remotePlayer?.active ? this.remotePlayer : null;
+      if (otherPlayer && Math.hypot(nx-otherPlayer.x,nz-otherPlayer.z)<radius+.26 &&
+          Math.abs(floor-otherPlayer.y)<1.6) return false;
       // Small, local separation keeps actors from forming a single overlapping blob.
       for (const other of this.mobs)
         if (other !== m && !other.dying && Math.abs(other.y - floor) < 1.2 &&
@@ -1184,7 +1284,10 @@ const Game = (() => {
           const tick = ++this.animalSeed;
           const a = Voxel.hash(this.day, tick, this.seed ^ 718) * Math.PI * 2;
           const rad = 10 + Voxel.hash(this.day, tick, this.seed ^ 43) * 8;
-          const x = p.x + Math.cos(a) * rad, z = p.z + Math.sin(a) * rad;
+          const remote = this.networkHost && this.remotePlayer?.active &&
+            Math.hypot(p.x-this.remotePlayer.x,p.z-this.remotePlayer.z)<42 ? this.remotePlayer : null;
+          const spawnAround = remote && (tick % 2 === 0) ? remote : p;
+          const x = spawnAround.x + Math.cos(a) * rad, z = spawnAround.z + Math.sin(a) * rad;
           const cave = p.y < land(p.x, p.z, this.seed, this.generator).h - 5;
           const wantsAnimal = !night && !cave && animals < 4 &&
             (otherMobs >= 3 || Voxel.hash(tick, this.day, this.seed ^ 529) < .78);
@@ -1203,7 +1306,7 @@ const Game = (() => {
               this.get(Math.floor(x), Math.floor(y) + 1, Math.floor(z)) === 0 &&
               !living.some(m => Math.hypot(m.x - x, m.z - z) < (animal ? 2.1 : 1.1))) {
             this.mobs.push({
-              kind, x, y, z,
+              id:this.nextMobId++, kind, x, y, z,
               hp: Voxel.farmHealth[kind] || (kind === 'Vigia de Cascalho' ? 9 : 4),
               wind: 0, cool: 1, gait: 0, motion: 0, roamTimer: 0,
               face: a + Math.PI,
@@ -1257,7 +1360,10 @@ const Game = (() => {
           continue;
         }
         if (m.hp <= 0) { m.dying = .01; continue; }
-        const dx = p.x - m.x, dz = p.z - m.z, d = Math.hypot(dx, dz);
+        const remote = this.networkHost && this.remotePlayer?.active ? this.remotePlayer : null;
+        const target = remote && Math.hypot(remote.x-m.x,remote.z-m.z)<
+          Math.hypot(p.x-m.x,p.z-m.z) ? remote : p;
+        const dx = target.x - m.x, dz = target.z - m.z, d = Math.hypot(dx, dz);
         if (m.knockback > 0) {
           const amount = Math.min(dt, m.knockback);
           walk(m, m.pushX || 0, m.pushZ || 0, 3.2 * amount / Math.max(dt, .001), radius, height);
@@ -1275,7 +1381,7 @@ const Game = (() => {
               const beneath = this.get(Math.floor(m.x), Math.floor(m.y) - 1, Math.floor(m.z));
               if (beneath === 1 || beneath === 17) m.graze = kind === 'Ovelha' ? 1.9 : kind === 'Vaca' ? 1.25 : .45;
             }
-            const food = this.inv[this.selected]?.b === Voxel.farmFood[kind];
+            const food = (target===p ? this.inv[this.selected]?.b : target.held) === Voxel.farmFood[kind];
             let vx = Math.cos(m.roamAngle || 0), vz = Math.sin(m.roamAngle || 0);
             let speed = kind === 'Vaca' ? .52 : kind === 'Ovelha' ? .65 : .74;
             if (m.flee > 0 && d < 13) {
@@ -1308,7 +1414,7 @@ const Game = (() => {
           } else if (!peaceful) {
             const stage = boss ? (m.hp > 16 ? 1 : m.hp > 8 ? 2 : 3) : 1;
             const dir = boss || kind === 'Vigia de Cascalho' ? 1 : safe || !night ? -1 : 1;
-            if (d < 1.75 && dir > 0 && Math.abs(p.y - m.y) < 1.3) {
+            if (d < 1.75 && dir > 0 && Math.abs(target.y - m.y) < 1.3) {
               if (m.cool <= 0) {
                 if (!m.wind) {
                   m.wind = boss ? 1.05 : kind === 'Vigia de Cascalho' ? .85 : .48;
@@ -1318,10 +1424,11 @@ const Game = (() => {
                 m.wind -= dt;
                 if (m.wind <= 0) {
                   const eye = [m.x, m.y + .65, m.z],
-                    v = this.eye().map((n, i) => n - eye[i]),
+                    v = (target===p ? this.eye() : [target.x,target.y+1.6,target.z]).map((n, i) => n - eye[i]),
                     len = Math.hypot(...v);
                   if (len > .01 && !Voxel.ray((x, y, z) => this.get(x, y, z, true), eye, v.map(n => n / len), len, true))
-                    this.damage(boss ? 10 + stage * 3 : kind === 'Vigia de Cascalho' ? 15 : 11, kind);
+                    (target===p ? this.damage(boss ? 10 + stage * 3 : kind === 'Vigia de Cascalho' ? 15 : 11, kind) :
+                      this.signal('p2pDamage',{n:boss ? 10 + stage * 3 : kind === 'Vigia de Cascalho' ? 15 : 11,why:kind}));
                   m.cool = boss ? 3 - stage * .5 : 2;
                   m.wind = 0;
                   m.attack = .36;
@@ -1342,7 +1449,9 @@ const Game = (() => {
       this.mobs = this.mobs.filter(m =>
         !((m.hp <= 0) && m.dying === 0) &&
         (m.kind === 'Guardião Prisma' || Math.hypot(m.x - p.x, m.z - p.z) <
-          (isFarm(m.kind) ? 44 : (night ? 47 : 19))));
+          (isFarm(m.kind) ? 44 : (night ? 47 : 19)) ||
+          (this.networkHost && this.remotePlayer?.active &&
+            Math.hypot(m.x-this.remotePlayer.x,m.z-this.remotePlayer.z)<(isFarm(m.kind)?44:47))));
     }
     damage(n, why) {
       if (this.creative || this.damageCool > 0) return;

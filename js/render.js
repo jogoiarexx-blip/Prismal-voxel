@@ -366,6 +366,20 @@ const View = (() => {
         box(ent,.02,y,-.23-wave,.19,.15*h,.35,112);
         box(ent,-.18,y+(.79+bop)*h,.17,.36,.38*h,.13,12); // field pack
         box(ent,-.10,y+(1.03+bop)*h,.302,.20,.08*h,.035,scarf); // pack emblem
+        // Held items and short swing cues apply to both explorers, without asset downloads.
+        const held=remote?(p.held||0):(g.inv[g.selected]?.b||0);
+        const swing=remote?(p.swing?.19:0):((g.attackCool||0)>0?.19:0);
+        if(held && Voxel.blocks[held]) {
+          const placing=Voxel.blocks[held].placeable;
+          if(placing) {
+            box(ent,.34,y+(.55+bop-wave-swing)*h,-.29,.23,.23*h,.23,held);
+          } else {
+            const head=held===47?35:held===22||held===42?3:held===43?24:
+              held===44||held===89?35:held===45?11:held===90?3:21;
+            box(ent,.39,y+(.45+bop-wave-swing)*h,-.21,.075,.40*h,.09,21);
+            box(ent,.31,y+(.80+bop-wave-swing)*h,-.22,.24,.14*h,.12,head);
+          }
+        }
         for(let i=start;i<ent.length;i+=6){
           const xx=ent[i],zz=ent[i+2];
           ent[i]=x+xx*Math.cos(yaw)-zz*Math.sin(yaw);

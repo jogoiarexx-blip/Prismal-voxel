@@ -1,3 +1,28 @@
+# Mundo Prisma v0.9.11 — cooperação P2P e personagens
+
+Incremental sobre v0.9.10, mantendo compatibilidade com mundos `schema:1`.
+
+## Nesta atualização
+
+- **Criaturas sincronizadas:** o anfitrião controla a simulação dos animais e monstros. O convidado recebe os estados (incluindo vida, golpes e animações) e interpola o movimento. Não nasce uma segunda cópia independente dos animais.
+- **Cooperação de combate:** ataques do convidado são enviados ao anfitrião, que verifica distância, linha de visão e intervalo entre golpes antes de aplicar o dano. A morte e os itens deixados pelas criaturas são calculados apenas uma vez.
+- **Alimentação em cooperação:** vacas, porcos e ovelhas reagem às ações dos dois jogadores; o consumo do alimento do convidado ocorre após confirmação.
+- **Coleta sem duplicar:** itens soltos gerenciados pelo anfitrião podem ser recebidos pelo inventário local do convidado, após validação de distância e espaço disponível. A mochila continua individual, não é um inventário compartilhado.
+- **Ataques das criaturas:** monstros podem mirar no jogador mais próximo. Quando miram no convidado, o dano é enviado para a vida dele. O anfitrião recebe o valor de vida do colega para mostrar no indicador de sessão.
+- **Personagem:** segurando ferramentas e blocos visíveis na mão na terceira pessoa; animação breve do golpe. Poses P2P incluem item segurado e vida.
+- **Convite por link:** quem cria sala pode copiar um link que abre automaticamente a tela de entrada, com o convite já preenchido. A resposta do convidado **ainda deve ser enviada de volta** por código, pois o jogo não possui servidor de sinalização.
+- **Leve:** sem modelos 3D externos, sem bibliotecas novas e sem texturas adicionais; a mensagem das criaturas é curta e limitada a 24 entidades, 32 itens soltos e cerca de três atualizações por segundo.
+
+## Limitações e testes
+
+O multiplayer permanece experimental e limitado a dois jogadores. O anfitrião salva o mundo; a mochila dos jogadores permanece individual. Não existem salas por código curto nem busca automática de amigos. Algumas redes precisam de servidor TURN, ainda não configurado. Os testes automatizados cobrem física, estados de criaturas, validade/ordenação de mensagens, coleta e transporte P2P simulado. A execução entre dois navegadores reais e os FPS de celulares dependem de teste fora deste ambiente.
+
+## Como entrar
+
+Multiplayer → Criar sala → Copiar link do convite → enviar ao amigo. Ele abre o link, toca em Criar resposta e devolve o código ao anfitrião. O anfitrião cola a resposta e conecta.
+
+---
+
 # Mundo Prisma 0.9.10 — P2P e jogador
 
 Versão incremental sobre a 0.9.9, mantendo compatibilidade com os mundos salvos.
