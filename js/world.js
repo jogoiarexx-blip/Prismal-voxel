@@ -122,6 +122,18 @@ const Voxel = (() => {
     ['Runa escura', '25344b', 0], // 112
     ['Carapaça dourada', 'cf9c59', 0], // 113
     ['Cristal violeta', 'b49fe7', 0], // 114
+    // Voxel livestock: colors are generated in WebGL; no meshes or large textures.
+    ['Lã clara', 'eee9d9', 0],        // 115
+    ['Rosto de ovelha', '867b73', 0], // 116
+    ['Cascos', '484646', 0],          // 117
+    ['Pele de porco', 'e7a6ab', 0],   // 118
+    ['Focinho rosado', 'f1c1c0', 0],  // 119
+    ['Pelo de vaca', '755a4a', 0],    // 120
+    ['Manchas de vaca', 'f4e2c3', 0], // 121
+    ['Focinho de vaca', 'b8a08c', 0], // 122
+    ['Lã', 'e7e2d5', 0],              // 123 item
+    ['Carne suína crua', 'd78584', 0], // 124 item
+    ['Carne bovina crua', 'b96560', 0], // 125 item
   ];
   const blocks = data.map(([name, hex, hard], id) => ({
     id,
@@ -429,6 +441,11 @@ const Voxel = (() => {
     [91, 4, [[5, 2]], 0],
     [92, 4, [[16, 2], [8, 2]], 12],
   );
+  // The original bed recipe remains compatible with older worlds.
+  recipes.push([46, 1, [[123, 3], [8, 3]], 12]);
+  const farmAnimals = Object.freeze(['Ovelha', 'Porco', 'Vaca']);
+  const farmFood = Object.freeze({ Ovelha: 40, Porco: 23, Vaca: 40 });
+  const farmHealth = Object.freeze({ Ovelha: 5, Porco: 6, Vaca: 9 });
   const ruins = [
     { name: 'Pórtico da Alvorada', seal: 'Aurora' },
     { name: 'Jardim das Brumas', seal: 'Bruma' },
@@ -916,6 +933,9 @@ const Voxel = (() => {
     blocks,
     recipes,
     durability,
+    farmAnimals,
+    farmFood,
+    farmHealth,
     shapeParts,
     specialShape,
     itemId,

@@ -1,6 +1,6 @@
 'use strict';
 const PREFIX = 'prisma-pages:' + self.registration.scope + ':';
-const CACHE = PREFIX + '0.9.4',
+const CACHE = PREFIX + '0.9.5',
   FILES = [
     './',
     './index.html',
@@ -55,6 +55,9 @@ const CACHE = PREFIX + '0.9.4',
     './art/i45.png',
     './art/i46.png',
     './art/i47.png',
+    './art/i123.png',
+    './art/i124.png',
+    './art/i125.png',
     './js/game.js',
     './js/icons.js',
     './js/build-icons.js',

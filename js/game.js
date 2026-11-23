@@ -1,7 +1,9 @@
 'use strict';
 const Game = (() => {
   const { idx, key, land, blocks, clip } = Voxel,
-    BAG = 36;
+    BAG = 36,
+    farmAnimals = Voxel.farmAnimals;
+  const isFarm = (kind) => farmAnimals.includes(kind);
   const slot = (b, n = 1) => ({ b, n, ...(Voxel.durability[b] ? { dur: Voxel.durability[b] } : {}) }),
     empty = () => Array(BAG).fill(null);
   const solid = (id) => id < 0 || !!blocks[id]?.solid;
@@ -113,6 +115,7 @@ const Game = (() => {
       this.cache = new Map();
       this.saveState = 'Em dia';
       this.spawnTick = 3;
+      this.animalSeed = 0;
       this.hudTick = 0;
       this.vy = 0;
       this.grounded = false;
@@ -629,6 +632,10 @@ const Game = (() => {
           mob.stun = 0.36;
           mob.hurt = 0.36;
           mob.knockback = 0.34;
+          if (isFarm(mob.kind)) {
+            mob.flee = 4.5;
+            mob.graze = 0;
+          }
           // Knockback follows the contact direction, never the camera aim ray.
           const pushX = mob.x - this.p.x, pushZ = mob.z - this.p.z;
           const pushLen = Math.hypot(pushX, pushZ) || 1;
@@ -640,12 +647,11 @@ const Game = (() => {
             mob.dying = 0.55;
             mob.wind = 0;
             if (mob.kind === 'Guardião Prisma') this.goals.guardian = true;
+            const farmDrop = { Ovelha: 123, Porco: 124, Vaca: 125 }[mob.kind];
             this.addDrop(
-              mob.x,
-              mob.y,
-              mob.z,
-              mob.kind === 'Saltim' ? 23 : mob.kind === 'Musgato' ? 36 : 11,
-              1,
+              mob.x, mob.y + .15, mob.z,
+              farmDrop || (mob.kind === 'Saltim' ? 23 : mob.kind === 'Musgato' ? 36 : 11),
+              farmDrop ? (mob.kind === 'Vaca' ? 2 : 1) : 1,
             );
             this.changed();
           }
@@ -915,6 +921,24 @@ const Game = (() => {
     use(forcePlace = false) {
       const t = this.inv[this.selected],
         h = this.hit;
+      // Feed farm animals with their preferred food, including in peaceful mode.
+      // The same right-click/tap works with the existing inventory and touch UI.
+      const animal = !forcePlace && this.aimMob();
+      if (animal && isFarm(animal.kind) && t?.b === Voxel.farmFood[animal.kind]) {
+        if ((animal.fed || 0) > 0) {
+          this.notify(animal.kind + ' já está alimentado(a)');
+          return true;
+        }
+        animal.hp = Math.min(Voxel.farmHealth[animal.kind], animal.hp + 2);
+        animal.fed = 5;
+        animal.flee = 0;
+        animal.graze = 0;
+        if (!this.creative && !--t.n) this.inv[this.selected] = null;
+        Sound.play('eat', this.settings);
+        this.notify(animal.kind + ' alimentado(a)');
+        this.changed();
+        return true;
+      }
       // The explicit Colocar touch button should place beside doors/chests,
       // while normal tapping/right-clicking still interacts with them.
       const placing = forcePlace && !!blocks[t?.b]?.placeable;
@@ -972,12 +996,12 @@ const Game = (() => {
         this.notify('Plantado · irrigue com água a até dois blocos');
         return;
       }
-      if ([23, 36, 41].includes(t?.b) && !this.creative) {
+      if ([23, 36, 41, 124, 125].includes(t?.b) && !this.creative) {
         if (this.p.food >= 99.9 && this.p.life >= 99.9) {
           this.notify('Você já está alimentado');
           return;
         }
-        this.p.food = Math.min(100, this.p.food + (t.b === 41 ? 36 : t.b === 36 ? 10 : 18));
+        this.p.food = Math.min(100, this.p.food + (t.b === 41 ? 36 : t.b === 36 ? 10 : t.b === 124 ? 13 : t.b === 125 ? 16 : 18));
         this.p.life = Math.min(100, this.p.life + 3);
         if (!--t.n) this.inv[this.selected] = null;
         Sound.play('eat', this.settings);
@@ -1022,7 +1046,7 @@ const Game = (() => {
           dist > 0 &&
           dist < 3.7 &&
           dist < (this.hit?.dist ?? 99) + 0.25 &&
-          a.reduce((s, v, i) => s + (v - d[i] * dist) ** 2, 0) < 0.48
+          a.reduce((s, v, i) => s + (v - d[i] * dist) ** 2, 0) < (m.kind === 'Vaca' ? .64 : .48)
         );
       });
     }
@@ -1044,7 +1068,9 @@ const Game = (() => {
       // Small, local separation keeps actors from forming a single overlapping blob.
       for (const other of this.mobs)
         if (other !== m && !other.dying && Math.abs(other.y - floor) < 1.2 &&
-            (other.x - nx) ** 2 + (other.z - nz) ** 2 < (radius + (other.kind === 'Guardião Prisma' ? .39 : .25)) ** 2) return false;
+            (other.x - nx) ** 2 + (other.z - nz) ** 2 < (radius + (
+              other.kind === 'Guardião Prisma' ? .39 : other.kind === 'Vaca' ? .42 :
+              other.kind === 'Ovelha' ? .32 : other.kind === 'Porco' ? .31 : .25)) ** 2) return false;
       m.x = nx;
       m.z = nz;
       m.y = floor;
@@ -1060,36 +1086,41 @@ const Game = (() => {
         (l[0] - x) ** 2 + (l[1] - y) ** 2 + (l[2] - z) ** 2 < rad * rad);
       this.spawnTick -= dt;
       if (this.spawnTick <= 0) {
-        this.spawnTick = 10;
-        if (this.mobs.length < 4) {
-          const a = Voxel.hash(this.day, Math.floor(this.elapsed), this.seed) * 6.283,
-            rad = 12 + Voxel.hash(this.day, Math.floor(this.elapsed), this.seed ^ 43) * 5,
-            x = p.x + Math.cos(a) * rad,
-            z = p.z + Math.sin(a) * rad,
-            cave = p.y < land(p.x, p.z, this.seed, this.generator).h - 5,
-            kind = cave
-              ? 'Vigia de Cascalho'
-              : night
-                ? this.region === 'Pântano Luminescente'
-                  ? 'Luzerrante'
-                  : 'Raspejante'
-                : this.misty
-                  ? 'Musgato'
-                  : 'Saltim',
-            hostile = kind === 'Raspejante' || kind === 'Vigia de Cascalho',
-            y = this.floorAt(x, z, cave ? p.y + 2 : 145);
-          if (
-            (!hostile || !peaceful) &&
-            y !== null &&
-            !nearLight(x, y, z, 8) &&
-            this.get(Math.floor(x), y, Math.floor(z)) === 0
-          )
+        this.spawnTick = 6;
+        const living = this.mobs.filter(m => m.hp > 0 && !m.dying);
+        const animals = living.filter(m => isFarm(m.kind)).length;
+        const otherMobs = living.length - animals;
+        if (living.length < 8 && (animals < 4 || otherMobs < 4)) {
+          // Short, deterministic local sampling. Grassy areas spawn livestock,
+          // even when the difficulty is Pacífico. No new meshes or assets loaded.
+          const tick = ++this.animalSeed;
+          const a = Voxel.hash(this.day, tick, this.seed ^ 718) * Math.PI * 2;
+          const rad = 10 + Voxel.hash(this.day, tick, this.seed ^ 43) * 8;
+          const x = p.x + Math.cos(a) * rad, z = p.z + Math.sin(a) * rad;
+          const cave = p.y < land(p.x, p.z, this.seed, this.generator).h - 5;
+          const wantsAnimal = !night && !cave && animals < 4 &&
+            (otherMobs >= 3 || Voxel.hash(tick, this.day, this.seed ^ 529) < .78);
+          const farm = farmAnimals[Math.floor(Voxel.hash(tick, this.day, this.seed ^ 83) * farmAnimals.length)];
+          const kind = wantsAnimal ? farm : cave ? 'Vigia de Cascalho'
+            : night ? this.region === 'Pântano Luminescente' ? 'Luzerrante' : 'Raspejante'
+            : this.misty ? 'Musgato' : 'Saltim';
+          const animal = isFarm(kind);
+          const hostile = kind === 'Raspejante' || kind === 'Vigia de Cascalho';
+          const y = this.floorAt(x, z, cave ? p.y + 2 : 145);
+          const ground = y == null ? 0 : this.get(Math.floor(x), Math.floor(y) - 1, Math.floor(z));
+          if ((animal ? animals < 4 && (ground === 1 || ground === 17) : otherMobs < 4) &&
+              (!hostile || !peaceful) && y !== null &&
+              (animal || !nearLight(x, y, z, 8)) &&
+              this.get(Math.floor(x), Math.floor(y), Math.floor(z)) === 0 &&
+              this.get(Math.floor(x), Math.floor(y) + 1, Math.floor(z)) === 0 &&
+              !living.some(m => Math.hypot(m.x - x, m.z - z) < (animal ? 2.1 : 1.1))) {
             this.mobs.push({
               kind, x, y, z,
-              hp: kind === 'Vigia de Cascalho' ? 9 : 4,
-              wind: 0, cool: 1,
-              gait: 0, motion: 0, roamTimer: 0,
+              hp: Voxel.farmHealth[kind] || (kind === 'Vigia de Cascalho' ? 9 : 4),
+              wind: 0, cool: 1, gait: 0, motion: 0, roamTimer: 0,
+              face: a + Math.PI,
             });
+          }
         }
       }
       // Shared single-target navigation with cheap wall slide / sidestep. No pathfinder,
@@ -1119,12 +1150,19 @@ const Game = (() => {
       for (const m of this.mobs) {
         const kind = m.kind || 'Raspejante';
         const boss = kind === 'Guardião Prisma';
-        const radius = boss ? .38 : kind === 'Vigia de Cascalho' ? .33 : .24;
-        const height = boss ? 1.95 : kind === 'Vigia de Cascalho' ? 1.8 : 1.12;
+        const radius = boss ? .38 : kind === 'Vaca' ? .42 : kind === 'Ovelha' ? .32 :
+          kind === 'Porco' ? .31 : kind === 'Vigia de Cascalho' ? .33 : .24;
+        const height = boss ? 1.95 : kind === 'Vaca' ? 1.55 : kind === 'Ovelha' ? 1.27 :
+          kind === 'Porco' ? .93 : kind === 'Vigia de Cascalho' ? 1.8 : 1.12;
         m.hurt = Math.max(0, (m.hurt || 0) - dt);
         m.attack = Math.max(0, (m.attack || 0) - dt);
         m.stun = Math.max(0, (m.stun || 0) - dt);
         m.cool = Math.max(0, (m.cool || 0) - dt);
+        if (isFarm(kind)) {
+          m.flee = Math.max(0, (m.flee || 0) - dt);
+          m.fed = Math.max(0, (m.fed || 0) - dt);
+          m.graze = Math.max(0, (m.graze || 0) - dt);
+        }
         if (m.dying) {
           m.dying = Math.max(0, m.dying - dt);
           m.motion = 0;
@@ -1141,7 +1179,25 @@ const Game = (() => {
         if (!m.stun && d > .001 && d < 30) {
           const safe = nearLight(m.x, m.y, m.z, 4.4);
           const passive = ['Saltim', 'Musgato', 'Luzerrante'].includes(kind);
-          if (passive) {
+          if (isFarm(kind)) {
+            m.roamTimer = (m.roamTimer || 0) - dt;
+            if (m.roamTimer <= 0) {
+              m.roamTimer = 2.5 + Voxel.hash(Math.floor(m.x * 3), Math.floor(m.z * 3), this.seed ^ Math.floor(this.elapsed / 3)) * 4;
+              m.roamAngle = Voxel.hash(Math.floor(m.x * 7), Math.floor(m.z * 7), this.seed ^ (Math.floor(this.elapsed) + 33)) * Math.PI * 2;
+              const beneath = this.get(Math.floor(m.x), Math.floor(m.y) - 1, Math.floor(m.z));
+              if (beneath === 1 || beneath === 17) m.graze = kind === 'Ovelha' ? 1.9 : kind === 'Vaca' ? 1.25 : .45;
+            }
+            const food = this.inv[this.selected]?.b === Voxel.farmFood[kind];
+            let vx = Math.cos(m.roamAngle || 0), vz = Math.sin(m.roamAngle || 0);
+            let speed = kind === 'Vaca' ? .52 : kind === 'Ovelha' ? .65 : .74;
+            if (m.flee > 0 && d < 13) {
+              vx = -dx; vz = -dz; speed = kind === 'Vaca' ? 1.75 : 2.15;
+            } else if (food && d > 2.3 && d < 9.5) {
+              vx = dx; vz = dz; speed = kind === 'Vaca' ? .85 : 1.04;
+              m.graze = 0;
+            } else if (m.graze > 0 || d < 1.9) speed = 0;
+            moved = walk(m, vx, vz, speed, radius, height);
+          } else if (passive) {
             m.roamTimer = (m.roamTimer || 0) - dt;
             if (m.roamTimer <= 0) {
               m.roamTimer = 2 + Voxel.hash(Math.floor(m.x * 5), Math.floor(m.z * 5), this.seed ^ Math.floor(this.elapsed)) * 4;
@@ -1197,7 +1253,8 @@ const Game = (() => {
       }
       this.mobs = this.mobs.filter(m =>
         !((m.hp <= 0) && m.dying === 0) &&
-        (m.kind === 'Guardião Prisma' || Math.hypot(m.x - p.x, m.z - p.z) < (night ? 47 : 19)));
+        (m.kind === 'Guardião Prisma' || Math.hypot(m.x - p.x, m.z - p.z) <
+          (isFarm(m.kind) ? 44 : (night ? 47 : 19))));
     }
     damage(n, why) {
       if (this.creative || this.damageCool > 0) return;

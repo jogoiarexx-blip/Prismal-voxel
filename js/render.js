@@ -111,13 +111,18 @@ const View = (() => {
  if(m==67.){col=mix(col,vec3(1.,.82,.43),.36);pat*=.3;}
  if(m==77.){if(fract(w.y*3.)<.13)col*=.52;else if(rnd(floor(uv*7.))>.42)col=mix(col,vec3(.61,.42,.25),.5);}
  // Character-only pixel patterns: no external creature textures, no texture memory.
- if(m>=105.&&m<=114.){
+ if(m>=105.&&m<=125.){
     float fleck=rnd(floor(uv*9.)+vec2(m*.13,m*.27));
     pat=(fleck-.5)*.11;
     if(m==105.||m==107.||m==109.)col*=fleck>.71?.82:1.06;
     if(m==111.){pat*=.33;col+=vec3(.045,.23,.19)*(0.4+0.6*sin(time*2.2+uv.x*4.));}
     if(m==110.){pat=0.;col*=1.26;}
     if(m==114.){col*=rnd(floor(uv*5.))>.5?1.14:.91;}
+    // Subtle tiny flecks and cow-hide irregular shapes, all procedural.
+    if(m==115.||m==123.){col*=.94+.09*rnd(floor(uv*7.));pat*=.75;}
+    if(m==118.||m==119.){pat*=.38;col*=.97+.045*rnd(floor(uv*6.));}
+    if(m==120.||m==121.){pat*=.55;col*=.91+.11*rnd(floor(uv*4.));}
+    if(m==116.||m==117.||m==122.)pat*=.4;
  }
 
  col+=pat;float shade=f==2.?1.05:(f==3.?.50:(f==0.||f==5.?.83:.68));vec3 lighting=mix(vec3(.28,.34,.55),vec3(1.03,1.00,.90),light)*shade*amb;
@@ -371,7 +376,9 @@ const View = (() => {
         const wind=mob.wind>0?.22:0;
         const recoil=(mob.hurt||0)>0?Math.sin((mob.hurt/.36)*Math.PI)*.12:0;
         const dead=mob.hp<=0 ? Math.max(.10,Math.min(1,(mob.dying||0)/.55)) : 1;
-        const s=(kind==='Guardião Prisma' ? 1.06 : kind==='Vigia de Cascalho' ? 1.02 : kind==='Saltim' ? .72 : .82)*dead;
+        const s=(kind==='Guardião Prisma' ? 1.06 : kind==='Vaca' ? 1.14 :
+          kind==='Ovelha' ? .97 : kind==='Porco' ? .91 :
+          kind==='Vigia de Cascalho' ? 1.02 : kind==='Saltim' ? .72 : .82)*dead;
         const start=ent.length;
         // One shared vertex buffer, no extra draw calls or additional texture atlases.
         const piece=(px,py,pz,sx,sy,sz,material)=>box(ent, px*s,(py+bob)*s,pz*s,sx*s,sy*s,sz*s,
@@ -379,7 +386,59 @@ const View = (() => {
         const eyes=(height,depth,material=110,spacing=.18,size=.09)=>{
           for (const side of [-1,1]) piece(side*spacing-size/2,height,-depth,size,size,size*.6,material);
         };
-        if(kind==='Saltim') {
+        if (kind === 'Ovelha') {
+          // White fluffy body, grey face and four articulated black hooves.
+          piece(-.42,.39,-.37,.84,.71,.78,115);
+          for(const side of [-1,1]) {
+            piece(side*.35-.19,.50,-.4,.35,.38,.82,115);
+            piece(side*.30-.12,.12,-.27+side*step*.14,.25,.35,.22,116);
+            piece(side*.30-.12,.12,.22-side*step*.14,.25,.35,.22,116);
+            piece(side*.30-.13,.02,-.27+side*step*.14,.27,.14,.24,117);
+            piece(side*.30-.13,.02,.22-side*step*.14,.27,.14,.24,117);
+            piece(side*.20-.13,1.00,-.52,.26,.17,.22,116);
+            piece(side*.18-.07,1.02,-.69,.12,.10,.07,112);
+          }
+          piece(-.30,.80,-.57,.60,.42,.32,116);
+          piece(-.22,.84,-.76,.44,.18,.11,116);
+          piece(-.12,.93,-.78,.24,.11,.04,117);
+          piece(-.21,1.23,-.42,.42,.12,.25,115);
+          piece(-.20,.72,.39,.40,.25,.20,115);
+        } else if (kind === 'Porco') {
+          // Pink round body, blocky muzzle, pointed ears, curled tail.
+          piece(-.48,.31,-.39,.96,.66,.82,118);
+          piece(-.36,.55,-.54,.72,.45,.41,118);
+          piece(-.22,.59,-.79,.44,.23,.16,119);
+          for(const side of [-1,1]) {
+            piece(side*.16-.035,.72,-.805,.07,.07,.03,117); // nostrils
+            piece(side*.24-.10,.95,-.54,.20,.24,.13,118); // ears
+            piece(side*.22-.11,.78,-.76,.14,.095,.045,112); // eyes
+            piece(side*.32-.12,.09,-.28+side*step*.15,.25,.25,.22,118);
+            piece(side*.32-.12,.09,.30-side*step*.15,.25,.25,.22,118);
+            piece(side*.32-.12,.05,-.29+side*step*.15,.25,.09,.23,117);
+            piece(side*.32-.12,.05,.31-side*step*.15,.25,.09,.23,117);
+          }
+          piece(.34,.56,.42+Math.sin(t*3)*.04,.12,.14,.28,119); // tail
+          piece(.4,.67,.64,.11,.11,.13,118);
+        } else if (kind === 'Vaca') {
+          // Distinctive brown-and-cream spotted cow, short horns and udder.
+          piece(-.50,.42,-.40,1,.86,.86,120);
+          piece(-.505,.72,-.39,.11,.43,.55,121);
+          piece(.38,.56,-.26,.13,.42,.54,121);
+          piece(-.16,.97,.03,.32,.25,.38,121);
+          piece(-.38,.71,-.67,.76,.51,.39,120);
+          piece(-.33,.77,-.86,.66,.26,.30,122);
+          for(const side of [-1,1]) {
+            piece(side*.21-.045,.84,-.88,.09,.07,.035,117);
+            piece(side*.25-.075,1.12,-.67,.15,.16,.12,112);
+            piece(side*.30-.08,1.24,-.61,.16,.22,.15,121); // horns
+            piece(side*.32-.12,.08,-.29+side*step*.17,.25,.45,.24,120);
+            piece(side*.32-.12,.08,.32-side*step*.17,.25,.45,.24,120);
+            piece(side*.32-.13,.02,-.28+side*step*.17,.27,.16,.26,117);
+            piece(side*.32-.13,.02,.32-side*step*.17,.27,.16,.26,117);
+          }
+          piece(-.16,.28,-.13,.32,.19,.36,119); // udder
+          piece(.35,.84,.40+Math.sin(t*2)*.035,.13,.18,.36,120); // tail
+        } else if(kind==='Saltim') {
           piece(-.36,.29,-.34,.72,.50,.68,105); // amber round body
           piece(-.29,.32,-.36,.58,.24,.13,106); // bright underside
           piece(-.29,.75,-.29,.58,.28,.56,105);
@@ -745,11 +804,13 @@ const View = (() => {
         // The low-end software renderer also keeps recognizable silhouettes.
         const kind=m.kind||'Raspejante', boss=kind==='Guardião Prisma';
         const col=({Saltim:'#d6a56a',Musgato:'#5a946b',Luzerrante:'#50efd4',
-          'Vigia de Cascalho':'#687580','Guardião Prisma':'#677c83'})[kind]||'#366658';
+          'Vigia de Cascalho':'#687580','Guardião Prisma':'#677c83',
+          'Ovelha':'#eee9d9','Porco':'#e7a6ab','Vaca':'#755a4a'})[kind]||'#366658';
         const bob=kind==='Saltim'?Math.max(0,Math.sin(m.gait||0))*(m.motion||0)*.14:
           kind==='Luzerrante'?.32+Math.sin(g.elapsed*3)*.07:0;
         const die=m.hp<=0?Math.max(.1,Math.min(1,(m.dying||0)/.55)):1;
-        const scale=(boss?1.5:kind==='Vigia de Cascalho'?1.15:.85)*die;
+        const scale=(boss?1.5:kind==='Vaca'?1.2:kind==='Ovelha'?1.08:
+          kind==='Vigia de Cascalho'?1.15:.85)*die;
         const color=m.hurt>0?'#efb169':col;
         drawSprite(m.x,m.y+.40+bob,m.z,.85*scale,color);
         drawSprite(m.x,m.y+.84+bob,m.z,.53*scale,m.hurt>0?'#ffe39e':kind==='Musgato'?'#396e58':col);
@@ -760,6 +821,18 @@ const View = (() => {
         }
         if(kind==='Luzerrante') for(const side of [-1,1])
           drawSprite(m.x+side*.39,m.y+.55+bob,m.z,.42,'#81dacb');
+        if(kind==='Ovelha') {
+          drawSprite(m.x,m.y+.70,m.z,.78*scale,'#eee9d9');
+          drawSprite(m.x,m.y+.90,m.z-.33,.43*scale,'#867b73');
+          drawSprite(m.x,m.y+1.08,m.z-.44,.09*scale,'#363b38');
+        } else if (kind==='Porco') {
+          drawSprite(m.x,m.y+.69,m.z-.22,.66*scale,'#e7a6ab');
+          drawSprite(m.x,m.y+.67,m.z-.46,.32*scale,'#f1c1c0');
+        } else if (kind==='Vaca') {
+          drawSprite(m.x,m.y+.76,m.z,.83*scale,'#755a4a');
+          drawSprite(m.x-.19,m.y+.97,m.z-.10,.31*scale,'#f4e2c3');
+          drawSprite(m.x,m.y+1.07,m.z-.36,.38*scale,'#b8a08c');
+        }
         if(boss) drawSprite(m.x,m.y+1.59,m.z,.34,'#b49fe7');
       }
       for (const p of g.fragments) drawSprite(p.x, p.y, p.z, 0.11, '#' + Voxel.blocks[p.b].hex);

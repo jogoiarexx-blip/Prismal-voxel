@@ -1,4 +1,30 @@
-# Mundo Prisma v0.9.4 — Animações e IA das criaturas
+# Mundo Prisma v0.9.5 — Animais pacíficos
+
+## Novidades desta edição
+
+- **Ovelha, porco e vaca**: aparecem em áreas gramadas durante o dia e coexistem com as criaturas de fantasia, inclusive na dificuldade Pacífico e no modo Criativo.
+- **Modelos voxel distintos**: ovelha com lã, focinho escuro e cascos; porco rosado com focinho e orelhas; vaca marrom e creme, manchas, chifres e úbere. Cores e pequenas texturas procedurais; sem GLB e sem imagens de textura grandes.
+- **Comportamento pacífico**: passeiam, pastam, evitam obstáculos, respeitam a colisão com o jogador, não atacam, e fogem temporariamente quando agredidos. Aproximam-se de quem segura sua comida favorita.
+- **Alimentação**: equipe trigo para ovelha e vaca, ou frutas silvestres para porco, e use/toque no animal. Alimentar recupera parte da vida do animal, produz uma reação e consome um alimento na Sobrevivência.
+- **Recursos**: ovelhas deixam lã, porcos deixam carne suína crua e vacas deixam carne bovina crua. A carne crua pode ser consumida para recuperar fome (não equivale a carne cozida). A lã permite receita alternativa de cama na bancada.
+- **Performance**: até quatro animais de fazenda e quatro outras criaturas simultâneos em um raio local; os animais utilizam o buffer compartilhado e os materiais procedurais já usados no jogo. Não há pathfinding caro nem modelos externos.
+- **Compatibilidade**: esquema de salvamento e mundos existentes permanecem compatíveis; animais antigos continuam funcionando.
+
+## Controles
+
+WASD para mover, mouse para câmera, botão esquerdo para minerar/atacar, botão direito para usar/alimentar/colocar. No celular use joystick e botões na tela. Para alimentar, selecione a comida, mire no animal próximo e toque para interagir (não use o botão de colocação forçada).
+
+## Publicação
+
+Envie todos os arquivos do ZIP à raiz do repositório em `main`. O `index.html` deve ficar junto das pastas `art` e `js`. O site GitHub Pages deve estar publicado a partir de `main` / `root`.
+
+## Histórico
+
+Edições anteriores continuam presentes: mochila premium, menus premium, construção livre, portas de dois blocos, tochas presas à parede e criaturas animadas.
+
+---
+
+# Histórico — Mundo Prisma v0.9.4 — Animações e IA das criaturas
 
 ## v0.9.4 — Animação e inteligência das criaturas
 
