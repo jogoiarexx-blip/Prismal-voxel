@@ -513,7 +513,10 @@
         ['Colocar, comer ou usar', 'Clique direito'],
         ['Selecionar espaço', '1–9 / rolagem'],
         ['Mochila e fabricação', 'E'],
-        ['Oficina de construção', 'B / botão Construir'],
+        ['Construção livre / catálogo', 'B / botão Blocos'],
+        ['Girar porta ou escada', 'G / botão Girar'],
+        ['Copiar bloco mirado', 'P / oficina'],
+        ['Desfazer bloco no Criativo', 'Z / oficina'],
         ['Guia / pausa', 'Tab / Esc'],
         ['Ativar voo no Criativo', 'F'],
         ['Informações de desempenho', 'F3'],
@@ -638,14 +641,20 @@
         '</b><small>' + esc(g.creative ? 'Bloco pronto para construir' : requirement + station) +
         '</small></div>' + action + '</article>';
     }).join('');
-    panel('build', 'Oficina de construção',
-      '<p class="smallnote">' + (g.creative ? 'Escolha um material e construa imediatamente.' :
-        'Reúna materiais e fabrique peças. Uma bancada ou forno próximo libera receitas especiais.') +
-      ' Segure Colocar no celular para continuar construindo. Toque na porta para abrir ou fechar.</p>' +
+    panel('build', 'Construção livre',
+      '<p class="smallnote"><b>Sua casa, seu formato:</b> construa bloco por bloco, sem tamanho fixo, sem terreno obrigatório para projetos e sem modelos prontos. ' +
+      (g.creative ? 'No Criativo, todos os blocos são ilimitados.' :
+        'Na Sobrevivência, colete materiais e fabrique as peças.') +
+      ' Mire em uma face e toque em Colocar; segure para continuar. Quebrar remove blocos. Escadas e portas podem ser giradas sem mover a câmera.</p>' +
+      '<div class="build-quick-actions">' +
+      btn('buildrotate', '↻ Girar peça 90°', 'secondary') +
+      btn('buildpicklook', '▣ Copiar bloco mirado', 'secondary') +
+      (g.creative && g.lastFreeBlock ? btn('build-undofree', '↶ Desfazer bloco', 'secondary') : '') +
+      '</div>' +
       '<div class="tabbar build-tabs">' + tabs + '</div>' +
       '<div class="build-list">' + cards + '</div>' +
-      '<div class="sectionhead">Projetos rápidos · terreno plano</div>' +
-      '<p class="smallnote">Os projetos são construídos 7 blocos à sua frente, sem substituir árvores nem construções. Na Sobrevivência, coloque os materiais necessários na mochila. Verifique o espaço antes de confirmar.</p>' +
+      '<details class="optional-projects"><summary>Projetos prontos (opcionais)</summary>' +
+      '<p class="smallnote">Só use se quiser: os projetos automáticos 5×5 não limitam a construção livre. Eles exigem espaço vazio e solo plano.</p>' +
       ['base','cabin'].map((kind) => {
         const plan = g.blueprintPlan(kind);
         const title = kind === 'base' ? 'Fundação 5×5' : 'Cabana 5×5';
@@ -658,7 +667,8 @@
           (valid ? '' : 'disabled') + '>Construir projeto</button></article>';
       }).join('') +
       (g.creative && g.lastBlueprint ? btn('build-undo','↶ Desfazer último projeto','secondary') : '') +
-      '<p class="smallnote">As escadas e portas giram na direção em que você olha ao colocar. Agache para colocar ao lado de uma porta ou bancada. Armários e barris guardam itens; toque em alçapões para abrir.</p>',
+      '</details>' +
+      '<p class="smallnote">Girar altera portas e escadas em passos de 90°. A tecla G também gira e P copia o bloco mirado. Armários e barris armazenam itens; agache para colocar blocos junto a portas.</p>',
       true,
     );
   }
@@ -676,7 +686,7 @@
     let right;
     if (g.creative) {
       right =
-        '<div class="sectionhead">Catálogo de blocos</div>' + btn('buildmenu', '▦ Peças de construção', 'secondary') + '<div class="catalog">' +
+        '<div class="sectionhead">Blocos para construir livremente</div>' + btn('buildmenu', '▦ Todos os materiais', 'secondary') + '<div class="catalog">' +
         Voxel.blocks
           .filter((t) => t.id > 0 && t.placeable && Voxel.itemId(t.id) === t.id && ![28, 29, 39].includes(t.id))
           .map(
@@ -695,7 +705,7 @@
         '</div><p class="smallnote">Escolha um material para o espaço ativo da barra.</p>';
     } else {
       right =
-        '<div class="sectionhead">Receitas</div>' + btn('buildmenu', '▦ Abrir oficina de construção', 'secondary') + '<div class="recipes">' +
+        '<div class="sectionhead">Receitas</div>' + btn('buildmenu', '▦ Construção livre', 'secondary') + '<div class="recipes">' +
         Voxel.recipes
           .map((r, i) => {
             const ava = g.canCraft(r);
@@ -860,6 +870,8 @@
     const jumpButton = $('#touch [data-touch="jump"]');
     $('#touchJumpLabel').textContent = g.swimming ? 'Nadar' : 'Pular';
     const active = g.inv[g.selected];
+    const rotation = active && [49, 57, 69].includes(active.b) && g.buildRotation
+      ? ' · Girada +' + (g.buildRotation * 90) + '°' : '';
     const held = $('#held');
     held.hidden = settings.thirdPerson || !active;
     if (held.dataset.item !== String(active?.b)) {
@@ -871,6 +883,7 @@
       ? name(active.b) +
         (Voxel.durability[active.b] ? ' · ' + active.dur + '/' + Voxel.durability[active.b] : '')
       : 'Mão livre';
+    if (rotation) $('#itemname').textContent += rotation;
     let html = g.inv
       .slice(0, 9)
       .map((t, i) => slotButton(t, i, 'hot', i === g.selected, true))
@@ -908,7 +921,7 @@
     mineFeedback.hidden = !document.body.classList.contains('touchgame') || !g.holding || mineProgress <= 0;
     mineFeedback.style.setProperty('--mine-progress', mineProgress + '%');
     let task = g.creative
-      ? 'E · Escolha blocos no catálogo. F · Voo ' + (g.fly ? 'ligado' : 'desligado')
+      ? 'Construa livremente: B = blocos · G = girar · F = voo ' + (g.fly ? 'ligado' : 'desligado')
       : !g.goals.wood
         ? 'Recolha seu primeiro tronco'
         : !g.goals.craft8
@@ -1024,6 +1037,18 @@
         break;
       case 'buildtab':
         buildMenu(+i);
+        break;
+      case 'buildrotate':
+        toast('Peça girada +' + g.rotateBuild() + '°');
+        resume();
+        break;
+      case 'buildpicklook':
+        if (g.pickBuildBlock()) { resume(); toast('Bloco copiado para a barra rápida'); }
+        else buildMenu();
+        break;
+      case 'build-undofree':
+        if (g.undoFreeBlock()) { resume(); toast('Último bloco desfeito'); }
+        else buildMenu();
         break;
       case 'buildplan':
         if (g.placeBlueprint(i)) { resume(); toast('Projeto pronto! Abra Construir para os próximos materiais.'); }
@@ -1257,6 +1282,15 @@
       case 'KeyB':
         buildMenu();
         break;
+      case 'KeyG':
+        toast('Peça girada +' + g.rotateBuild() + '°');
+        break;
+      case 'KeyP':
+        if (g.pickBuildBlock()) toast('Bloco copiado para a barra rápida');
+        break;
+      case 'KeyZ':
+        if (g.undoFreeBlock()) toast('Último bloco desfeito');
+        break;
       case 'Tab':
         guide('play');
         break;
@@ -1368,10 +1402,11 @@
         miningPointer = e.pointerId;
         g.holding = true;
       } else if (code === 'use') {
-        g.use();
+        g.use(true);
         buildingPointer = e.pointerId;
         buildRepeatAt = performance.now() + 340;
       }
+      else if (code === 'rotate') toast('Peça girada +' + g.rotateBuild() + '°');
       else if (code === 'build') buildMenu();
       else if (code === 'bag') inventory();
       else if (code === 'jump') g.keys.add('Space');
@@ -1425,9 +1460,8 @@
     if (mouseActive && (edgeX || edgeY) && !document.pointerLockElement)
       g.look(edgeX * 820 * dt, edgeY * 590 * dt);
     // Hold-to-build, capped to ~4 blocks/sec to avoid excessive chunk rebuilding.
-    if (buildingPointer !== null && now >= buildRepeatAt && g.preview()?.valid &&
-        ![12, 14, 15, 46, 57, 58, 59, 60, 61, 62, 63, 64].includes(g.hit?.b)) {
-      g.use();
+    if (buildingPointer !== null && now >= buildRepeatAt && g.preview()?.valid) {
+      g.use(true);
       buildRepeatAt = now + 260;
     }
     fps = fps * 0.94 + (1 / Math.max(0.001, dt)) * 0.06;

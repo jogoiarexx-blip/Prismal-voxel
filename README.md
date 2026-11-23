@@ -1,4 +1,4 @@
-# Mundo Prisma 0.7.0
+# Mundo Prisma 0.9.0
 
 Explore seis biomas, descubra as ruínas e construa o Farol Prisma. Nos mundos novos, as Dunas de Vidro têm obeliscos com cristal no topo.
 
@@ -79,3 +79,11 @@ Limites conhecidos: não é um clone completo de Minecraft. Não há montagem po
 **Novas peças**: armário e barril de armazenamento (18 espaços cada), alçapão interativo, sofá, tapete, viga de madeira, janela emoldurada. **Novas ferramentas**: machado de ferro para madeira e pá de pedra para terra/areia, ambas com durabilidade. A oficina apresenta receitas para a Sobrevivência. Blocos novos usam pequenas caixas e a mesma malha voxel; os ícones são incorporados no JS, sem requisições adicionais.
 
 **Atenção**: a fundação e a cabana exigem solo plano, sem construções, e material já disponível na mochila. As casas são protótipos 5×5, não uma ferramenta de edição arquitetônica. Testes automatizados verificam custo, área, orientações e malha, mas os FPS ainda devem ser medidos em aparelhos reais.
+
+## Atualização 0.9.0 — construção livre (estilo sandbox voxel)
+
+A construção bloco a bloco é o modo principal: qualquer terreno, casa de qualquer forma ou tamanho dentro dos limites do mundo e do alcance do personagem, sem obrigação de usar projetos 5×5. Os projetos rápidos permanecem recolhidos, opcionais. A oficina agora começa explicando os controles e permite selecionar materiais para a barra rápida; o Criativo fornece peças ilimitadas e a Sobrevivência requer materiais.
+
+No celular, selecione **Blocos**, escolha o material e volte ao mundo. Toque para posicionar na face apontada, segure Colocar para construir em sequência, segure Quebrar para remover, e arraste para olhar. O botão **Girar** altera orientação de portas e escadas de 90 em 90 graus sem girar o personagem. No PC, pressione **G** para girar, **P** para copiar o bloco mirado (no Criativo, copia para a barra; na Sobrevivência, equipa se possuir) e **Z** para desfazer a última colocação individual no Criativo, desde que não tenha sido alterada ou preenchida com itens.
+
+Sem novos modelos, texturas ou bibliotecas: mantém malha voxel compartilhada e limite de colocação contínua para dispositivos móveis. A compatibilidade dos mundos salvos (schema 1) é mantida.

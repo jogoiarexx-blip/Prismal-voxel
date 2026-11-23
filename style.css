@@ -1471,3 +1471,29 @@ body.touchgame .game-tools .build-trigger span { display:none; }
 .project-card .build-copy small { max-width:100%; color:#d5cfb6; }
 .project-card button { white-space:nowrap; }
 @media(max-width:380px) { .project-card { flex-wrap:wrap; } .project-card button { width:100%; } }
+
+/* 0.9 · Free-building tools; no textures or additional rendering passes. */
+.build-quick-actions { display:flex; flex-wrap:wrap; gap:7px; margin:10px 0 12px; }
+.build-quick-actions button { flex:1 1 150px; min-height:38px; }
+.optional-projects { margin-top:12px; border:1px solid #46594c; border-radius:9px; padding:8px 10px; background:#1b2b27; }
+.optional-projects summary { cursor:pointer; color:#d8e7d2; padding:8px; font-weight:700; font-size:12px; }
+.optional-projects .project-card { margin-top:7px; }
+@media (max-width:520px) {
+ body.touchgame .game-tools .build-trigger { width:43px; min-width:43px; }
+ body.touchgame .touch-utilities button { font-size:15px; }
+ .build-quick-actions button { min-width:0; flex:1 1 115px; font-size:11px; }
+}
+
+/* Compact 3x2 touch tools prevent six buttons overlapping the movement joystick. */
+@media (pointer: coarse) {
+ body.touchgame .touch-utilities { display:grid; grid-template-columns:repeat(3, minmax(0, 40px)); gap:5px; }
+ body.touchgame .touch-utilities button { width:40px; height:39px; }
+}
+@media (pointer: coarse) and (max-width:400px) {
+ body.touchgame .touch-utilities { grid-template-columns:repeat(3, minmax(0, 35px)); gap:4px; }
+ body.touchgame .touch-utilities button { width:35px; height:36px; }
+}
+@media (pointer: coarse) and (max-height:430px) and (orientation:landscape) {
+ body.touchgame .touch-utilities { grid-template-columns:repeat(3, minmax(0, 37px)); }
+ body.touchgame .touch-utilities button { width:37px; height:35px; }
+}

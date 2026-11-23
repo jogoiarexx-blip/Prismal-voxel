@@ -127,6 +127,9 @@ const Game = (() => {
       this.creative = this.meta.mode === 'creative';
       this.resetMining();
       this.lastBlueprint = null;
+      // Free building is independent of optional 5x5 blueprints.
+      this.buildRotation = 0;
+      this.lastFreeBlock = null;
       this.startWorker();
       this.stream(true);
     }
@@ -368,6 +371,7 @@ const Game = (() => {
       this.inv = copied;
       this.applyBlockBatch(plan.ops);
       this.lastBlueprint = this.creative ? plan.ops : null;
+      this.lastFreeBlock = null;
       this.goals.built = (this.goals.built || 0) + plan.ops.length;
       Sound.play('craft', this.settings);
       this.notify((kind === 'base' ? 'Fundação' : 'Cabana') + ' construída: ' + plan.ops.length + ' blocos');
@@ -825,48 +829,85 @@ const Game = (() => {
       this.changed();
       return true;
     }
+    rotateBuild() {
+      this.buildRotation = (this.buildRotation + 1) % 4;
+      this.signal('hud');
+      return this.buildRotation * 90;
+    }
+    pickBuildBlock() {
+      const id = Voxel.itemId(this.hit?.b ?? 0);
+      if (!blocks[id]?.placeable) { this.notify('Aponte para um bloco de construção'); return false; }
+      if (this.creative) {
+        this.inv[this.selected] = slot(id, 64);
+        this.changed();
+        this.signal('hud');
+        return true;
+      }
+      if (this.equip(id)) { this.signal('hud'); return true; }
+      this.notify('Você precisa ter esse bloco na mochila');
+      return false;
+    }
+    undoFreeBlock() {
+      if (!this.creative || !this.lastFreeBlock) return false;
+      const { pos, b } = this.lastFreeBlock;
+      const [x, y, z] = pos;
+      const storage = this.chests[pos.join(',')];
+      if (this.get(x, y, z, true) !== b || storage?.some(Boolean)) {
+        this.notify('O bloco foi alterado ou contém itens');
+        this.lastFreeBlock = null;
+        return false;
+      }
+      if (!this.set(x, y, z, 0)) return false;
+      if (storage) delete this.chests[pos.join(',')];
+      this.lastFreeBlock = null;
+      this.signal('hud');
+      return true;
+    }
     preview() {
       const t = this.inv[this.selected], h = this.hit;
       if (!t || !blocks[t.b]?.placeable || !h) return null;
       const pos = h.p.map((n, i) => n + h.normal[i]);
-      const [x, y, z] = pos, p = this.p, b = Voxel.orientBlock(t.b, p.yaw);
+      const [x, y, z] = pos, p = this.p, b = Voxel.orientBlock(t.b, p.yaw + this.buildRotation * Math.PI / 2);
       if (y <= 0 || y >= Voxel.H || (this.get(x,y,z,true) !== 0 && this.get(x,y,z) !== 7)) return null;
       const occupied = Voxel.intersects(b, x, y, z, p.x - .28, p.y, p.z - .28, p.x + .28, p.y + 1.8, p.z + .28) ||
         this.mobs.some(m => Math.abs(m.x-x-.5)<.85 && Math.abs(m.z-z-.5)<.85 && Math.abs(m.y-y)<1);
       return { pos, b, valid: !occupied };
     }
-    use() {
+    use(forcePlace = false) {
       const t = this.inv[this.selected],
         h = this.hit;
+      // The explicit Colocar touch button should place beside doors/chests,
+      // while normal tapping/right-clicking still interacts with them.
+      const placing = forcePlace && !!blocks[t?.b]?.placeable;
       const sneaking = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') || this.touchCrouch;
-      if (h && (h.b === 85 || h.b === 86) && !sneaking) {
+      if (h && (h.b === 85 || h.b === 86) && !sneaking && !placing) {
         if (this.set(...h.p, h.b === 85 ? 86 : 85)) Sound.play('place', this.settings);
         return;
       }
-      if (h && h.b >= 57 && h.b <= 64 && !sneaking) {
+      if (h && h.b >= 57 && h.b <= 64 && !sneaking && !placing) {
         const opened = h.b <= 60 ? h.b + 4 : h.b - 4;
         if (this.set(...h.p, opened)) { Sound.play('place', this.settings); this.signal('hud'); }
         return;
       }
-      if (h && (h.b === 28 || h.b === 29)) {
+      if (h && (h.b === 28 || h.b === 29) && !placing) {
         this.activateRuin(h);
         return;
       }
       if (
         h &&
-        !sneaking &&
+        !sneaking && !placing &&
         [12, 14, 15, 83, 84].includes(h.b)
       ) {
         this.signal('station', h);
         return;
       }
-      if (h?.b === 46 && !sneaking) {
+      if (h?.b === 46 && !sneaking && !placing) {
         this.bed = h.p.slice();
         this.notify('Ponto de retorno definido na cama');
         this.save();
         return;
       }
-      if (h?.b === 40 && !sneaking) {
+      if (h?.b === 40 && !sneaking && !placing) {
         this.set(...h.p, 38);
         this.addDrop(h.p[0] + 0.5, h.p[1] + 1, h.p[2] + 0.5, 40, 1);
         this.addDrop(h.p[0] + 0.5, h.p[1] + 1, h.p[2] + 0.5, 37, 2);
@@ -906,6 +947,7 @@ const Game = (() => {
       const { pos, b } = place;
       const [x, y, z] = pos;
       if (!this.set(x, y, z, b)) return;
+      this.lastFreeBlock = this.creative ? { pos: pos.slice(), b } : null;
       this.goals['place' + t.b] = true;
       if (t.b === 30) {
         this.notify('Farol Prisma aceso · aurora ativada');

@@ -58,7 +58,7 @@
             <button id="guide"><i data-ico="book"></i>Guia de campo</button
             ><button id="quickNew" hidden><i data-ico="plus"></i>Novo mundo</button>
           </div>
-          <span class="version"><b></b>VERSÃO 0.8.0</span>
+          <span class="version"><b></b>VERSÃO 0.9.0</span>
         </footer>
       </section>
       <section id="game" hidden aria-label="Mundo jogável">
@@ -70,7 +70,7 @@
               <i data-ico="pin"></i><span id="biome"></span><small id="clock"></small>
             </div>
             <div class="game-tools">
-              <button id="build" class="tool build-trigger" title="Oficina de construção (B)" aria-label="Abrir oficina de construção">▦ <span>Construir</span></button>
+              <button id="build" class="tool build-trigger" title="Construir livremente: escolher blocos (B)" aria-label="Escolher blocos para construção livre">▦ <span>Blocos livres</span></button>
               <button class="tool" id="pause" title="Pausar jogo" aria-label="Pausar jogo">
                 <i data-ico="pause"></i>
               </button>
@@ -105,7 +105,8 @@
             </div>
             <div class="touchact">
               <div class="touch-utilities">
-                <button data-touch="build" aria-label="Abrir oficina de construção">▥<small>Construir</small></button>
+                <button data-touch="build" aria-label="Escolher blocos para construir livremente">▥<small>Blocos</small></button>
+                <button data-touch="rotate" aria-label="Girar escada ou porta em noventa graus">↻<small>Girar</small></button>
                 <button data-touch="bag" aria-label="Abrir mochila">▦<small>Mochila</small></button>
                 <button data-touch="camera" aria-label="Trocar câmera">◉<small>Câmera</small></button>
                 <button data-touch="crouch" aria-label="Agachar" aria-pressed="false">⌄<small>Agachar</small></button>
@@ -117,7 +118,7 @@
                 <button data-touch="jump" aria-label="Pular ou nadar">↥<small id="touchJumpLabel">Pular</small></button>
               </div>
             </div>
-            <div id="touchTip" class="touch-tip">Deslize para olhar · segure para quebrar · toque para colocar</div>
+            <div id="touchTip" class="touch-tip">Casa livre: escolha blocos · toque para colocar · segure para quebrar</div>
           </div>
           <pre id="debug" hidden></pre>
           <div id="hurt"></div>
