@@ -50,7 +50,8 @@
     mpLastEntity = 0, mpEntitySeq = 0, mpLastRemoteHit = 0, mpLootSends = new Set(),
     mpHostWorldId = null, mpGuestProfile = null, mpGuestRevision = 0, mpGuestSeq = 0, mpLastGuestSync = 0,
     mpHostGuestId = null, mpChestBusy = false, mpGuestCheckpointAt = 0, chatUnlockPending = false, mpLastHostCheckpoint = 0,
-    mpResyncAt=0, mpLastGuestInvHash=null, mpInventorySaving=false;
+    mpResyncAt=0, mpLastGuestInvHash=null, mpInventorySaving=false,
+    pendingRecovery=null, lastEmergencyAt=0, lastMobilePerfAt=0, warnedEmergency=false;
   // A shareable URL fragment carries signaling data without a backend.
   // Remove it from the address bar after reading; it is never sent to GitHub Pages.
   let mpInviteConsumed = false;
@@ -350,6 +351,7 @@
               'PR-P2P-'+Math.random().toString(36).slice(2,9),$('#mpWorldMode').value,'normal')
           : await Saves.get(worldId);
         if(!mpRecord)throw Error('O mundo selecionado não foi encontrado.');
+        if(!mpFresh && Saves.recovery(mpRecord))throw Error('Esse mundo tem uma recuperação pendente. Abra-o primeiro em Meus mundos.');
         mpRole='host';mpStartSent=false;mpRemote={active:false};mpMessages=[];mpGuest=false;
         mp=PrismaNet.create({name:nickname,onMessage:onMultiplayerMessage,onStatus:onMultiplayerStatus});
         const invite=await mp.host();
@@ -948,6 +950,18 @@
         toast('Mundo indisponível');
         return showWorlds();
       }
+      const extra=Saves.recovery(rec);
+      if(extra) {
+        pendingRecovery={saved:rec, extra};
+        panel('recover','Recuperar mundo',
+          '<p>Encontramos um checkpoint de emergência mais recente para <strong>'+esc(rec.name)+
+          '</strong>, criado antes de uma possível interrupção.</p>'+
+          '<p class="smallnote">Checkpoint: '+new Date(extra.saved).toLocaleString('pt-BR')+
+          ' · Última gravação: '+new Date(rec.saved).toLocaleString('pt-BR')+'</p>'+
+          '<div class="btns">'+btn('restore-world','Recuperar progresso','primary')+
+          btn('ignore-recovery','Usar último salvamento','secondary')+'</div>',true,false);
+        return;
+      }
       return launch(rec, false);
     } catch {
       toast('Não foi possível abrir este mundo');
@@ -1284,7 +1298,7 @@
         '</ul><p>O primeiro selo libera a pedra rúnica. Com os três, use a bancada para combinar cristal, cobre e vidro em um Farol Prisma. Coloque-o para acender uma aurora sobre sua base.</p></div>';
     } else
       body =
-        '<p>Mundo Prisma é um sandbox voxel de exploração, sobrevivência e construção. Explore os Campos de Âmbar, a Floresta de Névoa e as Dunas de Vidro. Nas dunas, procure os obeliscos com cristais no topo.</p><p class="muted">Versão jogável 0.9.16 · Solo e multiplayer experimental<br>Arte, sprites, tipografia de título e efeitos sonoros criados para Mundo Prisma. Seu progresso é salvo neste navegador.</p>';
+        '<p>Mundo Prisma é um sandbox voxel de exploração, sobrevivência e construção. Explore os Campos de Âmbar, a Floresta de Névoa e as Dunas de Vidro. Nas dunas, procure os obeliscos com cristais no topo.</p><p class="muted">Versão jogável 0.9.17 · Solo e multiplayer experimental<br>Arte, sprites, tipografia de título e efeitos sonoros criados para Mundo Prisma. Seu progresso é salvo neste navegador.</p>';
     panel(
       'guide',
       'Guia de campo',
@@ -1851,7 +1865,7 @@
     $('#debug').hidden = !debug;
     if (debug)
       $('#debug').textContent =
-        'PRISMA 0.9.16 · ' +
+        'PRISMA 0.9.17 · ' +
         renderer.type +
         '\n' +
         Math.round(fps) +
@@ -1938,6 +1952,22 @@
         break;
       case 'load':
         loadWorld(i);
+        break;
+      case 'restore-world':
+        if(pendingRecovery) {
+          const {extra}=pendingRecovery; pendingRecovery=null;
+          Saves.put(extra).then(()=>launch(extra,false)).catch(()=>{
+            toast('Falha ao gravar recuperação; ela continua protegida.');
+            launch(extra,false);
+          });
+        }
+        break;
+      case 'ignore-recovery':
+        if(pendingRecovery) {
+          const {saved}=pendingRecovery;pendingRecovery=null;
+          Saves.clearEmergency(saved.id);
+          launch(saved,false);
+        }
         break;
       case 'exportworld':
         exportWorld(i);
@@ -2425,14 +2455,25 @@
   });
   if (matchMedia('(pointer: coarse)').matches) document.body.classList.add('touchgame');
   applyMobilePrefs();
+  function emergencyCheckpoint() {
+    if(!g?.alive || g.temporary || mpRole==='guest')return false;
+    let ok=false;
+    try { ok=Saves.emergency(g.snapshot()); } catch {}
+    if(!ok && !warnedEmergency) {
+      warnedEmergency=true;
+      if(!document.hidden)toast('Sem espaço para recuperação de emergência; faça um backup do mundo.');
+    }
+    return ok;
+  }
   document.addEventListener('visibilitychange', () => {
-    if(document.hidden) { saveGuestCheckpoint(); if(mpRole==='host' && g?.ready)g.save(); }
+    if(document.hidden) { emergencyCheckpoint(); saveGuestCheckpoint(); if(g?.ready && mpRole!=='guest')g.save(); }
     if (document.hidden && g && screen === 'play') pauseMenu();
   });
   window.addEventListener('blur', () => {
     if (g && screen === 'play') pauseMenu();
   });
   window.addEventListener('pagehide', () => {
+    emergencyCheckpoint();
     saveGuestCheckpoint();
     if(mpRole==='host' && g?.ready)g.save();
     else if (g) g.save();
@@ -2443,6 +2484,20 @@
     let dt = Math.min(0.1, (now - (lastFrame || now)) / 1000);
     lastFrame = now;
     if (!g || !g.ready || g.paused) return;
+    // Sync local journal is a best-effort safety net for abrupt tab closures.
+    // Normal IndexedDB autosaves remain the authoritative persistent record.
+    if(!g.temporary && mpRole!=='guest' && now-lastEmergencyAt>15000) {
+      lastEmergencyAt=now;
+      emergencyCheckpoint();
+    }
+    // Mobile dynamic resolution: never lower the selected quality setting;
+    // just temporarily render fewer pixels when FPS remains low.
+    if(document.body.classList.contains('touchgame') && now-lastMobilePerfAt>4500) {
+      lastMobilePerfAt=now;
+      const current=renderer.dynamicScale || 1;
+      renderer.dynamicScale=fps<27 ? Math.max(.72,current-.08) :
+        fps>48 ? Math.min(1,current+.04) : current;
+    }
     if (mouseActive && (edgeX || edgeY) && !document.pointerLockElement)
       g.look(edgeX * 820 * dt, edgeY * 590 * dt);
     // Hold-to-build, capped to ~4 blocks/sec to avoid excessive chunk rebuilding.

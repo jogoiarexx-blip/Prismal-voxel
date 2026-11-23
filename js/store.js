@@ -79,6 +79,56 @@ const Saves = (() => {
       return false;
     }
   }
+  const emergencyPrefix = prefix + 'recovery:';
+  const maxRecoveryBytes = 1_800_000; // bounded sync write; leave room for normal browser storage
+  function validWorld(r) {
+    return !!r && typeof r === 'object' && r.schema === 1 &&
+      [1,2,3].includes(r.generator) && typeof r.id === 'string' && r.id.length > 0 &&
+      (typeof r.seed === 'string' || (typeof r.seed === 'number' && Number.isFinite(r.seed))) && Array.isArray(r.inv) && r.inv.length === 36 &&
+      !!r.edits && typeof r.edits === 'object' && !Array.isArray(r.edits) &&
+      !!r.p && [r.p.x,r.p.y,r.p.z].every(Number.isFinite) &&
+      Number.isFinite(r.saved);
+  }
+  function recovery(saved) {
+    if (!validWorld(saved)) return null;
+    try {
+      const raw = localStorage.getItem(emergencyPrefix + saved.id);
+      if (!raw || raw.length > maxRecoveryBytes) return null;
+      const candidate = JSON.parse(raw);
+      const r = candidate?.world;
+      if (!validWorld(r) || r.id !== saved.id || r.seed !== saved.seed ||
+          r.generator !== saved.generator || r.schema !== saved.schema ||
+          !Number.isFinite(candidate.at) || Math.abs(candidate.at-r.saved)>15000 ||
+          candidate.at <= saved.saved + 1500) return null;
+      return r;
+    } catch { return null; }
+  }
+  function emergency(r) {
+    if (!validWorld(r)) return false;
+    try {
+      const record = JSON.stringify({at:r.saved, world:r});
+      if (record.length > maxRecoveryBytes) return false;
+      const k = emergencyPrefix + r.id;
+      // Never let an older tab replace a newer recovery checkpoint.
+      const prior = localStorage.getItem(k);
+      if (prior && prior.length < maxRecoveryBytes) {
+        try { if (JSON.parse(prior).at > r.saved) return true; } catch {}
+      }
+      localStorage.setItem(k, record);
+      return true;
+    } catch { return false; } // storage quota or private mode
+  }
+  function clearEmergency(id, savedAt = Infinity) {
+    try {
+      const k = emergencyPrefix + id;
+      const raw = localStorage.getItem(k);
+      if (raw && (JSON.parse(raw).at || 0) <= savedAt) localStorage.removeItem(k);
+    } catch {} // a corrupt entry is harmless: recovery() will ignore it
+  }
+  async function put(r) {
+    await perform('put',r);
+    clearEmergency(r.id, r.saved);
+  }
   const localGuests = new Map();
   function guestProfile(worldId) {
     const key=prefix+'guest:'+String(worldId).slice(0,90);
@@ -97,7 +147,7 @@ const Saves = (() => {
     localGuests.set(key,data);
     try{localStorage.setItem(key,JSON.stringify(data));return true;}catch{return false;}
   }
-  return { list, get: (id) => perform('get', id), put: (r) => perform('put', r), settings, prefs, guestProfile, saveGuestProfile };
+  return { list, get: (id) => perform('get', id), put, emergency, recovery, clearEmergency, settings, prefs, guestProfile, saveGuestProfile };
 })();
 const Sound = (() => {
   let ctx,

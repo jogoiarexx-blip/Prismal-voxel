@@ -174,7 +174,7 @@ const Game = (() => {
     stream(force = false) {
       const cx = Math.floor(this.p.x / 16),
         cz = Math.floor(this.p.z / 16),
-        r = [3, 4, 5][this.settings.quality];
+        r = (typeof document !== 'undefined' && document.body?.classList.contains('touchgame') ? [2,3,4] : [3,4,5])[this.settings.quality];
       if (!force && this.cx === cx && this.cz === cz && this.radius === r) return;
       this.cx = cx;
       this.cz = cz;

@@ -1,4 +1,4 @@
-# Mundo Prisma v0.9.16 — Recuperação P2P e inventários duráveis — Proteção de progresso e cooperação
+# Mundo Prisma v0.9.17 — recuperação e desempenho — Recuperação P2P e inventários duráveis — Proteção de progresso e cooperação
 
 **Estabilização:** a gravação do mundo agora faz novas tentativas com espera crescente (5 a 120 segundos) caso a gravação local falhe. Mudanças feitas durante uma gravação continuam pendentes e são salvas novamente. Partidas solo criam um checkpoint a cada 45 segundos; o anfitrião de P2P, a cada 30 segundos. Há um botão “Salvar progresso agora” no menu de pausa, com o status da gravação. As transferências de baú são serializadas por mundo, evitando conflitos entre operações simultâneas; o convidado recebe uma resposta explícita se o baú estiver ocupado. O inventário e os mundos existentes permanecem compatíveis.
 
@@ -12,7 +12,7 @@ Abrir a mochila por E ou pelo celular sempre volta ao modo de fabricação à m�
 
 ---
 
-# Mundo Prisma v0.9.16 — Prévia de estabilização da versão 1.0
+# Mundo Prisma v0.9.17 — Prévia de estabilização da versão 1.0
 
 Esta versão prioriza consistência de baús e perfis do convidado no P2P, recuperação manual de sessões, chat sobreposto, convite por link e gravação segura das operações de baú.
 
@@ -22,7 +22,7 @@ Esta versão prioriza consistência de baús e perfis do convidado no P2P, recup
 
 **Reconexão:** se a conexão cair de vez, o anfitrião usa Pausa → Recriar convite P2P, e o convidado usa Reconectar com novo convite. O anfitrião persiste o perfil e inventário associado ao identificador do convidado, e cada transação de baú é gravada antes da confirmação. Testes reais entre redes diferentes continuam obrigatórios para sair do estágio experimental.
 
-# Mundo Prisma v0.9.16 — árvores, fazenda, zumbis e baús cooperativos
+# Mundo Prisma v0.9.17 — árvores, fazenda, zumbis e baús cooperativos
 
 Atualização incremental sobre a v0.9.11, com compatibilidade com mundos `schema:1`.
 
@@ -288,7 +288,7 @@ Nenhum GLB ou textura foi adicionado. O avatar remoto usa a geometria voxel exis
 Execute `node tests/coop.test.cjs`, `node tests/chat.test.cjs` e `node tests/webrtc.test.cjs`. Os testes exercitam troca de itens, duplicação de mensagens, confirmação após gravação, rollback, reconexão simulada e expiração de mensagens. Testes em dispositivos reais continuam obrigatórios para validar perda de conexão, NAT e duração das partidas.
 
 
-## v0.9.16 — Recuperação cooperativa
+## v0.9.17 — Recuperação cooperativa
 
 - Inventários de convidados confirmados apenas após gravação pelo anfitrião.
 - Operações de baús e de inventário usam a mesma fila serializada por mundo.
@@ -299,3 +299,11 @@ Execute `node tests/coop.test.cjs`, `node tests/chat.test.cjs` e `node tests/web
 - A conexão continua dependente de troca manual de convite/resposta após falha permanente; não há servidor de sinalização ou TURN próprio.
 
 **Validação necessária antes do 1.0:** sessões longas em dois aparelhos reais, perdas de rede em diferentes navegadores, restauração de mundos com grande quantidade de construções e verificação de capacidade de armazenamento em celular.
+
+
+## Melhorias v0.9.17
+
+- **Checkpoint emergencial de sessão:** cópia local limitada do mundo a cada 15 s de jogo ativo e quando a aba fica oculta/fecha. Ao reabrir, o jogo oferece escolher entre o último salvamento e o checkpoint, sem substituir automaticamente o arquivo salvo. A gravação IndexedDB continua sendo a principal.
+- **Recuperação segura:** ignora dados inválidos ou anteriores ao salvamento, não apaga um checkpoint mais novo quando uma gravação antiga termina e não usa o checkpoint de convidado como mundo oficial.
+- **Mobile:** distância de construção dos setores reduzida no controle por toque e escala dinâmica de renderização (72 a 100% da qualidade escolhida) quando o FPS cai.
+- **Limite:** checkpoints grandes (>1,8 milhão de caracteres) ou sem espaço livre no armazenamento local não poderão ser gravados. O usuário deve manter backups manuais de mundos importantes.

@@ -279,7 +279,7 @@ const View = (() => {
     draw(g, settings, alpha = 1) {
       const gl = this.gl,
         c = this.canvas,
-        scale = [0.7, 0.88, 1][settings.quality] * Math.min(devicePixelRatio || 1, 1.5);
+        scale = [0.7, 0.88, 1][settings.quality] * Math.min(devicePixelRatio || 1, 1.5) * Math.max(0.72,Math.min(1,this.dynamicScale || 1));
       const wi = Math.max(1, Math.round(c.clientWidth * scale)),
         he = Math.max(1, Math.round(c.clientHeight * scale));
       if (c.width !== wi || c.height !== he) {
