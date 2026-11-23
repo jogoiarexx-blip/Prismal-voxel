@@ -23,12 +23,45 @@ const PrismaCoop = (() => {
   // Serialize even if multiple reliable messages arrive before an IndexedDB
   // transaction completes. A single world must never have two chest commits in flight.
   const transactionQueues = new WeakMap();
-  function transact(game,id,pos,msg,chestMove,maxId=256) {
+  function inWorldQueue(game, action) {
     if (!game || typeof game !== 'object') return Promise.resolve({status:'invalid'});
-    const previous = transactionQueues.get(game) || Promise.resolve();
-    const current = previous.catch(() => {}).then(() => transactUnlocked(game,id,pos,msg,chestMove,maxId));
-    transactionQueues.set(game, current.catch(() => {}));
+    const previous=transactionQueues.get(game)||Promise.resolve();
+    const current=previous.catch(()=>{}).then(action);
+    transactionQueues.set(game,current.catch(()=>{}));
     return current;
+  }
+  function transact(game,id,pos,msg,chestMove,maxId=256) {
+    return inWorldQueue(game,()=>transactUnlocked(game,id,pos,msg,chestMove,maxId));
+  }
+  // Inventory snapshots are durable *before* an acknowledgement is sent. This
+  // shares the chest queue so incoming updates cannot overwrite chest changes.
+  function syncInventory(game,id,msg,maxId=256) {
+    return inWorldQueue(game,()=>syncInventoryUnlocked(game,id,msg,maxId));
+  }
+  async function syncInventoryUnlocked(game,id,msg,maxId) {
+    const profile=validId(id)&&game.guestProfiles?.[id];
+    if(!profile || !validInventory(msg?.inv,36,maxId) || !validInventory(profile.inv,36,maxId) ||
+       !Number.isSafeInteger(msg.seq) || msg.seq<1 || !Number.isInteger(msg.rev))
+      return {status:'invalid'};
+    const currentSeq=profile.seq||0;
+    const ack=()=>({t:'guest-inv-ack',id,seq:currentSeq,rev:profile.rev});
+    if(msg.seq<=currentSeq) return {status:'duplicate',state:ack()};
+    if(msg.rev!==profile.rev) return {status:'conflict',state:{t:'guest-profile',
+      id,rev:profile.rev,seq:currentSeq,tx:profile.lastTx||0,inv:profile.inv}};
+    const previous={inv:profile.inv,seq:currentSeq};
+    profile.inv=structuredClone(msg.inv);
+    profile.seq=msg.seq;
+    game.changed();
+    let saved=false;
+    try { saved=await game.save()===true; } catch {}
+    if(!saved) {
+      profile.inv=previous.inv;
+      profile.seq=previous.seq;
+      game.changed();
+      return {status:'failed',state:{t:'guest-inv-error',id,seq:msg.seq,
+        reason:'Falha ao salvar inventário. Tente novamente.'}};
+    }
+    return {status:'committed',state:{t:'guest-inv-ack',id,seq:msg.seq,rev:profile.rev}};
   }
   async function transactUnlocked(game,id,pos,msg,chestMove,maxId=256) {
     const profile=validId(id) && game.guestProfiles[id];
@@ -64,6 +97,17 @@ const PrismaCoop = (() => {
     }
     return {status:'committed',state:snapshot(game,id,pos,msg.tx)};
   }
-  return {validId,validInventory,ensureProfile,transact,snapshot};
+  function recoverGuestInventory(local,host,maxId=256) {
+    if(!local || !host || !Number.isInteger(host.rev) || host.rev<0 ||
+       !Number.isSafeInteger(host.seq) || host.seq<0 || !validInventory(host.inv,36,maxId))return null;
+    const pending=local.pendingInv;
+    const replay=!!(pending && Number.isSafeInteger(pending.seq) && pending.seq>host.seq &&
+      pending.rev===host.rev && validInventory(pending.inv,36,maxId));
+    return {inv:structuredClone(replay?pending.inv:host.inv),replay,
+      pending:replay?structuredClone(pending):null,
+      conflicted:!!(pending && !replay && pending.seq>host.seq),
+      seq:Math.max(host.seq,replay?pending.seq:0)};
+  }
+  return {validId,validInventory,ensureProfile,transact,snapshot,syncInventory,recoverGuestInventory};
 })();
 if(typeof module!=='undefined')module.exports=PrismaCoop;

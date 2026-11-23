@@ -37,6 +37,11 @@ const Net=require(require('node:path').resolve(__dirname,'../js/multiplayer.js')
  await new Promise(r=>setTimeout(r,60));
  assert.ok(events.find(x=>x[1].t==='pose'));
  assert.ok(hostPc.channel.sent.filter(x=>x.t==='part').length>1);
+ // WebRTC's own transient reconnect does not need another manual SDP exchange.
+ hostPc.connectionState='disconnected';hostPc.onconnectionstatechange?.();
+ assert.ok(log.some(([side,state])=>side==='h'&&state==='reconnecting'));
+ hostPc.connectionState='connected';hostPc.onconnectionstatechange?.();
+ assert.ok(log.some(([side,state])=>side==='h'&&state==='recovered'));
  host.close();guest.close();
  console.log(JSON.stringify({ok:true,events:events.map(x=>x[1].t),chunks:hostPc.channel.sent.filter(x=>x.t==='part').length,connect:log.slice(0,10)},null,2));
 })().catch(e=>{console.error(e);process.exit(1)});

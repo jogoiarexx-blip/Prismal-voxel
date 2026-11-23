@@ -1,4 +1,4 @@
-# Mundo Prisma v0.9.15 — Proteção de progresso e cooperação
+# Mundo Prisma v0.9.16 — Recuperação P2P e inventários duráveis — Proteção de progresso e cooperação
 
 **Estabilização:** a gravação do mundo agora faz novas tentativas com espera crescente (5 a 120 segundos) caso a gravação local falhe. Mudanças feitas durante uma gravação continuam pendentes e são salvas novamente. Partidas solo criam um checkpoint a cada 45 segundos; o anfitrião de P2P, a cada 30 segundos. Há um botão “Salvar progresso agora” no menu de pausa, com o status da gravação. As transferências de baú são serializadas por mundo, evitando conflitos entre operações simultâneas; o convidado recebe uma resposta explícita se o baú estiver ocupado. O inventário e os mundos existentes permanecem compatíveis.
 
@@ -12,7 +12,7 @@ Abrir a mochila por E ou pelo celular sempre volta ao modo de fabricação à m�
 
 ---
 
-# Mundo Prisma v0.9.15 — Prévia de estabilização da versão 1.0
+# Mundo Prisma v0.9.16 — Prévia de estabilização da versão 1.0
 
 Esta versão prioriza consistência de baús e perfis do convidado no P2P, recuperação manual de sessões, chat sobreposto, convite por link e gravação segura das operações de baú.
 
@@ -22,7 +22,7 @@ Esta versão prioriza consistência de baús e perfis do convidado no P2P, recup
 
 **Reconexão:** se a conexão cair de vez, o anfitrião usa Pausa → Recriar convite P2P, e o convidado usa Reconectar com novo convite. O anfitrião persiste o perfil e inventário associado ao identificador do convidado, e cada transação de baú é gravada antes da confirmação. Testes reais entre redes diferentes continuam obrigatórios para sair do estágio experimental.
 
-# Mundo Prisma v0.9.15 — árvores, fazenda, zumbis e baús cooperativos
+# Mundo Prisma v0.9.16 — árvores, fazenda, zumbis e baús cooperativos
 
 Atualização incremental sobre a v0.9.11, com compatibilidade com mundos `schema:1`.
 
@@ -286,3 +286,16 @@ Nenhum GLB ou textura foi adicionado. O avatar remoto usa a geometria voxel exis
 ## Testes de regressão para a estabilização P2P
 
 Execute `node tests/coop.test.cjs`, `node tests/chat.test.cjs` e `node tests/webrtc.test.cjs`. Os testes exercitam troca de itens, duplicação de mensagens, confirmação após gravação, rollback, reconexão simulada e expiração de mensagens. Testes em dispositivos reais continuam obrigatórios para validar perda de conexão, NAT e duração das partidas.
+
+
+## v0.9.16 — Recuperação cooperativa
+
+- Inventários de convidados confirmados apenas após gravação pelo anfitrião.
+- Operações de baús e de inventário usam a mesma fila serializada por mundo.
+- Mensagens repetidas são idempotentes; novas tentativas usam números de sequência.
+- Uma queda breve do WebRTC dispara ressincronização do mundo e da mochila.
+- Se a sessão cair completamente, um novo convite permite recuperar transferências pendentes, se a revisão do inventário não mudou.
+- Conflitos de revisão não são fundidos automaticamente para evitar duplicações de itens. Um backup local dos itens não confirmados pode ser exportado em **Pausa → Exportar itens pendentes** para conferência.
+- A conexão continua dependente de troca manual de convite/resposta após falha permanente; não há servidor de sinalização ou TURN próprio.
+
+**Validação necessária antes do 1.0:** sessões longas em dois aparelhos reais, perdas de rede em diferentes navegadores, restauração de mundos com grande quantidade de construções e verificação de capacidade de armazenamento em celular.

@@ -69,7 +69,8 @@ const PrismaNet = (() => {
       ch=c;
       ch.binaryType='arraybuffer';
       ch.onopen=()=>{ publicApi.connected=true; status('connected'); startHeartbeat(); send({t:'hello',name:publicApi.name}).catch(()=>{}); };
-      ch.onclose=()=>{ publicApi.connected=false; if(heartbeat)clearInterval(heartbeat);heartbeat=null; status('disconnected'); };
+      ch.onclose=()=>{ publicApi.connected=false; interrupted=true;
+        if(heartbeat)clearInterval(heartbeat);heartbeat=null; status('disconnected'); };
       ch.onerror=()=>status('error');
       ch.onmessage=(e)=>{
         try {

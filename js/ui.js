@@ -49,7 +49,8 @@
     mpEditBuffer = [], mpGuestEdits = [], mpLastHud = 0, mpLastSeq = -1, mpPoseSeq = 0,
     mpLastEntity = 0, mpEntitySeq = 0, mpLastRemoteHit = 0, mpLootSends = new Set(),
     mpHostWorldId = null, mpGuestProfile = null, mpGuestRevision = 0, mpGuestSeq = 0, mpLastGuestSync = 0,
-    mpHostGuestId = null, mpChestBusy = false, mpGuestCheckpointAt = 0, chatUnlockPending = false, mpLastHostCheckpoint = 0;
+    mpHostGuestId = null, mpChestBusy = false, mpGuestCheckpointAt = 0, chatUnlockPending = false, mpLastHostCheckpoint = 0,
+    mpResyncAt=0, mpLastGuestInvHash=null, mpInventorySaving=false;
   // A shareable URL fragment carries signaling data without a backend.
   // Remove it from the address bar after reading; it is never sent to GitHub Pages.
   let mpInviteConsumed = false;
@@ -233,6 +234,7 @@
     mpWorldReady=false;mpEditBuffer=[];mpGuestEdits=[];mpLastSeq=-1;mpPoseSeq=0;
     mpLastEntity=0;mpEntitySeq=0;mpLastRemoteHit=0;mpLootSends.clear();
     mpHostWorldId=null;mpGuestProfile=null;mpGuestRevision=0;mpGuestSeq=0;mpHostGuestId=null;mpChestBusy=false;
+    mpResyncAt=0;mpLastGuestInvHash=null;mpInventorySaving=false;
     closeQuickChat();$('#mpChatFeed').replaceChildren();
     if (g) {g.networkGuest=false;g.networkHost=false;}
     if (mpRemote) mpRemote.active=false;
@@ -262,9 +264,44 @@
     mpGuestProfile.saved=Date.now();
     Saves.saveGuestProfile(mpHostWorldId,mpGuestProfile);
   }
-  function guestInventorySync() {
+  function exportGuestRecovery() {
+    const pending=mpGuestProfile?.recoveryBackup;
+    if(!pending || !validInventory(pending.inv,36))return toast('Nenhum inventário pendente para exportar.');
+    // Recovery evidence is exported as JSON rather than injected into gameplay:
+    // importing it automatically could create duplicated items in a shared chest.
+    const data=JSON.stringify({kind:'mundo-prisma-inventory-recovery',version:1,
+      worldId:mpHostWorldId,playerId:mpGuestProfile.id,
+      saved:pending.saved,rev:pending.rev,seq:pending.seq,inventory:pending.inv},null,2);
+    const url=URL.createObjectURL(new Blob([data],{type:'application/json'}));
+    const a=document.createElement('a');a.href=url;
+    a.download='mundo-prisma-inventario-pendente.json';document.body.append(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),2000);
+    toast('Backup dos itens pendentes exportado para conferência.');
+  }
+  function guestInventorySync(force=false) {
     if(mpRole!=='guest'||!mp?.connected||!g?.ready||!mpGuestProfile||!mpHostWorldId||!mpWorldReady)return;
-    mp.send({t:'guest-inv',id:mpGuestProfile.id,rev:mpGuestRevision,seq:++mpGuestSeq,inv:g.inv}).catch(()=>{});
+    const key=JSON.stringify(g.inv);
+    const old=mpGuestProfile.pendingInv;
+    if(!force && !old && key===mpLastGuestInvHash)return;
+    // Re-send the same transaction after a lost ACK. A different inventory
+    // gets a new sequence number so no update can be applied twice.
+    const pending=old && JSON.stringify(old.inv)===key && old.rev===mpGuestRevision
+      ? old : {seq:++mpGuestSeq,rev:mpGuestRevision,inv:structuredClone(g.inv)};
+    mpGuestSeq=Math.max(mpGuestSeq,pending.seq);
+    mpGuestProfile.pendingInv=pending;
+    saveGuestCheckpoint();
+    mp.send({t:'guest-inv',id:mpGuestProfile.id, ...pending}).catch(()=>{});
+  }
+  async function restartWorldSync() {
+    if(mpRole!=='host'||!g?.ready||!mp?.connected)return;
+    const now=Date.now();
+    if(now-mpResyncAt<2500)return; // coalesce both peers asking at once
+    mpResyncAt=now;
+    mpWorldReady=false;mpStartSent=false;mpEditBuffer=[];mpLastSeq=-1;
+    if(mpRemote)mpRemote.active=false;
+    try{const saved=await g.save();if(!saved)toast('Atenção: mundo ainda não foi salvo no disco.');}
+    catch{toast('O salvamento falhou durante a reconexão.');}
+    if(mp?.connected)sendHostWorld();
   }
   function currentGuestProfile() {
     return mpHostGuestId && g?.guestProfiles?.[mpHostGuestId];
@@ -284,7 +321,7 @@
         '<button class="mp-choice" data-act="mp-join"><span class="mp-emoji">◇</span><b>Entrar na sala</b><small>Cole o convite de quem criou.</small></button>' +
       '</div>' +
       '<div class="mp-hint"><strong>Como entrar?</strong> Compartilhe o link de convite. Seu amigo abre, copia a resposta e envia para você. O código técnico longo fica em Opções avançadas. Um código curto de 6 dígitos precisa de um servidor de sinalização.</div>' +
-      '<p class="smallnote">Cooperação experimental para duas pessoas: jogadores, criaturas, combate, coleta e construções. O anfitrião salva o mundo. Algumas redes móveis exigem TURN.</p>',
+      '<p class="smallnote">Cooperação experimental: quedas breves podem ser recuperadas. Após falha permanente, gere novo convite. Inventários são confirmados após salvamento. Algumas redes exigem TURN.</p>',
       true);
   }
   async function multiplayerHostPanel() {
@@ -337,6 +374,7 @@
       const username=mp?.name||'Anfitrião';
       mp?.close();
       mpStartSent=false;mpWorldReady=false;mpGuestEdits=[];mpEditBuffer=[];
+      mpLastSeq=-1;mpPoseSeq=0;mpEntitySeq=0;mpResyncAt=0;
       mpRemote={active:false};mpRecord=g.snapshot();mpFresh=false;
       mp=PrismaNet.create({name:username,onMessage:onMultiplayerMessage,onStatus:onMultiplayerStatus});
       const invite=await mp.host();
@@ -369,6 +407,7 @@
     try {
       mp?.close();
       mpRole='guest';mpRemote={active:false};mpGuest=true;mpWorldReady=false;
+      mpLastSeq=-1;mpPoseSeq=0;mpLastGuestInvHash=null;mpResyncAt=0;
       mp=PrismaNet.create({name:nick,onMessage:onMultiplayerMessage,onStatus:onMultiplayerStatus});
       const answer=await mp.join(offer);
       panel('mp-answer','Resposta criada',
@@ -428,8 +467,15 @@
     } else if(s==='reconnecting' || s==='slow') {
       toast(s==='slow' ? 'Conexão lenta: verificando o amigo…' : 'P2P instável: tentando recuperar a conexão…');
     } else if(s==='recovered') {
-      toast('Conexão P2P recuperada.');
-      if(mpRole==='host' && g && !mpWorldReady) sendHostWorld();
+      toast('Conexão recuperada: conferindo mundo e inventários…');
+      if(mpRole==='host')restartWorldSync();
+      else if(mpRole==='guest' && g?.ready) {
+        saveGuestCheckpoint();mpWorldReady=false;mpLastSeq=-1;
+        pauseSim();
+        panel('load','Sincronizando novamente…',
+          '<p class="mp-lead">A conexão voltou. Conferindo o mundo e seus itens com o anfitrião antes de liberar a construção.</p>',true,false);
+        mp?.send({t:'resync-request'}).catch(()=>toast('Solicite um novo convite se a conexão não voltar.'));
+      }
     } else if(s==='failed') {
       toast('P2P interrompido. É necessário renovar o convite para reconectar.');
       if(mpRole==='guest' && g?.ready) {
@@ -440,6 +486,8 @@
           btn('mp-leave','Sair da partida','secondary'));
       }
     } else if(s==='disconnected') {
+      saveGuestCheckpoint();
+      if(mpRole==='host' && g?.ready)g.save().catch(()=>{});
       $('#mpChatBtn').hidden=true;
       if(mpRemote) mpRemote.active=false;
       if(mpRole==='guest' && g) {
@@ -454,6 +502,9 @@
   function onMultiplayerMessage(msg) {
     if(!mp || !msg || typeof msg!=='object')return;
     if(msg.t==='hello') {toast('Conectado com '+mp.remoteName);return;}
+    if(msg.t==='resync-request' && mpRole==='host' && g?.ready && mp?.connected) {
+      restartWorldSync();return;
+    }
     if(msg.t==='chest-open' && mpRole==='host' && mpWorldReady && g?.ready) {
       const pos=msg.pos;
       if(!validSharedChest(pos) || msg.id!==mpHostGuestId || !currentGuestProfile()) {
@@ -531,19 +582,46 @@
     }
     if(msg.t==='guest-profile' && mpRole==='guest' && g?.ready && mpGuestProfile && msg.id===mpGuestProfile.id) {
       if(!validInventory(msg.inv,36)||!Number.isInteger(msg.rev)||msg.rev<0)return;
-      g.inv=structuredClone(msg.inv);g.changed();
+      const committedSeq=Number.isSafeInteger(msg.seq)?msg.seq:0;
+      const recovery=PrismaCoop.recoverGuestInventory(mpGuestProfile,
+        {inv:msg.inv,rev:msg.rev,seq:committedSeq},Voxel.blocks.length);
+      if(!recovery)return;
+      if(recovery.conflicted) {
+        // Never merge unconfirmed items with a newer authoritative chest revision.
+        // Preserve a local recovery record instead of silently deleting progress.
+        mpGuestProfile.recoveryBackup={...mpGuestProfile.pendingInv,saved:Date.now()};
+      }
+      g.inv=recovery.inv;g.changed();
       mpGuestRevision=msg.rev;
       chestTx=Math.max(chestTx,Number.isSafeInteger(msg.tx)?msg.tx:0);
-      mpGuestSeq=Math.max(mpGuestSeq,Number.isSafeInteger(msg.seq)?msg.seq:0);
+      mpGuestSeq=Math.max(mpGuestSeq,committedSeq,recovery.seq);
+      if(!recovery.replay) {mpGuestProfile.pendingInv=null;mpLastGuestInvHash=JSON.stringify(msg.inv);}
+      else mpLastGuestInvHash=null;
       mpWorldReady=true;saveGuestCheckpoint();
-      toast('Inventário sincronizado com o anfitrião.');return;
+      if(recovery.replay) {guestInventorySync(true);toast('Recuperando itens pendentes após a reconexão…');}
+      else if(recovery.conflicted)toast('Há itens não confirmados no backup local. O anfitrião mantém o inventário oficial.');
+      else toast('Inventário sincronizado com o anfitrião.');
+      return;
     }
     if(msg.t==='guest-inv' && mpRole==='host' && mpWorldReady && g?.ready) {
-      const profile=currentGuestProfile();
-      if(!profile || msg.id!==mpHostGuestId || mpChestBusy || !validInventory(msg.inv,36) ||
-         msg.rev!==profile.rev || !Number.isSafeInteger(msg.seq) || msg.seq<=(profile.seq||0))return;
-      profile.inv=structuredClone(msg.inv);profile.seq=msg.seq;g.changed();
+      if(msg.id!==mpHostGuestId)return;
+      PrismaCoop.syncInventory(g,mpHostGuestId,msg,Voxel.blocks.length)
+        .then(result=>{if(result.state && mp?.connected)mp.send(result.state).catch(()=>{});})
+        .catch(e=>{console.warn('Inventário P2P não salvo',e);});
       return;
+    }
+    if(msg.t==='guest-inv-ack' && mpRole==='guest' && mpGuestProfile && msg.id===mpGuestProfile.id) {
+      if(!Number.isSafeInteger(msg.seq) || !Number.isInteger(msg.rev))return;
+      const pending=mpGuestProfile.pendingInv;
+      if(pending && msg.seq>=pending.seq && msg.rev===pending.rev){
+        mpGuestProfile.pendingInv=null;
+        mpLastGuestInvHash=JSON.stringify(pending.inv);
+        saveGuestCheckpoint();
+      }
+      return;
+    }
+    if(msg.t==='guest-inv-error' && mpRole==='guest') {
+      toast('Inventário ainda não salvo. Tentaremos novamente.');return;
     }
     if(msg.t==='world' && mpRole==='guest') {
       const src=msg.rec;
@@ -556,6 +634,7 @@
       mpGuestProfile=Saves.guestProfile(src.id);
       mpGuestRevision=Number.isInteger(mpGuestProfile.rev)?mpGuestProfile.rev:0;
       mpGuestSeq=Number.isInteger(mpGuestProfile.seq)?mpGuestProfile.seq:0;
+      mpLastGuestInvHash=null;
       chestTx=Math.max(chestTx,Number.isInteger(mpGuestProfile.tx)?mpGuestProfile.tx:0);
       rec.id='p2p-visitante-'+Date.now();
       rec.name=String(src.name).slice(0,48);
@@ -1030,6 +1109,8 @@
         btn('housemenu', '⌂ Localizar minha casa') +
         btn('save-now', '◉ Salvar progresso agora', 'secondary') +
         '<p class="smallnote">Salvamento: '+esc(g.saveState)+'</p>'+
+        (mpRole==='guest' && mpGuestProfile?.recoveryBackup ?
+          btn('mp-backup-inv','↓ Exportar itens pendentes da reconexão','secondary') : '')+
         (mpRole==='host' && !mp?.connected ? btn('mp-rehost','♻ Recriar convite P2P','secondary') : '')+
         btn('savequit', icon('world') + 'Salvar e voltar ao menu') +
         '</div>' +
@@ -1203,7 +1284,7 @@
         '</ul><p>O primeiro selo libera a pedra rúnica. Com os três, use a bancada para combinar cristal, cobre e vidro em um Farol Prisma. Coloque-o para acender uma aurora sobre sua base.</p></div>';
     } else
       body =
-        '<p>Mundo Prisma é um sandbox voxel de exploração, sobrevivência e construção. Explore os Campos de Âmbar, a Floresta de Névoa e as Dunas de Vidro. Nas dunas, procure os obeliscos com cristais no topo.</p><p class="muted">Versão jogável 0.9.15 · Solo e multiplayer experimental<br>Arte, sprites, tipografia de título e efeitos sonoros criados para Mundo Prisma. Seu progresso é salvo neste navegador.</p>';
+        '<p>Mundo Prisma é um sandbox voxel de exploração, sobrevivência e construção. Explore os Campos de Âmbar, a Floresta de Névoa e as Dunas de Vidro. Nas dunas, procure os obeliscos com cristais no topo.</p><p class="muted">Versão jogável 0.9.16 · Solo e multiplayer experimental<br>Arte, sprites, tipografia de título e efeitos sonoros criados para Mundo Prisma. Seu progresso é salvo neste navegador.</p>';
     panel(
       'guide',
       'Guia de campo',
@@ -1770,7 +1851,7 @@
     $('#debug').hidden = !debug;
     if (debug)
       $('#debug').textContent =
-        'PRISMA 0.9.15 · ' +
+        'PRISMA 0.9.16 · ' +
         renderer.type +
         '\n' +
         Math.round(fps) +
@@ -1872,6 +1953,9 @@
         break;
       case 'savequit':
         quit();
+        break;
+      case 'mp-backup-inv':
+        exportGuestRecovery();
         break;
       case 'save-now':
         if(g)g.save().then(ok=>{
