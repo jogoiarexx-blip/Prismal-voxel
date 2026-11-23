@@ -564,6 +564,12 @@ const Voxel = (() => {
   );
   // The original bed recipe remains compatible with older worlds.
   recipes.push([46, 1, [[123, 3], [8, 3]], 12]);
+  // A recipe belongs to exactly one station: 0 (backpack), 12 (workbench),
+  // or 14 (furnace). Keep recipe indexes stable for saves and UI events.
+  const recipeStation = (recipe) => recipe?.[3] || 0;
+  const recipesAtStation = (station = 0) => recipes
+    .map((recipe, index) => ({ recipe, index }))
+    .filter(({ recipe }) => recipeStation(recipe) === station);
   const farmAnimals = Object.freeze(['Ovelha', 'Porco', 'Vaca']);
   const farmFood = Object.freeze({ Ovelha: 40, Porco: 23, Vaca: 40 });
   const farmHealth = Object.freeze({ Ovelha: 5, Porco: 6, Vaca: 9 });
@@ -1053,6 +1059,8 @@ const Voxel = (() => {
     version,
     blocks,
     recipes,
+    recipeStation,
+    recipesAtStation,
     durability,
     farmAnimals,
     farmFood,

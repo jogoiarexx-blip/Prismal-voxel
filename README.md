@@ -1,4 +1,14 @@
-# Mundo Prisma v0.9.13 — Prévia de estabilização da versão 1.0
+# Mundo Prisma v0.9.14 — Fabricação por estação
+
+As receitas agora são separadas conforme o aparelho: **mochila = fabricação à mão (estação 0)**, **bancada = estação 12**, **forno (aceso ou apagado) = estação 14**. Cada painel lista somente as receitas da estação que foi aberta. Filtros por categoria mostram apenas as receitas daquela estação.
+
+O menu Construção livre continua mostrando peças para consulta e para equipar o que já foi produzido, mas só fabrica diretamente os itens feitos à mão; receitas de bancada e forno precisam ser abertas nesses aparelhos. A fabricação é validada novamente no motor do jogo, de modo que não basta acionar um botão de outra estação ou estar perto do aparelho.
+
+Abrir a mochila por E ou pelo celular sempre volta ao modo de fabricação à mão, evitando mostrar receitas da última estação usada. A atualização não muda IDs de itens, fórmulas, inventário nem salvamento de mundos.
+
+---
+
+# Mundo Prisma v0.9.14 — Prévia de estabilização da versão 1.0
 
 Esta versão prioriza consistência de baús e perfis do convidado no P2P, recuperação manual de sessões, chat sobreposto, convite por link e gravação segura das operações de baú.
 
@@ -8,7 +18,7 @@ Esta versão prioriza consistência de baús e perfis do convidado no P2P, recup
 
 **Reconexão:** se a conexão cair de vez, o anfitrião usa Pausa → Recriar convite P2P, e o convidado usa Reconectar com novo convite. O anfitrião persiste o perfil e inventário associado ao identificador do convidado, e cada transação de baú é gravada antes da confirmação. Testes reais entre redes diferentes continuam obrigatórios para sair do estágio experimental.
 
-# Mundo Prisma v0.9.13 — árvores, fazenda, zumbis e baús cooperativos
+# Mundo Prisma v0.9.14 — árvores, fazenda, zumbis e baús cooperativos
 
 Atualização incremental sobre a v0.9.11, com compatibilidade com mundos `schema:1`.
 
@@ -268,3 +278,7 @@ Nenhum GLB ou textura foi adicionado. O avatar remoto usa a geometria voxel exis
 - Botão **Minha casa** na HUD ou tecla **H** abre o menu para marcar a posição atual, visualizar coordenadas X/Y/Z, ligar ou desligar a bússola e remover o marcador. A seta e a distância até a casa atualizam em tempo real.
 - Marcadores são salvos no próprio mundo, sem GPS real, serviços externos ou mapas pesados.
 - Camas duplas também sincronizam por lotes no P2P experimental; o anfitrião salva o mundo compartilhado.
+
+## Testes de regressão para a estabilização P2P
+
+Execute `node tests/coop.test.cjs`, `node tests/chat.test.cjs` e `node tests/webrtc.test.cjs`. Os testes exercitam troca de itens, duplicação de mensagens, confirmação após gravação, rollback, reconexão simulada e expiração de mensagens. Testes em dispositivos reais continuam obrigatórios para validar perda de conexão, NAT e duração das partidas.

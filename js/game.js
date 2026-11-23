@@ -1088,16 +1088,19 @@ const Game = (() => {
       this.notify('Selo ' + Voxel.ruins[site.id].seal + ' descoberto · ' + this.sealCount + '/3');
       this.save();
     }
-    canCraft(rec) {
+    canCraft(rec, station = 0) {
       return (
+        Voxel.recipeStation(rec) === station &&
         this.sealCount >= (rec[4] || 0) &&
-        (!rec[3] || this.nearStation(rec[3])) &&
+        (station === 0 || this.nearStation(station)) &&
         rec[2].every(([b, n]) => count(this.inv, b) >= n)
       );
     }
-    craft(i) {
-      let r = Voxel.recipes[i];
-      if (!r || !this.canCraft(r)) return false;
+    craft(i, station = 0) {
+      const r = Voxel.recipes[i];
+      // Validate at the game layer, not just by hiding recipes in the panel.
+      // Workbench/furnace recipes cannot be forged from the backpack or build menu.
+      if (!r || !this.canCraft(r, station)) return false;
       let copy = this.inv.map((t) => t && { ...t });
       for (let [b, n] of r[2]) cost(copy, b, n);
       if (fill(copy, r[0], r[1])) {

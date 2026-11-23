@@ -16,7 +16,7 @@
     cfgBack = 'home',
     backPanel = 'home',
     bagSel = null,
-    bagStation = null,
+    bagStation = 0,
     bagRecipeTab = 'all',
     chestPos = null,
     chestLoaded = false, chestPending = false, chestRevision = -1, chestTx = 0,
@@ -1192,7 +1192,7 @@
         '</ul><p>O primeiro selo libera a pedra rúnica. Com os três, use a bancada para combinar cristal, cobre e vidro em um Farol Prisma. Coloque-o para acender uma aurora sobre sua base.</p></div>';
     } else
       body =
-        '<p>Mundo Prisma é um sandbox voxel de exploração, sobrevivência e construção. Explore os Campos de Âmbar, a Floresta de Névoa e as Dunas de Vidro. Nas dunas, procure os obeliscos com cristais no topo.</p><p class="muted">Versão jogável 0.9.13 · Solo e multiplayer experimental<br>Arte, sprites, tipografia de título e efeitos sonoros criados para Mundo Prisma. Seu progresso é salvo neste navegador.</p>';
+        '<p>Mundo Prisma é um sandbox voxel de exploração, sobrevivência e construção. Explore os Campos de Âmbar, a Floresta de Névoa e as Dunas de Vidro. Nas dunas, procure os obeliscos com cristais no topo.</p><p class="muted">Versão jogável 0.9.14 · Solo e multiplayer experimental<br>Arte, sprites, tipografia de título e efeitos sonoros criados para Mundo Prisma. Seu progresso é salvo neste navegador.</p>';
     panel(
       'guide',
       'Guia de campo',
@@ -1299,12 +1299,11 @@
       const owned = Game.count(g.inv, id);
       const ri = Voxel.recipes.findIndex((r) => r[0] === id);
       const recipe = ri < 0 ? null : Voxel.recipes[ri];
-      const available = recipe && g.canCraft(recipe);
+      const available = recipe && g.canCraft(recipe, 0);
       const requirement = recipe
         ? recipe[2].map(([b,n]) => n + ' ' + esc(name(b))).join(' + ')
         : 'Encontre o material no mundo';
-      const station = recipe?.[3] && !g.nearStation(recipe[3])
-        ? ' · Perto de ' + esc(name(recipe[3])) : '';
+      const station = recipe?.[3] ? ' · Fabricar na ' + esc(name(recipe[3])) : '';
       const action = g.creative
         ? btn('buildpick:' + id, 'Selecionar 64', 'primary')
         : '<div class="build-actions">' +
@@ -1312,7 +1311,7 @@
           (recipe
             ? (available
                 ? btn('buildcraft:' + ri, 'Fabricar ×' + recipe[1], 'secondary')
-                : '<button class="secondary" disabled title="Faltam materiais ou estação de fabricação">Indisponível</button>')
+                : '<button class="secondary" disabled title="' + (recipe[3] ? 'Abra ' + esc(name(recipe[3])) + ' para fabricar' : 'Faltam materiais') + '">' + (recipe[3] ? 'Na ' + esc(name(recipe[3])) : 'Indisponível') + '</button>')
             : owned ? '' : '<small class="build-unavailable">Colete no mundo</small>') +
           '</div>';
       return '<article class="build-card">' + img(id) + '<div class="build-copy"><b>' + esc(name(id)) +
@@ -1352,8 +1351,14 @@
   }
   function inventory(reset = true, station = null) {
     if (reset) bagSel = null;
+    // E and the mobile Bag button always open hand crafting. Re-rendering an
+    // already open station panel (tab/slot/craft) must preserve its context.
     if (station !== null) bagStation = station;
-    const activeStation = station !== null ? station : bagStation;
+    else if (reset) bagStation = 0;
+    const activeStation = bagStation;
+    const availableRecipes = Voxel.recipesAtStation(activeStation);
+    const stationLabel = activeStation ? name(activeStation) : 'Mochila';
+    const craftingLabel = activeStation ? 'Receitas da ' + stationLabel : 'Receitas feitas à mão';
     const sel = bagSel?.type === 'inv' ? bagSel.i : -1;
     const inv = g.inv;
     const grid = (start, end, hot = false) =>
@@ -1363,7 +1368,8 @@
         .map((t, n) => slotButton(t, n + start, 'inv', sel === n + start, hot && n + start < 9))
         .join('') +
       '</div>';
-    const selectedRecipe = Voxel.recipes.find((r) => matchesBagTab(r[0], bagRecipeTab));
+    const selectedRecipe = availableRecipes
+      .find(({recipe}) => matchesBagTab(recipe[0], bagRecipeTab))?.recipe;
     const quickPreview = selectedRecipe
       ? '<div class="quickcraft-preview">' + img(selectedRecipe[0]) + '<b>' + esc(name(selectedRecipe[0])) + '</b><small>×' + selectedRecipe[1] + '</small></div>'
       : '<div class="quickcraft-preview empty"><small>Selecione uma categoria para ver receitas.</small></div>';
@@ -1392,13 +1398,11 @@
           '<div class="catalog bag-catalog">' + catalog + '</div>' +
         '</div>';
     } else {
-      const recipeCards = Voxel.recipes
-        .map((r, i) => [r, i])
-        .filter(([r]) => matchesBagTab(r[0], bagRecipeTab))
-        .map(([r, i]) => {
-          const ava = g.canCraft(r);
-          const needsStation = r[3] && !g.nearStation(r[3]);
-          const stationText = needsStation ? ' · Requer ' + name(r[3]) : '';
+      const recipeCards = availableRecipes
+        .filter(({recipe}) => matchesBagTab(recipe[0], bagRecipeTab))
+        .map(({recipe:r, index:i}) => {
+          const ava = g.canCraft(r, activeStation);
+          const stationText = activeStation && !g.nearStation(activeStation) ? ' · Aproxime-se da estação' : '';
           const sealText = g.sealCount < (r[4] || 0) ? ' · Requer ' + r[4] + ' selo(s)' : '';
           return (
             '<button class="recipe" data-act="craft:' +
@@ -1417,25 +1421,28 @@
       right =
         '<div class="bag-panel bag-side-panel">' +
           '<div class="quickcraft-box">' +
-            '<div class="sectionhead bag-side-title">Criação rápida</div>' +
+            '<div class="sectionhead bag-side-title">' + esc(craftingLabel) + '</div>' +
             '<div class="quickcraft-shell">' +
               '<div class="mini-craft-grid" aria-hidden="true"><i></i><i></i><i></i><i></i></div>' +
               '<span class="quickcraft-arrow">→</span>' +
               '<div class="mini-craft-output">' + quickPreview + '</div>' +
             '</div>' +
-            '<p class="smallnote bag-copy">Receitas conhecidas aparecem à direita. Toque em <b>+</b> para fabricar imediatamente quando tiver materiais e estiver perto da estação correta.</p>' +
+            '<p class="smallnote bag-copy">' + (activeStation
+              ? 'Este aparelho mostra somente suas próprias receitas. Toque em <b>+</b> para fabricar.'
+              : 'Aqui só aparecem receitas feitas à mão. Abra uma bancada ou forno para ver as receitas exclusivas.') + '</p>' +
           '</div>' +
           '<div class="recipe-book-head">' +
-            '<div class="sectionhead bag-side-title">Livro de receitas</div>' +
+            '<div class="sectionhead bag-side-title">' + esc(craftingLabel) + '</div>' +
             '<div class="recipe-book-actions">' + btn('buildmenu', '▦ Construção livre', 'secondary') + '</div>' +
           '</div>' +
           bagTabsMarkup() +
-          '<div class="recipes bag-recipes">' + recipeCards + '</div>' +
+          '<div class="recipes bag-recipes">' + (recipeCards ||
+            '<p class="smallnote bag-copy">Nenhuma receita nesta categoria para ' + esc(stationLabel) + '.</p>') + '</div>' +
         '</div>';
     }
     panel(
       'bag',
-      activeStation ? name(activeStation) : 'Mochila',
+      stationLabel,
       '<div class="bag-hero"></div>' +
       '<div class="invgrid prisma-bag-layout">' +
         '<div class="bag-panel bag-main-panel">' +
@@ -1752,7 +1759,7 @@
     $('#debug').hidden = !debug;
     if (debug)
       $('#debug').textContent =
-        'PRISMA 0.9.13 · ' +
+        'PRISMA 0.9.14 · ' +
         renderer.type +
         '\n' +
         Math.round(fps) +
@@ -1888,7 +1895,7 @@
         transfer(a, +i, e.shiftKey);
         break;
       case 'craft':
-        if (g.craft(+i)) inventory(true, bagStation);
+        if (g.craft(+i, bagStation)) inventory(true, bagStation);
         break;
       case 'crafttab':
         bagRecipeTab = i;
