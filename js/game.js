@@ -110,6 +110,8 @@ const Game = (() => {
       this.lit = new Map();
       this.keys = new Set();
       this.touchMove = { forward: 0, side: 0 };
+      this.moveSpeed = 0;
+      this.walkCycle = 0;
       this.touchSprint = false;
       this.touchCrouch = false;
       this.touchAutoJump = false;
@@ -481,6 +483,7 @@ const Game = (() => {
       return null;
     }
     physics(dt) {
+      const xBefore=this.p.x, zBefore=this.p.z;
       const p = this.p,
         keys = this.keys;
       let forward = clip(+keys.has('KeyW') - +keys.has('KeyS') + this.touchMove.forward, -1, 1),
@@ -574,6 +577,10 @@ const Game = (() => {
           this.stepTick = this.swimming ? 2.1 / 2.9 : sprint ? 0.34 : 0.48;
         }
       }
+      const moved=Math.hypot(p.x-xBefore,p.z-zBefore);
+      const actualSpeed=dt>0?moved/dt:0;
+      this.moveSpeed+=(actualSpeed-this.moveSpeed)*(1-Math.exp(-dt*12));
+      if(moved>0.001)this.walkCycle+=moved*10.5;
       if (!this.creative) {
         p.food = Math.max(0, p.food - dt * (sprint && (forward || side) ? 0.038 : 0.009));
         p.air = clip(p.air + dt * (this.submerged ? -11 : 35), 0, 100);

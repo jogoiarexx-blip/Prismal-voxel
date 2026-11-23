@@ -340,46 +340,40 @@ const View = (() => {
         geom(m.s, m.ns);
       }
       let ent = [];
-      if (third) {
-        const { x, y, z, yaw } = g.p,
-          h = g.crouch ? 0.77 : 1,
-          walk = g.keys.size && settings.motion ? Math.sin(g.elapsed * 12) * 0.09 : 0;
-        const start = ent.length;
-        box(ent, -0.25, y + 0.59 * h, -0.16, 0.5, 0.64 * h, 0.34, 18);
-        box(ent, -0.19, y + 1.23 * h, -0.18, 0.38, 0.42 * h, 0.36, 8);
-        box(ent, -0.22, y + 1.56 * h, -0.2, 0.44, 0.12 * h, 0.4, 12);
-        box(ent, -0.34, y + 0.78 * h, -0.12 - walk, 0.12, 0.41 * h, 0.25, 17);
-        box(ent, 0.22, y + 0.78 * h, -0.12 + walk, 0.12, 0.41 * h, 0.25, 17);
-        box(ent, -0.21, y, -0.13 + walk, 0.18, 0.63 * h, 0.26, 27);
-        box(ent, 0.03, y, -0.13 - walk, 0.18, 0.63 * h, 0.26, 27);
-        box(ent, -0.19, y + 0.66 * h, 0.16, 0.38, 0.42 * h, 0.16, 12);
-        for (let i = start; i < ent.length; i += 6) {
-          const xx = ent[i],
-            zz = ent[i + 2];
-          ent[i] = x + xx * Math.cos(yaw) - zz * Math.sin(yaw);
-          ent[i + 2] = z + xx * Math.sin(yaw) + zz * Math.cos(yaw);
-        }
-      }
-      // A shared, low-poly avatar for the connected P2P explorer. All boxes use
-      // the same transient entity buffer and shader; no new draw call or texture.
-      if(g.remotePlayer && g.remotePlayer.active) {
-        const p=g.remotePlayer, yaw=p.yaw||0, x=p.x,y=p.y,z=p.z;
-        const start=ent.length, phase=g.elapsed*7;
-        const walk=(p.moving?Math.sin(phase)*.09:0);
-        box(ent,-.25,y+.62,-.17,.50,.68,.34,17); // teal jacket
-        box(ent,-.19,y+1.30,-.20,.38,.37,.40,106); // cream head
-        box(ent,-.21,y+1.63,-.21,.42,.10,.42,12); // prism helmet
-        box(ent,-.33,y+.81,-.13-walk,.10,.40,.25,8);
-        box(ent,.23,y+.81,-.13+walk,.10,.40,.25,8);
-        box(ent,-.19,y,-.13+walk,.18,.64,.26,27);
-        box(ent,.03,y,-.13-walk,.18,.64,.26,27);
-        box(ent,-.12,y+1.42,-.215,.24,.06,.025,111); // visor
+      // Explorer model shared by local 3rd person and the remote P2P player.
+      // Distinct torso, arms, boots, visor and pack; all procedural and batched.
+      function explorerAvatar(p,remote=false) {
+        const x=p.x,y=p.y,z=p.z,yaw=p.yaw||0;
+        const h=p.crouch?.79:1;
+        const gait=remote?(p.walkCycle||0):(g.walkCycle||0);
+        const motion=remote?(p.moving?1:0):Math.min(1,(g.moveSpeed||0)/3.8);
+        const wave=Math.sin(gait)*.10*motion;
+        const bop=Math.abs(Math.sin(gait))*.035*motion;
+        const start=ent.length;
+        const chest=remote?17:108, pants=remote?27:109, scarf=remote?111:113;
+        box(ent,-.23,y+(.63+bop)*h,-.16,.46,.61*h,.33,chest); // coat
+        box(ent,-.22,y+(.61+bop)*h,-.20,.44,.12*h,.40,12); // belt
+        box(ent,-.19,y+(1.22+bop)*h,-.19,.38,.36*h,.38,106); // face
+        box(ent,-.215,y+(1.54+bop)*h,-.215,.43,.12*h,.43,12); // helmet
+        box(ent,-.185,y+(1.49+bop)*h,-.225,.37,.06*h,.06,scarf); // visor
+        box(ent,-.34,y+(.77+bop+wave)*h,-.13,.11,.43*h,.26,8);
+        box(ent,.23,y+(.77+bop-wave)*h,-.13,.11,.43*h,.26,8);
+        box(ent,-.33,y+(.75+bop+wave)*h,-.15,.09,.11*h,.30,109); // gauntlets
+        box(ent,.24,y+(.75+bop-wave)*h,-.15,.09,.11*h,.30,109);
+        box(ent,-.20,y+.11*h,-.13+wave,.18,.53*h,.27,pants);
+        box(ent,.02,y+.11*h,-.13-wave,.18,.53*h,.27,pants);
+        box(ent,-.21,y,-.23+wave,.19,.15*h,.35,112); // boots
+        box(ent,.02,y,-.23-wave,.19,.15*h,.35,112);
+        box(ent,-.18,y+(.79+bop)*h,.17,.36,.38*h,.13,12); // field pack
+        box(ent,-.10,y+(1.03+bop)*h,.302,.20,.08*h,.035,scarf); // pack emblem
         for(let i=start;i<ent.length;i+=6){
           const xx=ent[i],zz=ent[i+2];
           ent[i]=x+xx*Math.cos(yaw)-zz*Math.sin(yaw);
           ent[i+2]=z+xx*Math.sin(yaw)+zz*Math.cos(yaw);
         }
       }
+      if(third) explorerAvatar({...g.p,crouch:g.crouch});
+      if(g.remotePlayer?.active) explorerAvatar(g.remotePlayer,true);
       // Each creature has its own lightweight voxel anatomy and patterned palette.
       // No GLB models, image atlases or additional draw calls are necessary.
       for (const mob of g.mobs) {

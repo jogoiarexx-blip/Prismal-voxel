@@ -43,7 +43,8 @@
     edition = 'survival',
     mp = null, mpRole = null, mpRecord = null, mpFresh = false,
     mpStartSent = false, mpRemote = null, mpMessages = [], mpLastPose = 0,
-    mpLoading = false, mpGuest = false;
+    mpLoading = false, mpGuest = false, mpWorldReady = false,
+    mpEditBuffer = [], mpGuestEdits = [], mpLastHud = 0, mpLastSeq = -1, mpPoseSeq = 0;
   const esc = (s) =>
     String(s ?? '').replace(
       /[&<>"']/g,
@@ -210,9 +211,11 @@
     if (mp) { mp.close(); mp = null; }
     mpRole=null; mpRecord=null; mpFresh=false; mpStartSent=false;
     mpGuest=false; mpLoading=false; mpMessages=[];
+    mpWorldReady=false;mpEditBuffer=[];mpGuestEdits=[];mpLastSeq=-1;mpPoseSeq=0;
     if (mpRemote) mpRemote.active=false;
     mpRemote=null;
     $('#mpChatBtn').hidden=true;
+    const badge=$('#mpStatus');if(badge)badge.hidden=true;
   }
   function multiplayerMenu() {
     if (g && g.alive) return toast('Saia da partida atual antes de criar uma sala.');
@@ -320,11 +323,16 @@
   }
   function onMultiplayerStatus(s) {
     if(s==='connected') {
-      if(mpRole==='host' && mpRecord) launch(mpRecord,mpFresh,false);
+      if(mpRole==='host' && mpRecord && !g) launch(mpRecord,mpFresh,false);
       else if(mpRole==='guest') panel('mp-answer','Sincronizando mundo…',
         '<p class="mp-lead">Conexão P2P estabelecida. Recebendo os blocos do anfitrião…</p>',true,false);
+    } else if(s==='reconnecting' || s==='slow') {
+      toast(s==='slow' ? 'Conexão lenta: verificando o amigo…' : 'P2P instável: tentando recuperar a conexão…');
+    } else if(s==='recovered') {
+      toast('Conexão P2P recuperada.');
+      if(mpRole==='host' && g && !mpWorldReady) sendHostWorld();
     } else if(s==='failed') {
-      toast('Conexão P2P falhou. Confira a rede; algumas conexões exigem TURN.');
+      toast('A conexão P2P falhou. Gere novos códigos para conectar novamente.');
     } else if(s==='disconnected') {
       $('#mpChatBtn').hidden=true;
       if(mpRemote) mpRemote.active=false;
@@ -338,6 +346,9 @@
   function onMultiplayerMessage(msg) {
     if(!mp || !msg || typeof msg!=='object')return;
     if(msg.t==='hello') {toast('Conectado com '+mp.remoteName);return;}
+    if(msg.t==='world-ready' && mpRole==='host' && g) {
+      mpWorldReady=true;flushHostEdits();toast('Mundo sincronizado com '+mp.remoteName);return;
+    }
     if(msg.t==='world' && mpRole==='guest' && !g) {
       const src=msg.rec;
       if(!src || src.schema!==1 || ![1,2,3].includes(src.generator) || typeof src.seed!=='string' ||
@@ -348,20 +359,31 @@
       rec.p={...rec.p,x:rec.p.x+1.8,z:rec.p.z+1.8};
       rec.inv=Game.fresh('Visitante',rec.seed,rec.mode,rec.difficulty).inv;
       rec.mobs=[];rec.selected=0;
+      mpGuestEdits=[];
       launch(rec,false,true);
     } else if(msg.t==='pose' && g && mpRemote) {
       const {x,y,z,yaw,moving}=msg;
-      if([x,y,z,yaw].every(Number.isFinite) && [x,y,z].every(v=>Math.abs(v)<100000)) {
-        Object.assign(mpRemote,{x,y,z,yaw,moving:!!moving,active:true});
+      const seq=Number.isSafeInteger(msg.seq)?msg.seq:null;
+      if([x,y,z,yaw].every(Number.isFinite) && [x,y,z].every(v=>Math.abs(v)<100000) &&
+          (seq===null || seq>mpLastSeq)) {
+        if(seq!==null)mpLastSeq=seq;
+        Object.assign(mpRemote,{targetX:x,targetY:y,targetZ:z,targetYaw:yaw,
+          moving:!!moving,crouch:!!msg.crouch,sprint:!!msg.sprint,
+          lastPacket:performance.now(),active:true});
+        if(!Number.isFinite(mpRemote.x))Object.assign(mpRemote,{x,y,z,yaw});
       }
+    } else if(msg.t==='edit' && mpRole==='guest' && (!g || !g.ready)) {
+      if(mpGuestEdits.length<2000)mpGuestEdits.push(msg);
+    } else if(msg.t==='batch' && mpRole==='guest' && (!g || !g.ready)) {
+      if(mpGuestEdits.length<2000)mpGuestEdits.push(msg);
     } else if(msg.t==='edit' && g && [msg.x,msg.y,msg.z,msg.b].every(Number.isInteger)) {
       const {x,y,z,b}=msg;
-      if(Math.abs(x)>100000||Math.abs(z)>100000||y<=0||y>=Voxel.H||b<0||b>=105)return;
+      if(Math.abs(x)>100000||Math.abs(z)>100000||y<=0||y>=Voxel.H||b<0||!(b<105||Voxel.bedFoot(b)||Voxel.bedHead(b)))return;
       // Only accept edits near the most recently reported explorer position.
-      if(mpRole==='host' && (!mpRemote?.active || Math.hypot(x-mpRemote.x,y-mpRemote.y,z-mpRemote.z)>12))return;
+      if(mpRole==='host' && (!mpWorldReady || !mpRemote?.active || Math.hypot(x-mpRemote.x,y-mpRemote.y,z-mpRemote.z)>12))return;
       g.applyRemoteEdit(x,y,z,b);
     } else if(msg.t==='batch' && g && Array.isArray(msg.ops) && msg.ops.length<=300) {
-      if(mpRole==='host' && (!mpRemote?.active || !msg.ops.every(v=>Array.isArray(v)&&v.length===4&&v.every(Number.isInteger)&&Math.hypot(v[0]-mpRemote.x,v[1]-mpRemote.y,v[2]-mpRemote.z)<12)))return;
+      if(mpRole==='host' && (!mpWorldReady || !mpRemote?.active || !msg.ops.every(v=>Array.isArray(v)&&v.length===4&&v.every(Number.isInteger)&&Math.hypot(v[0]-mpRemote.x,v[1]-mpRemote.y,v[2]-mpRemote.z)<12)))return;
       g.applyRemoteBatch(msg.ops);
     } else if(msg.t==='chat' && typeof msg.text==='string') {
       const body=msg.text.slice(0,280);
@@ -371,7 +393,7 @@
   }
   async function sendHostWorld() {
     if(!g||!mp?.connected||mpStartSent)return;
-    mpStartSent=true;
+    mpStartSent=true;mpWorldReady=false;mpEditBuffer=[];
     try {
       const ok = await mp.send({t:'world',rec:g.snapshot()});
       if (!ok) throw Error('Canal de dados encerrado antes da transmissão do mundo.');
@@ -379,6 +401,51 @@
       mpStartSent=false;
       toast('Falha ao enviar o mundo ao amigo. Reconecte a sala.');console.error(e);
     }
+  }
+  // Host buffers world changes until the guest confirms its chunks are ready.
+  // The baseline is sent first; later block edits are replayed in channel order.
+  function queueWorldEdit(ops) {
+    if(!mp?.connected)return;
+    if(mpRole==='host' && !mpWorldReady){
+      if(mpEditBuffer.length+ops.length>6000) {
+        toast('Muitas alterações aguardando sincronização. O convidado precisa reconectar.');
+        return;
+      }
+      mpEditBuffer.push(...ops);
+      return;
+    }
+    if(ops.length===1) {const [x,y,z,b]=ops[0];mp.send({t:'edit',x,y,z,b}).catch(()=>toast('Falha ao enviar um bloco.'));}
+    else for(let i=0;i<ops.length;i+=200) mp.send({t:'batch',ops:ops.slice(i,i+200)}).catch(()=>toast('Falha na sincronização de construção.'));
+  }
+  function flushHostEdits() {
+    const pending=mpEditBuffer;mpEditBuffer=[];
+    for(let i=0;i<pending.length;i+=200) {
+      const ops=pending.slice(i,i+200);
+      mp.send({t:'batch',ops}).catch(()=>toast('Conexão instável ao atualizar construções.'));
+    }
+  }
+  function flushGuestEdits() {
+    const pending=mpGuestEdits;mpGuestEdits=[];
+    for(const msg of pending){
+      if(msg.t==='edit'){
+        const {x,y,z,b}=msg;
+        if([x,y,z,b].every(Number.isInteger) && Math.abs(x)<100000 && Math.abs(z)<100000 && y>0 && y<Voxel.H && b>=0 && b<Voxel.blocks.length) g.applyRemoteEdit(x,y,z,b);
+      } else if(msg.t==='batch' && Array.isArray(msg.ops))g.applyRemoteBatch(msg.ops);
+    }
+  }
+  function smoothRemote(dt,now) {
+    if(!mpRemote?.active)return;
+    if(now-(mpRemote.lastPacket||0)>14000) {mpRemote.active=false;return;}
+    if(now-(mpRemote.lastPacket||0)>650)mpRemote.moving=false;
+    const d=Math.hypot((mpRemote.targetX??mpRemote.x)-mpRemote.x,(mpRemote.targetY??mpRemote.y)-mpRemote.y,(mpRemote.targetZ??mpRemote.z)-mpRemote.z);
+    if(d>12) {mpRemote.x=mpRemote.targetX;mpRemote.y=mpRemote.targetY;mpRemote.z=mpRemote.targetZ;}
+    else {
+      const a=1-Math.exp(-dt*12);
+      for(const [prop,targ] of [['x','targetX'],['y','targetY'],['z','targetZ']])mpRemote[prop]+=(mpRemote[targ]-mpRemote[prop])*a;
+    }
+    mpRemote.walkCycle=(mpRemote.walkCycle||0)+(mpRemote.moving?dt*10:0);
+    const turn=Math.atan2(Math.sin(mpRemote.targetYaw-mpRemote.yaw),Math.cos(mpRemote.targetYaw-mpRemote.yaw));
+    mpRemote.yaw+=turn*(1-Math.exp(-dt*9));
   }
   function multiplayerChat() {
     if(!mp?.connected)return toast('Conecte-se primeiro a uma sala.');
@@ -876,7 +943,7 @@
         '</ul><p>O primeiro selo libera a pedra rúnica. Com os três, use a bancada para combinar cristal, cobre e vidro em um Farol Prisma. Coloque-o para acender uma aurora sobre sua base.</p></div>';
     } else
       body =
-        '<p>Mundo Prisma é um sandbox voxel de exploração, sobrevivência e construção. Explore os Campos de Âmbar, a Floresta de Névoa e as Dunas de Vidro. Nas dunas, procure os obeliscos com cristais no topo.</p><p class="muted">Versão jogável 0.9.9 · Solo e multiplayer experimental<br>Arte, sprites, tipografia de título e efeitos sonoros criados para Mundo Prisma. Seu progresso é salvo neste navegador.</p>';
+        '<p>Mundo Prisma é um sandbox voxel de exploração, sobrevivência e construção. Explore os Campos de Âmbar, a Floresta de Névoa e as Dunas de Vidro. Nas dunas, procure os obeliscos com cristais no topo.</p><p class="muted">Versão jogável 0.9.10 · Solo e multiplayer experimental<br>Arte, sprites, tipografia de título e efeitos sonoros criados para Mundo Prisma. Seu progresso é salvo neste navegador.</p>';
     panel(
       'guide',
       'Guia de campo',
@@ -1229,10 +1296,14 @@
     if (s === 'ready') {
       if (screen === 'load' && g) resume(false);
       if(mpRole === 'host' && mp?.connected && !mpStartSent) sendHostWorld();
+      if(mpRole === 'guest' && mp?.connected && g) {
+        flushGuestEdits();
+        mp.send({t:'world-ready'}).catch(()=>toast('Falha ao confirmar a entrada no mundo.'));
+      }
     } else if (s === 'worldEdit') {
-      if(mp?.connected && !g?.applyingRemoteEdit) mp.send({t:'edit',...v}).catch(()=>{});
+      if(mp?.connected && !g?.applyingRemoteEdit) queueWorldEdit([[v.x,v.y,v.z,v.b]]);
     } else if (s === 'worldBatch') {
-      if(mp?.connected) mp.send({t:'batch',ops:v}).catch(()=>{});
+      if(mp?.connected && !g?.applyingRemoteEdit) queueWorldEdit(v);
     } else if (s === 'hud') {
       if (screen === 'play') hud();
     } else if (s === 'station') {
@@ -1244,6 +1315,14 @@
       $('#hurt').style.opacity = 0.7;
       setTimeout(() => ($('#hurt').style.opacity = 0), 190);
     }
+  }
+  function updateP2PHud() {
+    const el=$('#mpStatus');if(!el)return;
+    if(!mp?.connected || !g){el.hidden=true;return;}
+    el.hidden=false;
+    const ping=Number.isFinite(mp.latencyMs)?mp.latencyMs+' ms':'medindo…';
+    const dist=mpRemote?.active?Math.round(Math.hypot(g.p.x-mpRemote.x,g.p.z-mpRemote.z))+' m':'aguardando';
+    el.textContent='◈ '+mp.remoteName+' · '+dist+' · '+ping;
   }
   function hud() {
     if (!g) return;
@@ -1362,7 +1441,7 @@
     $('#debug').hidden = !debug;
     if (debug)
       $('#debug').textContent =
-        'PRISMA 0.9.9 · ' +
+        'PRISMA 0.9.10 · ' +
         renderer.type +
         '\n' +
         Math.round(fps) +
@@ -1934,10 +2013,12 @@
       g.tick(1 / 60);
       acc -= 1 / 60;
     }
-    if (mp?.connected && now-mpLastPose>110) {
+    if (mp?.connected && now-mpLastPose>95) {
       mpLastPose=now; const p=g.p;
-      mp.send({t:'pose',x:+p.x.toFixed(2),y:+p.y.toFixed(2),z:+p.z.toFixed(2),yaw:+p.yaw.toFixed(2),moving:g.keys.size>0 || Math.abs(g.touchMove.forward)+Math.abs(g.touchMove.side)>0.1}).catch(()=>{});
+      mp.sendFast({t:'pose',seq:++mpPoseSeq,x:+p.x.toFixed(2),y:+p.y.toFixed(2),z:+p.z.toFixed(2),yaw:+p.yaw.toFixed(2),moving:g.moveSpeed>0.1,crouch:!!g.crouch,sprint:g.moveSpeed>5});
     }
+    smoothRemote(dt,now);
+    if(mp?.connected && now-mpLastHud>1200) {mpLastHud=now;updateP2PHud();}
     renderer.draw(g, settings, Math.min(1, acc * 60));
   }
   requestAnimationFrame(frame);

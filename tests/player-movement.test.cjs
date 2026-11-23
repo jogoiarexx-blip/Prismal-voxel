@@ -1,0 +1,15 @@
+const assert=require('node:assert/strict');const fs=require('fs'),vm=require('vm');
+const Voxel=require(require('node:path').join(__dirname,'../js/world.js'));
+const ctx={Voxel,Sound:{play(){}},View:{basis(){return {f:[0,0,-1]}}},console,crypto:{randomUUID(){return '123'}}};
+vm.createContext(ctx);vm.runInContext(fs.readFileSync(require('node:path').join(__dirname,'../js/game.js'),'utf8')+';this.TestGame=Game;',ctx);
+const g=Object.create(ctx.TestGame.Session.prototype);
+Object.assign(g,{p:{x:0.5,y:65,z:0.5,yaw:0,pitch:0,life:100,food:100,air:100},keys:new Set(['KeyW']),touchMove:{forward:0,side:0},touchCrouch:false,touchSprint:false,crouch:false,fly:false,eyeHeight:1.62,grounded:true,vy:0,moveSpeed:0,walkCycle:0,autoJumpCool:0,touchAutoJump:false,settings:{sound:false},meta:{difficulty:'peaceful'},get:()=>0,eye(){return [this.p.x,this.p.y+this.eyeHeight,this.p.z]},bounds:()=>false,damage(){},respawn(){},landingY:()=>-Infinity});
+for(let k=0;k<36;k++)g.physics(1/60);
+assert.ok(g.moveSpeed>4&&g.walkCycle>4,'Walking animation should use actual movement');
+const advanced=g.p.z,phase=g.walkCycle;
+g.bounds=()=>true;
+for(let k=0;k<40;k++)g.physics(1/60);
+assert.equal(g.p.z,advanced,'Player must not move through a wall');
+assert.ok(g.moveSpeed<0.2,'Blocked character must stop walking');
+assert.equal(g.walkCycle,phase,'No animation cycle advances against a solid wall');
+console.log('Player physics checks passed:',{speedAfterWalk:g.moveSpeed,walkCycle:g.walkCycle,blockedAt:g.p.z});

@@ -1,4 +1,25 @@
-# Mundo Prisma v0.9.9 — Auditoria, backups e estabilidade
+# Mundo Prisma 0.9.10 — P2P e jogador
+
+Versão incremental sobre a 0.9.9, mantendo compatibilidade com os mundos salvos.
+
+## Melhorias
+
+- Mensagens de posição descartáveis: a rede não acumula poses antigas enquanto envia o mundo.
+- Sincronização inicial: o anfitrião conserva as alterações feitas durante o carregamento e as reenvia depois da confirmação do convidado.
+- Estado P2P: latência, distância até o amigo e aviso de conexão instável, com tentativa de recuperação do próprio WebRTC (sem promessa de reconexão se o ICE falhar).
+- Limite de espera no envio de blocos para evitar a interface parada indefinidamente.
+- Interpolação de movimento do convidado e animações baseadas na movimentação real.
+- Personagem voxel com rosto, botas, mochila, visor e braços mais definidos, usando o mesmo lote de geometria do jogo.
+
+## Limitações
+
+Multiplayer continua experimental para duas pessoas. O anfitrião é responsável pelo salvamento e por validar alterações dos blocos. Não há servidor de sinalização nem TURN próprios; depois de uma falha permanente, é necessário criar uma sala nova. O sistema ainda não sincroniza integralmente inventário, animais, vida e combate.
+
+## Como testar
+
+Abra o jogo por HTTPS em dois navegadores. Em Multiplayer → Criar sala, gere o convite. No segundo navegador abra Multiplayer → Entrar na sala, cole o convite e compartilhe a resposta. Cole a resposta no anfitrião. Construa blocos enquanto o convidado carrega para verificar que as alterações aparecem quando ele entra.
+
+Para jogar localmente: `python -m http.server 8000`.
 
 ## Melhorias desta atualização
 
@@ -14,7 +35,7 @@ Multiplayer ainda é uma demonstração experimental de dois participantes por c
 
 ---
 
-# Mundo Prisma v0.9.9 — Multiplayer experimental, cama dupla e localização
+# Mundo Prisma v0.9.10 — Multiplayer experimental, cama dupla e localização
 
 ## Novidades desta edição
 
@@ -160,7 +181,7 @@ Sem novos modelos, texturas ou bibliotecas: mantém malha voxel compartilhada e 
 - Ao quebrar um bloco de suporte, tochas novas anexadas a ele se soltam.
 
 
-## Multiplayer P2P (experimental) — v0.9.9
+## Multiplayer P2P (experimental) — v0.9.10
 
 O botão **Multiplayer P2P** no menu inicial abre duas opções: **Criar sala** e **Entrar na sala**. O anfitrião escolhe um mundo existente ou cria um mundo novo e compartilha o convite copiado. O convidado cola o convite, gera uma resposta e a devolve. O anfitrião cola a resposta. Quando o canal WebRTC abre, o mundo é transferido, com sincronização de **posições dos dois jogadores, blocos construídos/destruídos e conversa**. Apenas o anfitrião salva a partida no navegador dele; o convidado joga sem salvar cópias no próprio navegador. As alterações remotas são incorporadas ao mundo do anfitrião.
 
@@ -179,7 +200,7 @@ O botão **Multiplayer P2P** no menu inicial abre duas opções: **Criar sala** 
 Nenhum GLB ou textura foi adicionado. O avatar remoto usa a geometria voxel existente e o mesmo buffer de entidades; atualizações de posição são limitadas a cerca de 9 por segundo. Edições são enviadas individualmente, com transferência da cena inicial fragmentada em mensagens pequenas. O modo offline não estabelece P2P sem rede.
 
 
-## v0.9.9 — Cama dupla e localização da casa
+## v0.9.10 — Cama dupla e localização da casa
 
 - A cama de campo **nova** ocupa dois blocos horizontais, orientados com a câmera e com a rotação de construção (tecla G), incluindo pés visíveis, estrado, cabeceira, travesseiro e coberta. A colocação exige chão, espaço livre e nenhuma criatura/jogador obstruindo os dois blocos. Colocar consome apenas **uma cama** da mochila.
 - Quebrar qualquer metade remove as duas e devolve um único item no modo Sobrevivência. Em Criativo, desfazer restaura os dois blocos.
