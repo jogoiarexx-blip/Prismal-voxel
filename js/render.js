@@ -111,7 +111,7 @@ const View = (() => {
  if(m==67.){col=mix(col,vec3(1.,.82,.43),.36);pat*=.3;}
  if(m==77.){if(fract(w.y*3.)<.13)col*=.52;else if(rnd(floor(uv*7.))>.42)col=mix(col,vec3(.61,.42,.25),.5);}
  // Character-only pixel patterns: no external creature textures, no texture memory.
- if(m>=105.&&m<=125.){
+ if(m>=105.&&m<=139.){
     float fleck=rnd(floor(uv*9.)+vec2(m*.13,m*.27));
     pat=(fleck-.5)*.11;
     if(m==105.||m==107.||m==109.)col*=fleck>.71?.82:1.06;
@@ -123,6 +123,9 @@ const View = (() => {
     if(m==118.||m==119.){pat*=.38;col*=.97+.045*rnd(floor(uv*6.));}
     if(m==120.||m==121.){pat*=.55;col*=.91+.11*rnd(floor(uv*4.));}
     if(m==116.||m==117.||m==122.)pat*=.4;
+    if(m==137.)col*=.85+.16*fleck;
+    if(m==138.)col*=.91+.08*fleck;
+    if(m==139.){pat=0.;col*=1.4;}
  }
 
  col+=pat;float shade=f==2.?1.05:(f==3.?.50:(f==0.||f==5.?.83:.68));vec3 lighting=mix(vec3(.28,.34,.55),vec3(1.03,1.00,.90),light)*shade*amb;
@@ -392,6 +395,7 @@ const View = (() => {
       // No GLB models, image atlases or additional draw calls are necessary.
       for (const mob of g.mobs) {
         const x=mob.x, y=mob.y, z=mob.z;
+        if (![x,y,z,mob.face||0].every(Number.isFinite)) continue;
         const kind=mob.kind || 'Raspejante';
         const t=g.elapsed;
         const speed=Math.max(0,Math.min(1,mob.motion||0));
@@ -404,13 +408,24 @@ const View = (() => {
         const wind=mob.wind>0?.22:0;
         const recoil=(mob.hurt||0)>0?Math.sin((mob.hurt/.36)*Math.PI)*.12:0;
         const dead=mob.hp<=0 ? Math.max(.10,Math.min(1,(mob.dying||0)/.55)) : 1;
-        const s=(kind==='Guardião Prisma' ? 1.06 : kind==='Vaca' ? 1.14 :
+        const s=Math.min(1.2,Math.max(.08,(kind==='Guardião Prisma' ? 1.06 : kind==='Vaca' ? 1.14 :
           kind==='Ovelha' ? .97 : kind==='Porco' ? .91 :
-          kind==='Vigia de Cascalho' ? 1.02 : kind==='Saltim' ? .72 : .82)*dead;
+          kind==='Vigia de Cascalho' ? 1.02 : kind==='Zumbi' ? 1.02 : kind==='Saltim' ? .72 : .82)*dead));
         const start=ent.length;
         // One shared vertex buffer, no extra draw calls or additional texture atlases.
-        const piece=(px,py,pz,sx,sy,sz,material)=>box(ent, px*s,(py+bob)*s,pz*s,sx*s,sy*s,sz*s,
-          recoil>.04&&material!==110 ? 113 : material);
+        // Clamped, positive cuboids prevent warped/stretched enemies even after
+        // malformed network poses or an extremely long session.
+        const piece=(px,py,pz,sx,sy,sz,material)=>{
+          if(![px,py,pz,sx,sy,sz].every(Number.isFinite))return;
+          px=Math.max(-2.6,Math.min(2.6,px));
+          py=Math.max(-.6,Math.min(3.3,py));
+          pz=Math.max(-2.6,Math.min(2.6,pz));
+          sx=Math.max(.025,Math.min(1.3,sx));
+          sy=Math.max(.025,Math.min(1.6,sy));
+          sz=Math.max(.025,Math.min(1.3,sz));
+          box(ent,px*s,(py+bob)*s,pz*s,sx*s,sy*s,sz*s,
+            recoil>.04&&material!==110 ? 113 : material);
+        };
         const eyes=(height,depth,material=110,spacing=.18,size=.09)=>{
           for (const side of [-1,1]) piece(side*spacing-size/2,height,-depth,size,size,size*.6,material);
         };
@@ -466,6 +481,23 @@ const View = (() => {
           }
           piece(-.16,.28,-.13,.32,.19,.36,119); // udder
           piece(.35,.84,.40+Math.sin(t*2)*.035,.13,.18,.36,120); // tail
+        } else if(kind==='Zumbi') {
+          // Compact nocturnal undead: pale voxel skin, tattered shirt and
+          // distinctly slow arm reach. No imported rigging or sprite sheets.
+          piece(-.30,.64,-.19,.60,.67,.40,138); // torso
+          piece(-.23,1.30,-.24,.46,.40,.47,137); // head
+          piece(-.28,1.59,-.25,.56,.13,.51,108); // dark hair
+          piece(-.19,1.43,-.278,.13,.09,.04,139);
+          piece(.09,1.43,-.278,.13,.09,.04,139);
+          piece(-.14,1.25,-.275,.28,.06,.05,112);
+          for(const side of [-1,1]) {
+            // Keep all limb lengths fixed; animation changes only the offset.
+            piece(side*.43-.11,.72,-.27+side*step*.08-strike*.16,.22,.58,.25,137);
+            piece(side*.43-.11,.68,-.34-strike*.10,.22,.14,.26,137);
+            piece(side*.17-.13,.08,-.13-side*step*.12,.27,.56,.30,138);
+            piece(side*.17-.13,.00,-.25-side*step*.12,.27,.16,.40,112);
+          }
+          piece(-.24,.65,-.225,.48,.08,.05,112); // belt
         } else if(kind==='Saltim') {
           piece(-.36,.29,-.34,.72,.50,.68,105); // amber round body
           piece(-.29,.32,-.36,.58,.24,.13,106); // bright underside
@@ -833,6 +865,7 @@ const View = (() => {
         const kind=m.kind||'Raspejante', boss=kind==='Guardião Prisma';
         const col=({Saltim:'#d6a56a',Musgato:'#5a946b',Luzerrante:'#50efd4',
           'Vigia de Cascalho':'#687580','Guardião Prisma':'#677c83',
+          'Zumbi':'#87a18a',
           'Ovelha':'#eee9d9','Porco':'#e7a6ab','Vaca':'#755a4a'})[kind]||'#366658';
         const bob=kind==='Saltim'?Math.max(0,Math.sin(m.gait||0))*(m.motion||0)*.14:
           kind==='Luzerrante'?.32+Math.sin(g.elapsed*3)*.07:0;
@@ -860,6 +893,11 @@ const View = (() => {
           drawSprite(m.x,m.y+.76,m.z,.83*scale,'#755a4a');
           drawSprite(m.x-.19,m.y+.97,m.z-.10,.31*scale,'#f4e2c3');
           drawSprite(m.x,m.y+1.07,m.z-.36,.38*scale,'#b8a08c');
+        }
+        if(kind==='Zumbi') {
+          drawSprite(m.x,m.y+1.27+bob,m.z-.29,.36*scale,'#83a783');
+          drawSprite(m.x-.13,m.y+1.39+bob,m.z-.36,.08,'#f3bb69');
+          drawSprite(m.x+.13,m.y+1.39+bob,m.z-.36,.08,'#f3bb69');
         }
         if(boss) drawSprite(m.x,m.y+1.59,m.z,.34,'#b49fe7');
       }

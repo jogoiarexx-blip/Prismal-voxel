@@ -19,6 +19,8 @@
     bagStation = null,
     bagRecipeTab = 'all',
     chestPos = null,
+    chestLoaded = false, chestPending = false, chestRevision = -1, chestTx = 0,
+    remoteChestInventory = null,
     debug = false,
     gesture = null,
     joystickPointer = null,
@@ -222,6 +224,7 @@
     if (mp) { mp.close(); mp = null; }
     mpRole=null; mpRecord=null; mpFresh=false; mpStartSent=false;
     mpGuest=false; mpLoading=false; mpMessages=[];
+    chestLoaded=false;chestPending=false;chestRevision=-1;remoteChestInventory=null;
     mpWorldReady=false;mpEditBuffer=[];mpGuestEdits=[];mpLastSeq=-1;mpPoseSeq=0;
     mpLastEntity=0;mpEntitySeq=0;mpLastRemoteHit=0;mpLootSends.clear();
     if (g) {g.networkGuest=false;g.networkHost=false;}
@@ -369,6 +372,61 @@
   function onMultiplayerMessage(msg) {
     if(!mp || !msg || typeof msg!=='object')return;
     if(msg.t==='hello') {toast('Conectado com '+mp.remoteName);return;}
+    if(msg.t==='chest-open' && mpRole==='host' && mpWorldReady && g?.ready) {
+      const pos=msg.pos;
+      if(!validSharedChest(pos) || !validInventory(msg.inv,36)) {
+        mp.send({t:'chest-error',pos,reason:'Baú indisponível. Aproxime-se e tente novamente.'}).catch(()=>{});
+        return;
+      }
+      remoteChestInventory=structuredClone(msg.inv);
+      const items=g.chests[pos] ||= Array(18).fill(null);
+      mp.send({t:'chest-state',pos,rev:g.chestRevisions[pos]||0,items}).catch(()=>{});
+      return;
+    } else if(msg.t==='chest-action' && mpRole==='host' && mpWorldReady && g?.ready) {
+      const pos=msg.pos,rev=g.chestRevisions[pos]||0;
+      if(!validSharedChest(pos)||!remoteChestInventory)return;
+      const chest=g.chests[pos] ||= Array(18).fill(null);
+      const valid=Number.isSafeInteger(msg.tx) && msg.tx>0 &&
+        Number.isInteger(msg.rev) && msg.rev===rev &&
+        ['inv','chest'].includes(msg.from) && ['inv','chest'].includes(msg.to) &&
+        Number.isInteger(msg.index) && Number.isInteger(msg.target) &&
+        typeof msg.quick==='boolean' && typeof msg.split==='boolean';
+      if(valid) {
+        const shadow=structuredClone(remoteChestInventory),snapshot=structuredClone(chest);
+        if(Game.Session.chestMove(shadow,snapshot,msg.from,msg.index,msg.to,msg.target,msg.quick,msg.split)) {
+          remoteChestInventory=shadow;g.chests[pos]=snapshot;
+          g.chestRevisions[pos]=(g.chestRevisions[pos]||0)+1;g.changed();
+        }
+      }
+      mp.send({t:'chest-state',pos,rev:g.chestRevisions[pos]||0,
+        items:g.chests[pos],inv:remoteChestInventory,tx:msg.tx}).catch(()=>{});
+      return;
+    } else if(msg.t==='chest-error' && mpRole==='guest' && g) {
+      if(msg.pos===chestPos) {
+        chestPending=false;chestLoaded=false;
+        toast(typeof msg.reason==='string'?msg.reason.slice(0,110):'Baú indisponível');
+      }
+      return;
+    } else if(msg.t==='chest-state' && mpRole==='guest' && g) {
+      if(msg.pos!==chestPos || !Number.isInteger(msg.rev) || msg.rev<chestRevision)return;
+      if(msg.gone) {
+        chestPending=false;chestLoaded=false;
+        if(screen==='chest'){toast('O baú compartilhado foi removido');resume();}
+        return;
+      }
+      if(!validInventory(msg.items,18))return;
+      g.chests[msg.pos]=structuredClone(msg.items);
+      chestRevision=msg.rev;
+      chestLoaded=true;
+      // An unsolicited chest refresh must not clear a pending transaction.
+      if(Number.isInteger(msg.tx) && msg.tx===chestTx || !chestPending)chestPending=false;
+      if(Array.isArray(msg.inv) && validInventory(msg.inv,36) &&
+         Number.isInteger(msg.tx) && msg.tx===chestTx) {
+        g.inv=structuredClone(msg.inv);g.changed();bagSel=null;
+      }
+      if(screen==='chest')chest(null,false);
+      return;
+    }
     if(msg.t==='world-ready' && mpRole==='host' && g) {
       mpWorldReady=true;mpLastEntity=0;flushHostEdits();toast('Mundo sincronizado com '+mp.remoteName);return;
     }
@@ -403,12 +461,15 @@
       if(mpGuestEdits.length<2000)mpGuestEdits.push(msg);
     } else if(msg.t==='edit' && g && [msg.x,msg.y,msg.z,msg.b].every(Number.isInteger)) {
       const {x,y,z,b}=msg;
-      if(Math.abs(x)>100000||Math.abs(z)>100000||y<=0||y>=Voxel.H||b<0||!(b<105||Voxel.bedFoot(b)||Voxel.bedHead(b)))return;
+      if(Math.abs(x)>100000||Math.abs(z)>100000||y<=0||y>=Voxel.H||b<0||!(b<105||Voxel.bedFoot(b)||Voxel.bedHead(b)||b===134||b===135||b===136))return;
+      // Protect the shared chest from client-side deletion and item duplication.
+      if(mpRole==='host' && [15,83,84].includes(g.get(x,y,z,true)) && ![15,83,84].includes(b))return;
       // Only accept edits near the most recently reported explorer position.
       if(mpRole==='host' && (!mpWorldReady || !mpRemote?.active || Math.hypot(x-mpRemote.x,y-mpRemote.y,z-mpRemote.z)>12))return;
       g.applyRemoteEdit(x,y,z,b);
     } else if(msg.t==='batch' && g && Array.isArray(msg.ops) && msg.ops.length<=300) {
-      if(mpRole==='host' && (!mpWorldReady || !mpRemote?.active || !msg.ops.every(v=>Array.isArray(v)&&v.length===4&&v.every(Number.isInteger)&&Math.hypot(v[0]-mpRemote.x,v[1]-mpRemote.y,v[2]-mpRemote.z)<12)))return;
+      if(mpRole==='host' && (!mpWorldReady || !mpRemote?.active || !msg.ops.every(v=>Array.isArray(v)&&v.length===4&&v.every(Number.isInteger)&&Math.hypot(v[0]-mpRemote.x,v[1]-mpRemote.y,v[2]-mpRemote.z)<12 &&
+        (![15,83,84].includes(g.get(v[0],v[1],v[2],true)) || [15,83,84].includes(v[3])))))return;
       g.applyRemoteBatch(msg.ops);
     } else if (msg.t==='entities' && mpRole==='guest' && g?.ready) {
       g.applyNetworkEntities(msg);
@@ -1012,7 +1073,7 @@
         '</ul><p>O primeiro selo libera a pedra rúnica. Com os três, use a bancada para combinar cristal, cobre e vidro em um Farol Prisma. Coloque-o para acender uma aurora sobre sua base.</p></div>';
     } else
       body =
-        '<p>Mundo Prisma é um sandbox voxel de exploração, sobrevivência e construção. Explore os Campos de Âmbar, a Floresta de Névoa e as Dunas de Vidro. Nas dunas, procure os obeliscos com cristais no topo.</p><p class="muted">Versão jogável 0.9.11 · Solo e multiplayer experimental<br>Arte, sprites, tipografia de título e efeitos sonoros criados para Mundo Prisma. Seu progresso é salvo neste navegador.</p>';
+        '<p>Mundo Prisma é um sandbox voxel de exploração, sobrevivência e construção. Explore os Campos de Âmbar, a Floresta de Névoa e as Dunas de Vidro. Nas dunas, procure os obeliscos com cristais no topo.</p><p class="muted">Versão jogável 0.9.12 · Solo e multiplayer experimental<br>Arte, sprites, tipografia de título e efeitos sonoros criados para Mundo Prisma. Seu progresso é salvo neste navegador.</p>';
     panel(
       'guide',
       'Guia de campo',
@@ -1277,10 +1338,44 @@
     );
     bindSlots();
   }
+  function validInventory(items,count) {
+    return Array.isArray(items) && items.length===count && items.every(t=>t===null ||
+      (typeof t==='object' && Number.isInteger(t.b) && t.b>0 && t.b<Voxel.blocks.length &&
+       Number.isInteger(t.n) && t.n>=1 && t.n<=64 &&
+       (t.dur===undefined || (Number.isFinite(t.dur) && t.dur>=0 && t.dur<=1000))));
+  }
+  function validSharedChest(pos) {
+    if(!mpRemote?.active || typeof pos!=='string' || !/^-?\d+,-?\d+,-?\d+$/.test(pos))return false;
+    const [x,y,z]=pos.split(',').map(Number);
+    if(![x,y,z].every(Number.isSafeInteger)||y<1||y>=Voxel.H ||
+       Math.max(Math.abs(x),Math.abs(z))>100000 ||
+       Math.hypot(x+.5-mpRemote.x,y-mpRemote.y,z+.5-mpRemote.z)>6.5)return false;
+    return [15,83,84].includes(g.get(x,y,z,true));
+  }
+  function broadcastChest(pos,gone=false) {
+    if(!g||mpRole!=='host'||!mpWorldReady||!mp?.connected)return;
+    g.chestRevisions[pos]=(g.chestRevisions[pos]||0)+1;
+    mp.send({t:'chest-state',pos,rev:g.chestRevisions[pos],
+      items:gone?null:g.chests[pos]||Array(18).fill(null),gone}).catch(()=>toast('Falha ao sincronizar o baú.'));
+  }
+  function guestChestAction(from,index,to,target,quick=false,split=false) {
+    if(!mp?.connected||!chestLoaded||chestPending)return;
+    chestPending=true;const tx=++chestTx;
+    mp.send({t:'chest-action',pos:chestPos,rev:chestRevision,tx,
+      from,index,to,target,quick:!!quick,split:!!split}).catch(()=>{
+      chestPending=false;toast('Não foi possível sincronizar os itens do baú.');
+    });
+  }
   function chest(hit, reset = true) {
     if (reset) {
       chestPos = hit.p.join(',');
       bagSel = null;
+      if(mpRole==='guest' && mp?.connected) {
+        chestLoaded=false;chestPending=true;chestRevision=-1;
+        mp.send({t:'chest-open',pos:chestPos,inv:g.inv}).catch(()=>{
+          chestPending=false;toast('Não foi possível abrir o baú do anfitrião.');
+        });
+      }
     }
     const chest = (g.chests[chestPos] ||= Array(18).fill(null));
     const grid = (arr, type) =>
@@ -1293,17 +1388,31 @@
       '</div>';
     panel(
       'chest',
-      'Baú',
+      mp?.connected ? 'Baú compartilhado' : 'Baú',
+      (mpRole==='guest' && !chestLoaded ? '<p class="smallnote">Aguardando os itens do anfitrião…</p>' : '') +
       '<div class="sectionhead">Armazenamento</div>' +
         grid(chest, 'chest') +
         '<div class="sectionhead">Sua mochila</div>' +
         grid(g.inv, 'inv') +
-        '<p class="smallnote">Clique no item e depois no destino. Shift + clique transfere a pilha.</p>',
+        '<p class="smallnote">Clique no item e depois no destino. Shift + clique transfere a pilha.'+
+        (mp?.connected?' O anfitrião confirma cada troca para evitar duplicações.':'')+'</p>',
       true,
     );
     bindSlots();
   }
   function transfer(type, i, quick = false) {
+    if(screen==='chest' && mpRole==='guest' && mp?.connected) {
+      if(!chestLoaded || chestPending) {toast('Aguarde a sincronização do baú');return;}
+      const src=type==='inv'?g.inv:g.chests[chestPos];
+      if(!src || !Number.isInteger(i)||i<0||i>=src.length)return;
+      if(quick) {
+        if(src[i])guestChestAction(type,i,type==='inv'?'chest':'inv',-1,true,false);
+        bagSel=null;return;
+      }
+      if(!bagSel) {if(src[i])bagSel={type,i};}
+      else {guestChestAction(bagSel.type,bagSel.i,type,i,false,false);bagSel=null;}
+      chest(null,false);return;
+    }
     let arr = (t) => (t === 'inv' ? g.inv : g.chests[chestPos]),
       a = arr(type);
     if (quick && screen === 'chest' && a[i]) {
@@ -1329,6 +1438,7 @@
       bagSel = null;
     }
     g.changed();
+    if(screen==='chest')broadcastChest(chestPos);
     screen === 'chest' ? chest(null, false) : inventory(false);
   }
   function bindSlots() {
@@ -1340,11 +1450,15 @@
           stack = slots[+index],
           dest = slots.findIndex((v) => !v);
         if (!stack || stack.n < 2 || dest < 0) return;
+        if(screen==='chest' && mpRole==='guest' && mp?.connected) {
+          guestChestAction(type,+index,type,dest,false,true);return;
+        }
         const half = Math.floor(stack.n / 2);
         slots[dest] = { ...stack, n: half };
         stack.n -= half;
         bagSel = null;
         g.changed();
+        if(screen==='chest')broadcastChest(chestPos);
         screen === 'chest' ? chest(null, false) : inventory(false);
       };
       el.draggable = true;
@@ -1384,7 +1498,9 @@
     } else if (s === 'hud') {
       if (screen === 'play') hud();
     } else if (s === 'station') {
-      [15, 83, 84].includes(v.b) ? chest(v) : inventory(true, v.b);
+      [15, 83, 84].includes(v.b) ? chest(v) : inventory(true, v.b===136?14:v.b);
+    } else if(s==='chestBreak') {
+      broadcastChest(v,true);
     } else if (s === 'blockBroken' || s === 'blockPlaced' || s === 'hitEnemy') {
       touchActionEffect(s);
     } else if (s === 'hurt') {
@@ -1518,7 +1634,7 @@
     $('#debug').hidden = !debug;
     if (debug)
       $('#debug').textContent =
-        'PRISMA 0.9.11 · ' +
+        'PRISMA 0.9.12 · ' +
         renderer.type +
         '\n' +
         Math.round(fps) +

@@ -143,15 +143,21 @@ const Voxel = (() => {
     ['Cama de campo (cabeceira L)', '986857', .65],
     ['Cama de campo (cabeceira S)', '986857', .65],
     ['Cama de campo (cabeceira O)', '986857', .65],
+    ['Muda de âmbar', '80b84a', .12], // 134: planta de árvore clara
+    ['Muda da névoa', '4ca488', .12], // 135: planta de árvore escura
+    ['Forno aceso', 'db8f54', 1.25], // 136: block visual, item is still 14
+    ['Pele de zumbi', '83a783', 0], // 137: creature-only material
+    ['Roupa gasta', '536c66', 0], // 138
+    ['Olhos de zumbi', 'f3bb69', 0], // 139
   ];
   const blocks = data.map(([name, hex, hard], id) => ({
     id,
     name,
     hex,
     hard,
-    solid: (!!id && ![7, 21, 22, 23, 24, 25, 35, 36, 37, 41, 42, 43, 44, 45, 47, 80, 81, 82, 88, 89, 90].includes(id) && !(id >= 93 && id <= 96) && id < 105) || (id >= 126 && id <= 133),
+    solid: (!!id && ![7, 21, 22, 23, 24, 25, 35, 36, 37, 41, 42, 43, 44, 45, 47, 80, 81, 82, 88, 89, 90].includes(id) && !(id >= 93 && id <= 96) && id < 105) || (id >= 126 && id <= 133) || id === 136,
     placeable:
-      id > 0 && id < 93 && ![7, 21, 22, 23, 24, 28, 29, 35, 37, 39, 40, 41, 42, 43, 44, 45, 47, 50, 51, 52, 58, 59, 60, 61, 62, 63, 64, 70, 71, 72, 80, 81, 82, 86, 89, 90].includes(id),
+      (id === 134 || id === 135 || (id > 0 && id < 93 && ![7, 21, 22, 23, 24, 28, 29, 35, 37, 39, 40, 41, 42, 43, 44, 45, 47, 50, 51, 52, 58, 59, 60, 61, 62, 63, 64, 70, 71, 72, 80, 81, 82, 86, 89, 90].includes(id))),
   }));
   // A few detailed architectural pieces are built from tiny boxes only when placed.
   // Regular terrain still uses greedy meshing, without textures or new draw calls.
@@ -252,7 +258,43 @@ const Voxel = (() => {
     box(.03,.24,.84,.94,.26,.09,8),
   ]);
   // Lightweight furniture shapes: all faces are packed in the existing chunk mesh.
+  // Baú clássico: pés, corpo de madeira, tampa separada, dobradiças e fecho de metal.
+  shapes.set(15, [
+    box(.10,.06,.10,.80,.57,.80,8),
+    box(.07,.59,.07,.86,.24,.86,68),
+    box(.08,.58,.06,.84,.06,.06,35),
+    box(.10,.12,.04,.80,.07,.07,68),
+    box(.10,.46,.04,.80,.06,.07,68),
+    box(.39,.42,.025,.22,.24,.10,35),
+    box(.46,.48,.00,.08,.08,.05,24),
+    box(.16,.01,.15,.15,.07,.15,8), box(.69,.01,.15,.15,.07,.15,8),
+    box(.16,.01,.69,.15,.07,.15,8), box(.69,.01,.69,.15,.07,.15,8),
+  ]);
   shapes.set(83, [box(.06, 0, .06, .88, 1, .88), box(.45, .18, .035, .1, .12, .035), box(.45, .66, .035, .1, .12, .035)]);
+  // Furnace with dark mouth. A fuelled furnace uses the same model plus a flame mesh.
+  const furnaceShell = [
+    box(.03,.03,.03,.94,.15,.94,3), // foundation
+    box(.03,.18,.03,.17,.61,.94,20), box(.80,.18,.03,.17,.61,.94,20),
+    box(.20,.18,.68,.60,.61,.29,20), // back wall
+    box(.03,.79,.03,.94,.18,.94,20), // top
+    box(.20,.18,.03,.60,.17,.17,20), // lip
+    box(.20,.68,.03,.60,.11,.17,20), // upper front edge
+    box(.20,.35,.18,.60,.33,.12,9), // dark inset
+    box(.25,.08,.78,.14,.18,.14,3), box(.61,.08,.78,.14,.18,.14,3),
+  ];
+  shapes.set(14, furnaceShell);
+  shapes.set(136, [...furnaceShell,
+    box(.28,.37,.12,.44,.18,.16,25),
+    box(.37,.55,.12,.26,.15,.16,25),
+    box(.47,.69,.12,.12,.08,.16,25),
+  ]);
+  // Miniature trees stay cheap: five tiny voxels instead of a full transparent cube.
+  for (const [id,foliage] of [[134,6],[135,18]]) shapes.set(id,[
+    box(.45,.00,.45,.10,.40,.10,21),
+    box(.27,.25,.28,.46,.22,.44,foliage),
+    box(.33,.44,.33,.34,.26,.34,foliage),
+    box(.43,.66,.43,.14,.12,.14,foliage),
+  ]);
   shapes.set(84, [box(.14, .05, .14, .72, .86, .72), box(.10, .28, .10, .80, .12, .80), box(.22, .86, .22, .56, .10, .56)]);
   shapes.set(85, [box(0, 0, 0, 1, .16, 1)]);
   shapes.set(86, [box(0, 0, 0, 1, 1, .16)]);
@@ -299,13 +341,13 @@ const Voxel = (() => {
   const bedOffset = (id) => [[0,0,-1],[1,0,0],[0,0,1],[-1,0,0]][(id-126)%4];
   const torchIdForNormal = (normal) => normal[0] === 1 ? 93 : normal[0] === -1 ? 94 : normal[2] === 1 ? 95 : normal[2] === -1 ? 96 : 25;
   const torchSupport = (id) => id === 93 ? [-1,0,0] : id === 94 ? [1,0,0] : id === 95 ? [0,0,-1] : id === 96 ? [0,0,1] : id === 25 ? [0,-1,0] : null;
-  const itemId = (id) => bedFoot(id) || bedHead(id) ? 46 : id >= 49 && id <= 52 ? 49 : id >= 57 && id <= 64 || doorUpper(id) ? 57 : id >= 69 && id <= 72 ? 69 : torchWall(id) ? 25 : id === 86 ? 85 : id;
+  const itemId = (id) => id === 136 ? 14 : bedFoot(id) || bedHead(id) ? 46 : id >= 49 && id <= 52 ? 49 : id >= 57 && id <= 64 || doorUpper(id) ? 57 : id >= 69 && id <= 72 ? 69 : torchWall(id) ? 25 : id === 86 ? 85 : id;
   const orientBlock = (id, yaw) => {
     const dir = ((Math.round(yaw / (Math.PI / 2)) % 4) + 4) % 4;
     return id === 46 ? 126 + dir : id === 49 || id === 57 || id === 69 ? id + dir : id;
   };
   const buildCategories = [
-    ['Madeira', [8, 68, 49, 53, 55, 57, 77, 78, 79, 83, 84, 85, 87, 91]],
+    ['Madeira', [8, 68, 49, 53, 55, 57, 77, 78, 79, 83, 84, 85, 87, 91, 134, 135]],
     ['Pedra', [3, 20, 48, 54, 69, 74]],
     ['Telhados e paredes', [65, 66, 75, 16, 56, 92]],
     ['Detalhes', [67, 73, 76, 13, 25, 88]],
@@ -803,7 +845,7 @@ const Voxel = (() => {
         for (let x = 0; x < 16; x++) {
           for (let y = top; y > 0; y--) {
             let b = a[idx(x, y, z)];
-            if (b && !transparent(b) && b !== 25) {
+            if (b && blocks[b]?.solid && !transparent(b)) {
               ht[z * 16 + x] = y;
               break;
             }

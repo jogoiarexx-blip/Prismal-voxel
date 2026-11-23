@@ -97,6 +97,8 @@ const Game = (() => {
       this.eyeHeight = 1.62;
       this.previousEye = null;
       this.chests = rec.chests || {};
+      this.saplings = rec.saplings || {};
+      this.chestRevisions = Object.create(null);
       this.mobs = rec.mobs || [];
       // IDs survive saves and let the host address creatures without ambiguity.
       this.nextMobId = Math.max(1, ...this.mobs.map(m => Number.isSafeInteger(m.id) ? m.id + 1 : 1));
@@ -252,7 +254,7 @@ const Game = (() => {
       let [cx, cz] = k.split(',').map(Number),
         arr = [];
       for (const [i, b] of Object.entries(this.edits[k] || {}))
-        if (b === 13 || b === 25 || Voxel.torchWall(b) || b === 29 || b === 30 || b === 67) {
+        if (b === 13 || b === 25 || Voxel.torchWall(b) || b === 29 || b === 30 || b === 67 || b === 136) {
           let n = Number(i);
           const position = [cx * 16 + (n & 15) + 0.5, (n >> 8) + 0.6, cz * 16 + ((n >> 4) & 15) + 0.5];
           position.block = b;
@@ -309,12 +311,21 @@ const Game = (() => {
     }
     applyRemoteEdit(x, y, z, b) {
       x=Math.floor(x);y=Math.floor(y);z=Math.floor(z);b=Math.floor(b);
-      if(!Number.isFinite(x+z+y+b)||y<=0||y>=Voxel.H||b<0||!(b<105||Voxel.bedFoot(b)||Voxel.bedHead(b)))return false;
+      if(!Number.isFinite(x+z+y+b)||y<=0||y>=Voxel.H||b<0||!(b<105||Voxel.bedFoot(b)||Voxel.bedHead(b)||b===134||b===135||b===136))return false;
       const chunkKey=key(x>>4,z>>4), loaded=this.chunks.has(chunkKey);
       this.applyingRemoteEdit=true;
       try {
-        if(loaded) return this.set(x,y,z,b);
+        if(loaded) {
+          const previous=this.get(x,y,z,true);
+          const ok=this.set(x,y,z,b);
+          if(ok && [15,83,84].includes(b) && !this.chests[x+','+y+','+z])this.chests[x+','+y+','+z]=Array(18).fill(null);
+          if(ok && [134,135].includes(b))this.saplings[x+','+y+','+z]={start:this.elapsed};
+          if(ok && [134,135].includes(previous) && b===0)delete this.saplings[x+','+y+','+z];
+          if(ok && b===0 && [5,27].includes(previous) && !this.networkGuest)this.finishTree(x,y,z,previous);
+          return ok;
+        }
         (this.edits[chunkKey] ||= {})[idx(x&15,y,z&15)]=b;
+        if([134,135].includes(b))this.saplings[x+','+y+','+z]={start:this.elapsed};
         this.changed();
         return true;
       } finally { this.applyingRemoteEdit=false; }
@@ -397,7 +408,7 @@ const Game = (() => {
     applyRemoteBatch(ops) {
       if (!Array.isArray(ops) || ops.length > 300) return false;
       const valid=ops.every(v=>Array.isArray(v)&&v.length===4&&v.every(Number.isInteger)&&
-        Math.abs(v[0])<100000&&Math.abs(v[2])<100000&&v[1]>0&&v[1]<Voxel.H&&v[3]>=0&&(v[3]<105||Voxel.bedFoot(v[3])||Voxel.bedHead(v[3])));
+        Math.abs(v[0])<100000&&Math.abs(v[2])<100000&&v[1]>0&&v[1]<Voxel.H&&v[3]>=0&&(v[3]<105||Voxel.bedFoot(v[3])||Voxel.bedHead(v[3])||v[3]===134||v[3]===135||v[3]===136));
       if (!valid) return false;
       const loaded=[],unloaded=[];
       for(const entry of ops) {
@@ -656,6 +667,7 @@ const Game = (() => {
         }
       }
       if (!this.networkGuest) {
+        this.growSaplings(dt);
         this.ai(dt);
         this.loot(dt);
       } else {
@@ -713,7 +725,7 @@ const Game = (() => {
     applyNetworkEntities(msg) {
       if (!this.networkGuest || !Array.isArray(msg?.mobs) || msg.mobs.length > 24 ||
           !Number.isSafeInteger(msg.seq) || msg.seq <= this.lastNetworkMobSeq) return false;
-      const allowed = new Set(['Saltim','Musgato','Luzerrante','Raspejante','Vigia de Cascalho',
+      const allowed = new Set(['Saltim','Musgato','Luzerrante','Raspejante','Zumbi','Vigia de Cascalho',
         'Guardião Prisma','Ovelha','Porco','Vaca']);
       const old = new Map(this.mobs.map(m => [m.id,m]));
       const out=[];
@@ -727,7 +739,9 @@ const Game = (() => {
         if (dist>9) Object.assign(m,{x:row.x,y:row.y,z:row.z});
         m.netX=row.x;m.netY=row.y;m.netZ=row.z;
         Object.assign(m,{id:row.id,kind:row.kind,hp:row.hp,face:row.face,
-          motion:row.motion,gait:row.gait,hurt:row.hurt,attack:row.attack,dying:row.dying,
+          motion:Math.max(0,Math.min(1,row.motion)),gait:row.gait%628.318,
+          hurt:Math.max(0,Math.min(.36,row.hurt)),attack:Math.max(0,Math.min(.36,row.attack)),
+          dying:Math.max(0,Math.min(.55,row.dying)),
           wind:Number.isFinite(row.wind)?row.wind:0});
         out.push(m);
       }
@@ -797,6 +811,10 @@ const Game = (() => {
         return;
       }
       const hit = this.hit;
+      if (this.networkGuest && hit && [15,83,84].includes(hit.b)) {
+        if(this.progress===0)this.notify('Baú compartilhado: peça ao anfitrião para removê-lo');
+        this.progress=-1;return;
+      }
       if (!hit || hit.p[1] === 0) {
         this.progress = 0;
         return;
@@ -851,6 +869,8 @@ const Game = (() => {
       }
       delete this.plots[k];
       this.applyBlockBatch(removed);
+      if (b===5 || b===27) this.finishTree(x,y,z,b);
+      if (b===134 || b===135) delete this.saplings[k];
       // Keep the house waypoint (the house still exists), but never respawn at a missing bed.
       if (this.bed && removed.some(([bx,by,bz])=>bx===this.bed[0]&&by===this.bed[1]&&bz===this.bed[2])) {
         this.bed=null; this.changed();
@@ -877,10 +897,14 @@ const Game = (() => {
       if ([15, 83, 84].includes(b) && this.chests[k]) {
         for (const t of this.chests[k]) if (t) this.addDrop(x + 0.5, y + 0.2, z + 0.5, t.b, t.n, t.dur);
         delete this.chests[k];
+        this.signal('chestBreak',k);
       }
       if (!this.creative) {
         this.addDrop(x + 0.5, y + 0.12, z + 0.5, b === 39 ? 38 : b === 1 || b === 17 ? 2 : Voxel.itemId(b), 1);
-        if (b === 6 || b === 18) this.addDrop(x + 0.5, y + 0.2, z + 0.5, 23, 1);
+        if (b === 6 || b === 18) {
+          if (Voxel.hash(x+this.day,y,z+this.seed)>.78)this.addDrop(x+.5,y+.2,z+.5,b===6?134:135,1);
+          else this.addDrop(x + 0.5, y + 0.2, z + 0.5, 23, 1);
+        }
         if ([1, 17, 39, 40].includes(b)) this.addDrop(x + 0.5, y + 0.2, z + 0.5, 37, b === 40 ? 2 : 1);
         if (b === 5 || b === 27) this.goals.wood = true;
         if (((speed > 1 && rock) || (tool?.b === 89 && wood) || (tool?.b === 90 && soil)) && --tool.dur <= 0) {
@@ -889,6 +913,93 @@ const Game = (() => {
         }
       }
       this.signal('hud');
+    }
+    // A tree collapses only after its final vertical log is removed. A bounded
+    // leaf scan avoids collecting neighbouring forests or unloaded chunks.
+    finishTree(x,y,z,logId) {
+      if (logId !== 5 && logId !== 27) return 0;
+      for(let yy=Math.max(1,y-14);yy<Math.min(Voxel.H,y+15);yy++)
+        if(this.get(x,yy,z,true)===logId)return 0;
+      const leaf=logId===5?6:18;
+      const changes=[];
+      const bottom=Math.max(1,y-14),top=Math.min(Voxel.H-1,y+15);
+      // Only detach this canopy if there is no neighbouring trunk rooted nearby.
+      for(let dx=-2;dx<=2;dx++)for(let dz=-2;dz<=2;dz++) {
+        if(dx===0&&dz===0)continue;
+        for(let yy=bottom;yy<=top;yy++)
+          if(this.get(x+dx,yy,z+dz,true)===logId)return 0;
+      }
+      for(let dx=-3;dx<=3;dx++)for(let dz=-3;dz<=3;dz++)
+        for(let yy=bottom;yy<=top;yy++) {
+          if(Math.abs(dx)+Math.abs(dz)>5)continue;
+          if(this.get(x+dx,yy,z+dz,true)===leaf)
+            changes.push([x+dx,yy,z+dz,0]);
+        }
+      if(changes.length<3 || changes.length>210)return 0;
+      this.applyBlockBatch(changes);
+      if(!this.creative && !this.networkGuest)this.addDrop(x+.5,y+.35,z+.5,logId===5?134:135,1);
+      this.notify('Árvore derrubada! Uma muda caiu para replantar.');
+      return changes.length;
+    }
+    growSaplings(dt) {
+      this.saplingTimer=(this.saplingTimer||0)+dt;
+      if(this.saplingTimer<1)return;
+      this.saplingTimer-=1;
+      // A maximum of a handful of loaded saplings are checked each second.
+      let seen=0;
+      for(const [position,info] of Object.entries(this.saplings)) {
+        if(++seen>32)break;
+        const [x,y,z]=position.split(',').map(Number);
+        const id=this.get(x,y,z,true);
+        if(id!==134&&id!==135) { if(id!==-1)delete this.saplings[position];continue; }
+        if(this.elapsed-(Number.isFinite(info?.start)?info.start:this.elapsed)<100)continue;
+        if(![1,2,17,19].includes(this.get(x,y-1,z,true)))continue;
+        const dark=id===135,ht=dark?6:5,log=dark?27:5,leaf=dark?18:6;
+        const changes=[];
+        for(let i=0;i<ht;i++)changes.push([x,y+i,z,log]);
+        for(let dy=-2;dy<=2;dy++) {
+          const yy=y+ht-1+dy,r=dy===2?1:dy===-2?1:2;
+          for(let dx=-r;dx<=r;dx++)for(let dz=-r;dz<=r;dz++) {
+            if(!dx&&!dz)continue;
+            if(Math.abs(dx)+Math.abs(dz)>r+1)continue;
+            changes.push([x+dx,yy,z+dz,leaf]);
+          }
+        }
+        // No overwriting constructions, water or neighbouring trees.
+        if(changes.some(([cx,cy,cz])=>cy>=Voxel.H || ![0,6,18].includes(this.get(cx,cy,cz,true)) && !(cx===x&&cy===y&&cz===z)))continue;
+        const occupied=new Map();
+        for(const [cx,cy,cz,b] of changes)occupied.set(cx+','+cy+','+cz,[cx,cy,cz,b]);
+        occupied.set(position,[x,y,z,log]);
+        this.applyBlockBatch([...occupied.values()]);
+        delete this.saplings[position];
+        this.notify('Uma muda cresceu e virou árvore!');
+      }
+    }
+    // One atomic, host-authoritative chest operation shared by both peers.
+    static chestMove(inventory,chest,from,index,to,target,quick=false,split=false) {
+      if(!['inv','chest'].includes(from) || !['inv','chest'].includes(to))return false;
+      const src=from==='inv'?inventory:chest,dst=to==='inv'?inventory:chest;
+      if(!Number.isInteger(index)||index<0||index>=src.length)return false;
+      const stack=src[index];if(!stack)return false;
+      if(split){
+        if(stack.n<2 || src!==dst)return false;
+        const empty=src.findIndex(v=>!v);if(empty<0)return false;
+        const n=Math.floor(stack.n/2);src[empty]={...stack,n};stack.n-=n;return true;
+      }
+      if(quick) {
+        if(src===dst)return false;
+        const left=fill(dst,stack.b,stack.n,stack.dur);
+        if(left===stack.n)return false;
+        src[index]=left?{...stack,n:left}:null;return true;
+      }
+      if(!Number.isInteger(target)||target<0||target>=dst.length)return false;
+      if(src===dst && index===target)return false;
+      const other=dst[target];
+      if(other?.b===stack.b && !Voxel.durability[stack.b]) {
+        const moved=Math.min(64-other.n,stack.n);if(moved<=0)return false;
+        other.n+=moved;stack.n-=moved;if(stack.n===0)src[index]=null;
+      } else {dst[target]=stack;src[index]=other||null;}
+      return true;
     }
     addDrop(x, y, z, b, n, dur) {
       this.drops.push({ id:this.nextDropId++, x, y, z, b, n, dur });
@@ -930,7 +1041,7 @@ const Game = (() => {
       for (let k = -3; k <= 3; k++)
         for (let j = -3; j <= 2; j++)
           for (let i = -3; i <= 3; i++)
-            if (i * i + j * j + k * k <= 12 && this.get(x + i, y + j, z + k) === b) return true;
+            if (i * i + j * j + k * k <= 12 && (this.get(x + i, y + j, z + k) === b || (b===14 && this.get(x+i,y+j,z+k)===136))) return true;
       return false;
     }
     get sealCount() {
@@ -994,10 +1105,19 @@ const Game = (() => {
       }
       this.inv = copy;
       this.goals['craft' + r[0]] = true;
+      if (r[3]===14 && !this.networkGuest) this.lightNearbyFurnace();
       this.changed();
       Sound.play('craft', this.settings);
       this.notify('Fabricado · ' + blocks[r[0]].name + ' ×' + r[1]);
       return true;
+    }
+    lightNearbyFurnace() {
+      const [x,y,z]=this.eye().map(Math.floor);
+      for(let dy=-3;dy<=2;dy++)for(let dx=-3;dx<=3;dx++)for(let dz=-3;dz<=3;dz++){
+        if(dx*dx+dy*dy+dz*dz>12)continue;
+        if(this.get(x+dx,y+dy,z+dz,true)===14){this.set(x+dx,y+dy,z+dz,136);return true;}
+      }
+      return false;
     }
     equip(b) {
       // Equip a crafted block directly: hotbar if present, otherwise swap from backpack.
@@ -1083,6 +1203,7 @@ const Game = (() => {
       const partnerPos=isBed ? [x+offset[0],y,z+offset[2]] : null;
       const partnerB=isBed ? b+4 : null;
       const headFree = !isDoor || (y < Voxel.H - 1 && this.get(x,y+1,z,true) === 0);
+      const seedlingOk = (b!==134&&b!==135) || (h.normal[1]===1 && [1,2,17,19].includes(this.get(x,y-1,z,true)));
       const otherFree = !isBed || (h.normal[1]===1 && this.get(...partnerPos,true)===0 &&
         blocks[this.get(x,y-1,z,true)]?.solid &&
         blocks[this.get(partnerPos[0],y-1,partnerPos[2],true)]?.solid);
@@ -1091,7 +1212,7 @@ const Game = (() => {
       const occupied = occupiedAt(b,x,y,z) ||
         (isDoor && occupiedAt(b+40,x,y+1,z)) ||
         (isBed && occupiedAt(partnerB,...partnerPos));
-      return { pos, b, partnerPos, partnerB, valid: headFree && otherFree && !occupied };
+      return { pos, b, partnerPos, partnerB, valid: headFree && otherFree && seedlingOk && !occupied };
     }
     use(forcePlace = false) {
       const t = this.inv[this.selected],
@@ -1122,6 +1243,14 @@ const Game = (() => {
       // while normal tapping/right-clicking still interacts with them.
       const placing = forcePlace && !!blocks[t?.b]?.placeable;
       const sneaking = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') || this.touchCrouch;
+      if (h && (h.b===14 || h.b===136) && !sneaking && !placing && t?.b===9 && h.b===14) {
+        if(this.set(...h.p,136)) {
+          if(!this.creative && !--t.n)this.inv[this.selected]=null;
+          this.notify('Forno aceso! A fornalha ilumina seu abrigo.');
+          Sound.play('craft',this.settings);
+        }
+        return true;
+      }
       if (h && (h.b === 85 || h.b === 86) && !sneaking && !placing) {
         if (this.set(...h.p, h.b === 85 ? 86 : 85)) Sound.play('place', this.settings);
         return;
@@ -1148,7 +1277,7 @@ const Game = (() => {
       if (
         h &&
         !sneaking && !placing &&
-        [12, 14, 15, 83, 84].includes(h.b)
+        [12, 14, 136, 15, 83, 84].includes(h.b)
       ) {
         this.signal('station', h);
         return;
@@ -1214,6 +1343,7 @@ const Game = (() => {
       }
       this.goals.built = (this.goals.built || 0) + 1;
       if ([15, 83, 84].includes(t.b)) this.chests[pos.join(',')] = Array(18).fill(null);
+      if ([134,135].includes(t.b)) this.saplings[pos.join(',')]={start:this.elapsed};
       if (!this.creative && !--t.n) this.inv[this.selected] = null;
       Sound.play('place', this.settings);
       this.signal('blockPlaced');
@@ -1293,10 +1423,11 @@ const Game = (() => {
             (otherMobs >= 3 || Voxel.hash(tick, this.day, this.seed ^ 529) < .78);
           const farm = farmAnimals[Math.floor(Voxel.hash(tick, this.day, this.seed ^ 83) * farmAnimals.length)];
           const kind = wantsAnimal ? farm : cave ? 'Vigia de Cascalho'
-            : night ? this.region === 'Pântano Luminescente' ? 'Luzerrante' : 'Raspejante'
+            : night ? this.region === 'Pântano Luminescente' ? 'Luzerrante' :
+              Voxel.hash(tick,this.day,this.seed^992)<.48 ? 'Zumbi' : 'Raspejante'
             : this.misty ? 'Musgato' : 'Saltim';
           const animal = isFarm(kind);
-          const hostile = kind === 'Raspejante' || kind === 'Vigia de Cascalho';
+          const hostile = kind === 'Raspejante' || kind === 'Vigia de Cascalho' || kind === 'Zumbi';
           const y = this.floorAt(x, z, cave ? p.y + 2 : 145);
           const ground = y == null ? 0 : this.get(Math.floor(x), Math.floor(y) - 1, Math.floor(z));
           if ((animal ? animals < 4 && (ground === 1 || ground === 17) : otherMobs < 4) &&
@@ -1307,7 +1438,7 @@ const Game = (() => {
               !living.some(m => Math.hypot(m.x - x, m.z - z) < (animal ? 2.1 : 1.1))) {
             this.mobs.push({
               id:this.nextMobId++, kind, x, y, z,
-              hp: Voxel.farmHealth[kind] || (kind === 'Vigia de Cascalho' ? 9 : 4),
+              hp: Voxel.farmHealth[kind] || (kind === 'Vigia de Cascalho' ? 9 : kind==='Zumbi'?8:4),
               wind: 0, cool: 1, gait: 0, motion: 0, roamTimer: 0,
               face: a + Math.PI,
             });
@@ -1332,7 +1463,7 @@ const Game = (() => {
         const moved = Math.hypot(m.x - sx, m.z - sz);
         if (moved > .0001) {
           m.face = Math.atan2(m.x - sx, -(m.z - sz));
-          m.gait = (m.gait || 0) + moved * (m.kind === 'Saltim' ? 13 : 9);
+          m.gait = ((m.gait || 0) + moved * (m.kind === 'Saltim' ? 13 : 9)) % 628.318;
           return true;
         }
         return false;
@@ -1342,9 +1473,9 @@ const Game = (() => {
         const kind = m.kind || 'Raspejante';
         const boss = kind === 'Guardião Prisma';
         const radius = boss ? .38 : kind === 'Vaca' ? .42 : kind === 'Ovelha' ? .32 :
-          kind === 'Porco' ? .31 : kind === 'Vigia de Cascalho' ? .33 : .24;
+          kind === 'Porco' ? .31 : kind === 'Vigia de Cascalho' ? .33 : kind === 'Zumbi' ? .29 : .24;
         const height = boss ? 1.95 : kind === 'Vaca' ? 1.55 : kind === 'Ovelha' ? 1.27 :
-          kind === 'Porco' ? .93 : kind === 'Vigia de Cascalho' ? 1.8 : 1.12;
+          kind === 'Porco' ? .93 : kind === 'Vigia de Cascalho' ? 1.8 : kind==='Zumbi'?1.7:1.12;
         m.hurt = Math.max(0, (m.hurt || 0) - dt);
         m.attack = Math.max(0, (m.attack || 0) - dt);
         m.stun = Math.max(0, (m.stun || 0) - dt);
@@ -1360,6 +1491,9 @@ const Game = (() => {
           continue;
         }
         if (m.hp <= 0) { m.dying = .01; continue; }
+        if(kind==='Zumbi' && !night && m.y>=land(m.x,m.z,this.seed,this.generator).h-2) {
+          m.hp=0;m.dying=.48;m.motion=0;continue;
+        }
         const remote = this.networkHost && this.remotePlayer?.active ? this.remotePlayer : null;
         const target = remote && Math.hypot(remote.x-m.x,remote.z-m.z)<
           Math.hypot(p.x-m.x,p.z-m.z) ? remote : p;
@@ -1438,7 +1572,7 @@ const Game = (() => {
             } else {
               m.wind = 0;
               // Hostiles can circle obstacles and pursue, but won't enter the player.
-              const speed = boss ? 1 + stage * .32 : night ? 1.42 : .95;
+              const speed = boss ? 1 + stage * .32 : kind==='Zumbi' ? 1.06 : night ? 1.42 : .95;
               moved = walk(m, dx * dir, dz * dir, speed, radius, height);
             }
           }
@@ -1542,6 +1676,7 @@ const Game = (() => {
         elapsed: this.elapsed,
         edits: this.edits,
         chests: this.chests,
+        saplings: this.saplings,
         drops: this.drops,
         mobs: this.mobs,
         bag: this.bag,

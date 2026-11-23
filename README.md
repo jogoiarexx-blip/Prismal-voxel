@@ -1,3 +1,28 @@
+# Mundo Prisma v0.9.12 — árvores, fazenda, zumbis e baús cooperativos
+
+Atualização incremental sobre a v0.9.11, com compatibilidade com mundos `schema:1`.
+
+## Novidades desta versão
+
+- **Árvores que terminam de cair:** ao retirar o último tronco de uma árvore, as folhas isoladas da copa são removidas em um único lote, preservando árvores vizinhas. O tronco final concede uma muda (âmbar ou névoa) para replantar; folhas quebradas também podem fornecer mudas.
+- **Replantio:** use a muda na barra de atalhos e coloque-a em grama ou terra. Ao crescer após aproximadamente 100 segundos de jogo, ela vira uma árvore, desde que o espaço ao redor esteja livre. As mudas e seu tempo de plantio são salvos por mundo.
+- **Forno visível:** modelo voxel com abertura, base e chaminé; para acender, equipe carvão e interaja com um forno. Também acende ao fabricar itens que exigem forno. Fornos acesos continuam servindo como estação e iluminando a área. A versão atual não simula consumo de combustível em tempo real.
+- **Baús:** corpo, tampa, ferragens e fecho próprios. No P2P, o conteúdo compartilhado passa a ser coordenado pelo anfitrião, com confirmação de transferências, revisão dos slots e proteção contra retirada duplicada. Transferências em conflito são rejeitadas e atualizadas com a revisão mais recente. Jogadores convidados não podem quebrar baús compartilhados; o anfitrião controla a remoção.
+- **Zumbis noturnos:** aparecem durante a noite fora do Pacífico/Criativo, perseguem jogadores e desaparecem na luz do dia, em superfícies expostas. Modelo voxel articulado com pele esverdeada e olhos acesos; não precisa de arquivos grandes.
+- **Inimigos estáveis:** dimensões e deslocamentos de partes corporais limitados, com dados de animação recebidos via P2P normalizados para prevenir deformações.
+
+## Atenção ao multiplayer
+
+O P2P continua experimental, limitado a duas pessoas e sem servidor de sinalização/TURN. O anfitrião guarda os mundos e controla o estado dos baús e inimigos. O convidado envia ações de transferência que são confirmadas pelo anfitrião; isso evita divergência normal de uso, mas ainda não é um sistema com proteção completa contra clientes maliciosos, nem oferece recuperação automática após queda permanente da conexão. Faça backup antes das partidas cooperativas.
+
+## Testar
+
+Abra o `index.html` por HTTPS ou use `python -m http.server 8000` na pasta do jogo. Teste colher uma árvore inteira, plantar a muda, acender um forno com carvão, abrir e transferir itens de um baú em dois navegadores, e sobreviver a uma noite fora do modo Pacífico.
+
+---
+
+## Histórico anterior
+
 # Mundo Prisma v0.9.11 — cooperação P2P e personagens
 
 Incremental sobre v0.9.10, mantendo compatibilidade com mundos `schema:1`.
