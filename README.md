@@ -1,4 +1,4 @@
-# Mundo Prisma v0.9.5 — Animais pacíficos
+# Mundo Prisma v0.9.8 — Multiplayer experimental, cama dupla e localização
 
 ## Novidades desta edição
 
@@ -142,3 +142,32 @@ Sem novos modelos, texturas ou bibliotecas: mantém malha voxel compartilhada e 
 - Novas portas passam a ocupar dois blocos verticais; exigem espaço livre, abrem juntas, quebram juntas e gastam apenas uma unidade. Portas antigas de um bloco nos mundos salvos continuam funcionando.
 - Projetos de cabana passam a usar portas duplas, sem cobrar o topo como uma segunda porta.
 - Ao quebrar um bloco de suporte, tochas novas anexadas a ele se soltam.
+
+
+## Multiplayer P2P (experimental) — v0.9.8
+
+O botão **Multiplayer P2P** no menu inicial abre duas opções: **Criar sala** e **Entrar na sala**. O anfitrião escolhe um mundo existente ou cria um mundo novo e compartilha o convite copiado. O convidado cola o convite, gera uma resposta e a devolve. O anfitrião cola a resposta. Quando o canal WebRTC abre, o mundo é transferido, com sincronização de **posições dos dois jogadores, blocos construídos/destruídos e conversa**. Apenas o anfitrião salva a partida no navegador dele; o convidado joga sem salvar cópias no próprio navegador. As alterações remotas são incorporadas ao mundo do anfitrião.
+
+### Escopo e limitações
+
+- **2 jogadores** por partida, um anfitrião e um convidado; sem matchmaking, persistência em nuvem ou contas.
+- Conexão WebRTC criptografada por padrão, sem biblioteca ou backend próprios. Convite e resposta são **códigos longos**, porque o projeto é estático e não usa servidor de sinalização. Não é um código curto de 6 dígitos.
+- Servidores STUN públicos auxiliam a conexão; em redes com NAT restritivo, CGNAT ou políticas corporativas, a conexão pode falhar sem um servidor TURN. Os participantes trocam dados diretamente quando a rota é encontrada.
+- Sincronização nesta etapa: terreno editado, posição e chat. Criaturas, inventários pessoais e progresso de missões **não** estão sincronizados integralmente. Recursos podem divergir no modo Sobrevivência. Para construção conjunta, o modo **Criativo** é recomendado.
+- O canal não é um servidor antitrapaça. Compartilhe convites apenas com alguém de confiança, pois os blocos que o convidado altera ficam no mundo salvo do anfitrião. Para mundos importantes, crie backup.
+- O convidado recebe o estado inicial do mundo, sem acesso ao armazenamento local do anfitrião.
+- Por ser uma partida temporária, em caso de queda não há reconexão automática. Voltem ao menu e criem novo convite.
+
+### Desempenho
+
+Nenhum GLB ou textura foi adicionado. O avatar remoto usa a geometria voxel existente e o mesmo buffer de entidades; atualizações de posição são limitadas a cerca de 9 por segundo. Edições são enviadas individualmente, com transferência da cena inicial fragmentada em mensagens pequenas. O modo offline não estabelece P2P sem rede.
+
+
+## v0.9.8 — Cama dupla e localização da casa
+
+- A cama de campo **nova** ocupa dois blocos horizontais, orientados com a câmera e com a rotação de construção (tecla G), incluindo pés visíveis, estrado, cabeceira, travesseiro e coberta. A colocação exige chão, espaço livre e nenhuma criatura/jogador obstruindo os dois blocos. Colocar consome apenas **uma cama** da mochila.
+- Quebrar qualquer metade remove as duas e devolve um único item no modo Sobrevivência. Em Criativo, desfazer restaura os dois blocos.
+- Camas antigas de um bloco continuam utilizáveis; ao usar qualquer cama, o ponto de renascimento e o marcador da casa são definidos.
+- Botão **Minha casa** na HUD ou tecla **H** abre o menu para marcar a posição atual, visualizar coordenadas X/Y/Z, ligar ou desligar a bússola e remover o marcador. A seta e a distância até a casa atualizam em tempo real.
+- Marcadores são salvos no próprio mundo, sem GPS real, serviços externos ou mapas pesados.
+- Camas duplas também sincronizam por lotes no P2P experimental; o anfitrião salva o mundo compartilhado.

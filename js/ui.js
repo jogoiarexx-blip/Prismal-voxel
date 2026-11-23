@@ -40,7 +40,10 @@
     fps = 60,
     toastTimer = 0,
     loading = false,
-    edition = 'survival';
+    edition = 'survival',
+    mp = null, mpRole = null, mpRecord = null, mpFresh = false,
+    mpStartSent = false, mpRemote = null, mpMessages = [], mpLastPose = 0,
+    mpLoading = false, mpGuest = false;
   const esc = (s) =>
     String(s ?? '').replace(
       /[&<>"']/g,
@@ -109,6 +112,7 @@
   $('#full').onclick = fullscreen;
   $('#expCard').onclick = () => guide('home', 2);
   $('#expCompass').onclick = () => guide('play', 2);
+  $('#houseCompass').onclick = () => houseMenu();
   const motes = $('.motes');
   for (let i = 0; i < 15; i++) {
     let n = document.createElement('i');
@@ -192,12 +196,201 @@
   $('#quickNew').onclick = () => newWorld('home');
   $('#worlds').onclick = () => showWorlds();
   $('#options').onclick = () => options('home');
+  $('#multiplayer').onclick = () => multiplayerMenu();
+  $('#mpChatBtn').onclick = () => multiplayerChat();
   $('#guide').onclick = () => guide('home');
   $('#navGuide').onclick = () => guide('home');
   $('#navWorlds').onclick = () => showWorlds();
   $('#navOptions').onclick = () => options('home');
   $('#pause').onclick = () => pauseMenu();
   $('#build').onclick = () => buildMenu();
+  // Two-person WebRTC DataChannel lobby. Manual invite/response exchange means
+  // it works on GitHub Pages with no matchmaking server or subscriptions.
+  function multiplayerLeave() {
+    if (mp) { mp.close(); mp = null; }
+    mpRole=null; mpRecord=null; mpFresh=false; mpStartSent=false;
+    mpGuest=false; mpLoading=false; mpMessages=[];
+    if (mpRemote) mpRemote.active=false;
+    mpRemote=null;
+    $('#mpChatBtn').hidden=true;
+  }
+  function multiplayerMenu() {
+    if (g && g.alive) return toast('Saia da partida atual antes de criar uma sala.');
+    if (!globalThis.RTCPeerConnection || !window.isSecureContext) {
+      panel('multiplayer','Multiplayer P2P',
+        '<p>É necessário abrir o jogo em HTTPS ou localhost usando um navegador com WebRTC.</p>' +
+        btn('back','Voltar','primary'));
+      return;
+    }
+    panel('multiplayer','Multiplayer P2P',
+      '<p class="mp-lead">Explore e construa no mesmo mundo com um amigo, usando uma conexão direta e criptografada.</p>' +
+      '<div class="mp-choices">' +
+        '<button class="mp-choice" data-act="mp-host"><span class="mp-emoji">✦</span><b>Criar sala</b><small>Escolha um mundo e gere o convite.</small></button>' +
+        '<button class="mp-choice" data-act="mp-join"><span class="mp-emoji">◇</span><b>Entrar na sala</b><small>Cole o convite de quem criou.</small></button>' +
+      '</div>' +
+      '<div class="mp-hint"><strong>Como funciona?</strong> Duas pessoas trocam convite e resposta. Não é preciso criar conta nem instalar aplicativos. Sem um servidor de sinalização, o código é longo, mas a conexão é direta.</div>' +
+      '<p class="smallnote">Versão experimental para 2 pessoas: posições, blocos e chat sincronizados. O anfitrião salva o mundo. Pode falhar com alguns roteadores ou redes móveis sem TURN.</p>',
+      true);
+  }
+  async function multiplayerHostPanel() {
+    await worlds();
+    panel('mp-host','Criar sala',
+      '<p class="mp-lead">Escolha qual mundo deseja compartilhar. Um amigo poderá construir com você.</p>'+
+      '<label class="field">Seu apelido<input id="mpNickname" value="Anfitrião" maxlength="28" autocomplete="off"></label>'+
+      '<label class="field">Mundo compartilhado<select id="mpWorldSelect"><option value="__new__">✦ Novo mundo P2P</option>'+ 
+      worldList.map(w=>'<option value="'+esc(w.id)+'">'+esc(w.name)+' · '+mode(w.mode)+'</option>').join('')+'</select></label>'+
+      '<div id="mpNewWorldFields" class="mp-new-world">'+
+      '<label class="field">Nome do mundo<input id="mpWorldName" value="Aventura em dupla" maxlength="48"></label>'+
+      '<label class="field">Modo<select id="mpWorldMode"><option value="survival">Sobrevivência</option><option value="creative">Criativo (blocos ilimitados)</option></select></label></div>'+
+      '<button class="primary fullwidth" id="mpMakeInvite">Gerar convite P2P</button>'+
+      '<p class="smallnote">Compartilhe o convite apenas com alguém de confiança: ele poderá alterar seus blocos. Faça um backup de mundos importantes.</p>',true);
+    const sel=$('#mpWorldSelect'), fresh=$('#mpNewWorldFields');
+    sel.onchange=()=>{fresh.hidden=sel.value!=='__new__';};
+    $('#mpMakeInvite').onclick=async()=>{
+      if(mpLoading)return;mpLoading=true;
+      const button=$('#mpMakeInvite');button.disabled=true;button.textContent='Preparando convite…';
+      try {
+        const nickname=$('#mpNickname').value.trim().slice(0,28)||'Anfitrião';
+        const worldId=sel.value;
+        mpFresh=worldId==='__new__';
+        mpRecord=mpFresh
+          ? Game.fresh($('#mpWorldName').value.trim()||'Aventura em dupla',
+              'PR-P2P-'+Math.random().toString(36).slice(2,9),$('#mpWorldMode').value,'normal')
+          : await Saves.get(worldId);
+        if(!mpRecord)throw Error('O mundo selecionado não foi encontrado.');
+        mpRole='host';mpStartSent=false;mpRemote={active:false};mpMessages=[];mpGuest=false;
+        mp=PrismaNet.create({name:nickname,onMessage:onMultiplayerMessage,onStatus:onMultiplayerStatus});
+        const invite=await mp.host();
+        panel('mp-offer','Seu convite está pronto',
+          '<p class="mp-lead">1. Envie este convite ao amigo, por mensagem. Ele deve abrir <b>Multiplayer → Entrar na sala</b>.</p>'+
+          '<textarea id="mpShareCode" class="mp-code" readonly aria-label="Convite P2P">'+esc(invite)+'</textarea>'+
+          '<div class="btns">'+btn('mp-copy','Copiar convite','primary')+'</div>'+
+          '<p class="mp-lead">2. Quando receber a resposta dele, cole abaixo para conectar.</p>'+
+          '<textarea id="mpAnswerIn" class="mp-code" placeholder="Cole aqui o código de resposta do seu amigo" aria-label="Resposta P2P"></textarea>'+
+          btn('mp-accept','Conectar e começar a jogar','primary fullwidth')+
+          '<p class="smallnote">Mantenha esta aba aberta enquanto o amigo prepara a resposta. Use o código completo, sem cortar caracteres.</p>',true);
+      } catch(e){console.error(e);toast('Não foi possível criar a sala: '+e.message);multiplayerLeave();multiplayerHostPanel();}
+      finally{mpLoading=false;}
+    };
+  }
+  function multiplayerJoinPanel() {
+    panel('mp-join','Entrar na sala',
+      '<p class="mp-lead">Peça o convite a quem criou a sala. O código pode ser longo porque esta versão não usa servidor de sinalização.</p>'+
+      '<label class="field">Seu apelido<input id="mpNickname" maxlength="28" value="Explorador" autocomplete="off"></label>'+
+      '<label class="field">Código do convite<textarea id="mpOfferIn" class="mp-code" placeholder="Cole o convite completo enviado pelo anfitrião"></textarea></label>'+
+      btn('mp-answer','Criar resposta','primary fullwidth')+
+      '<p class="smallnote">A partida do convidado não sobrescreve seus mundos locais. Quem criou a sala conserva o mundo salvo.</p>',true);
+  }
+  async function multiplayerCreateAnswer() {
+    if(mpLoading)return;
+    const offer=$('#mpOfferIn')?.value.trim();
+    const nick=$('#mpNickname')?.value.trim().slice(0,28)||'Explorador';
+    if(!offer)return toast('Cole primeiro o convite do anfitrião.');
+    mpLoading=true;
+    try {
+      mpRole='guest';mpRemote={active:false};mpMessages=[];mpGuest=true;
+      mp=PrismaNet.create({name:nick,onMessage:onMultiplayerMessage,onStatus:onMultiplayerStatus});
+      const answer=await mp.join(offer);
+      panel('mp-answer','Resposta criada',
+        '<p class="mp-lead">Envie o código abaixo para quem criou a sala. Ele deve colar na caixa <b>Resposta</b> e clicar em Conectar.</p>'+
+        '<textarea id="mpShareCode" class="mp-code" readonly aria-label="Resposta P2P">'+esc(answer)+'</textarea>'+
+        btn('mp-copy','Copiar resposta','primary fullwidth')+
+        '<p class="mp-connecting">Aguardando o anfitrião conectar…</p>'+
+        '<p class="smallnote">Você entrará automaticamente no mundo quando a conexão estiver pronta.</p>',true);
+    }catch(e){console.error(e);toast('Código inválido ou conexão indisponível: '+e.message);multiplayerLeave();multiplayerJoinPanel();}
+    finally{mpLoading=false;}
+  }
+  function multiplayerCopy() {
+    const code=$('#mpShareCode'); if(!code)return;
+    if(navigator.clipboard?.writeText)navigator.clipboard.writeText(code.value).then(()=>toast('Código copiado!')).catch(()=>{
+      code.focus();code.select();toast('Selecione o texto e copie manualmente.');
+    });
+    else{code.focus();code.select();toast('Texto selecionado. Use Ctrl+C para copiar.');}
+  }
+  async function multiplayerAccept() {
+    if(!mp || mpRole!=='host')return;
+    const response=$('#mpAnswerIn')?.value.trim();
+    if(!response)return toast('Cole a resposta enviada pelo convidado.');
+    try {
+      await mp.accept(response);
+      panel('mp-offer','Conectando…',
+        '<p class="mp-lead">Estabelecendo canal seguro entre os navegadores. A partida abrirá automaticamente.</p>'+
+        '<p class="smallnote">Se não conseguir após alguns segundos, volte e gere um novo convite. Redes com NAT restritivo podem exigir um servidor TURN.</p>',true);
+    } catch(e) {toast('Resposta inválida: '+e.message);}
+  }
+  function onMultiplayerStatus(s) {
+    if(s==='connected') {
+      if(mpRole==='host' && mpRecord) launch(mpRecord,mpFresh,false);
+      else if(mpRole==='guest') panel('mp-answer','Sincronizando mundo…',
+        '<p class="mp-lead">Conexão P2P estabelecida. Recebendo os blocos do anfitrião…</p>',true,false);
+    } else if(s==='failed') {
+      toast('Conexão P2P falhou. Confira a rede; algumas conexões exigem TURN.');
+    } else if(s==='disconnected') {
+      $('#mpChatBtn').hidden=true;
+      if(mpRemote) mpRemote.active=false;
+      if(mpRole==='guest' && g) {
+        pauseSim();
+        panel('mp-lost','Convidado desconectado',
+          '<p>A ligação P2P foi perdida. Seu progresso só fica salvo no mundo do anfitrião.</p>'+btn('mp-leave','Voltar ao menu','primary'));
+      } else if(mpRole==='host') toast('Seu amigo saiu. O mundo permanece aberto para você.');
+    }
+  }
+  function onMultiplayerMessage(msg) {
+    if(!mp || !msg || typeof msg!=='object')return;
+    if(msg.t==='hello') {toast('Conectado com '+mp.remoteName);return;}
+    if(msg.t==='world' && mpRole==='guest' && !g) {
+      const src=msg.rec;
+      if(!src || src.schema!==1 || ![1,2,3].includes(src.generator) || typeof src.seed!=='string' ||
+        typeof src.name!=='string' || !src.edits || typeof src.edits!=='object')return toast('Dados do mundo incompatíveis.');
+      const rec=structuredClone(src);
+      rec.id='p2p-visitante-'+Date.now();
+      rec.name=String(src.name).slice(0,48);
+      rec.p={...rec.p,x:rec.p.x+1.8,z:rec.p.z+1.8};
+      rec.inv=Game.fresh('Visitante',rec.seed,rec.mode,rec.difficulty).inv;
+      rec.mobs=[];rec.selected=0;
+      launch(rec,false,true);
+    } else if(msg.t==='pose' && g && mpRemote) {
+      const {x,y,z,yaw,moving}=msg;
+      if([x,y,z,yaw].every(Number.isFinite) && [x,y,z].every(v=>Math.abs(v)<100000)) {
+        Object.assign(mpRemote,{x,y,z,yaw,moving:!!moving,active:true});
+      }
+    } else if(msg.t==='edit' && g && [msg.x,msg.y,msg.z,msg.b].every(Number.isInteger)) {
+      const {x,y,z,b}=msg;
+      if(Math.abs(x)>100000||Math.abs(z)>100000||y<=0||y>=Voxel.H||b<0||b>=105)return;
+      // Only accept edits near the most recently reported explorer position.
+      if(mpRole==='host' && (!mpRemote?.active || Math.hypot(x-mpRemote.x,y-mpRemote.y,z-mpRemote.z)>12))return;
+      g.applyRemoteEdit(x,y,z,b);
+    } else if(msg.t==='batch' && g && Array.isArray(msg.ops) && msg.ops.length<=300) {
+      if(mpRole==='host' && (!mpRemote?.active || !msg.ops.every(v=>Array.isArray(v)&&v.length===4&&v.every(Number.isInteger)&&Math.hypot(v[0]-mpRemote.x,v[1]-mpRemote.y,v[2]-mpRemote.z)<12)))return;
+      g.applyRemoteBatch(msg.ops);
+    } else if(msg.t==='chat' && typeof msg.text==='string') {
+      const body=msg.text.slice(0,280);
+      mpMessages.push({from:mp.remoteName,text:body});mpMessages=mpMessages.slice(-40);
+      if(screen==='mp-chat')multiplayerChat();else toast(mp.remoteName+': '+body.slice(0,65));
+    }
+  }
+  async function sendHostWorld() {
+    if(!g||!mp?.connected||mpStartSent)return;
+    mpStartSent=true;
+    try { await mp.send({t:'world',rec:g.snapshot()}); }
+    catch(e){toast('Mundo grande demais para sincronizar nesta versão P2P.');console.error(e);}
+  }
+  function multiplayerChat() {
+    if(!mp?.connected)return toast('Conecte-se primeiro a uma sala.');
+    panel('mp-chat','Conversa P2P',
+      '<div class="mp-chat-messages" aria-live="polite">'+
+      (mpMessages.length ? mpMessages.map(m=>'<p><strong>'+esc(m.from)+'</strong>: '+esc(m.text)+'</p>').join('') :
+      '<p class="muted">Conversa vazia. Envie uma mensagem para começar.</p>')+'</div>'+
+      '<label class="field">Mensagem<input maxlength="280" id="mpChatInput" placeholder="Escreva algo para seu amigo" autocomplete="off"></label>'+
+      btn('mp-chat-send','Enviar mensagem','primary fullwidth'),true);
+    $('#mpChatInput').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();multiplayerSendChat();}};
+  }
+  function multiplayerSendChat() {
+    const input=$('#mpChatInput'),body=input?.value.trim();if(!body||!mp?.connected)return;
+    mp.send({t:'chat',text:body.slice(0,280)}).catch(()=>toast('Mensagem não enviada'));
+    mpMessages.push({from:'Você',text:body.slice(0,280)});mpMessages=mpMessages.slice(-40);
+    multiplayerChat();
+  }
   function newWorld(back) {
     backPanel = back;
     edition = 'survival';
@@ -296,7 +489,7 @@
       toast('Não foi possível abrir este mundo');
     }
   }
-  async function launch(rec, fresh) {
+  async function launch(rec, fresh, temporary = false) {
     if (loading) return;
     loading = true;
     Sound.start();
@@ -318,7 +511,10 @@
       home.hidden = true;
       game.hidden = false;
       g = new Game.Session(rec, renderer, settings, toast, signal);
-      if (fresh) {
+      g.temporary = temporary;
+      g.remotePlayer = mpRemote;
+      $('#mpChatBtn').hidden = !mp?.connected;
+      if (fresh && !temporary) {
         const ok = await g.save();
         if (!ok) toast('Você pode jogar, mas o salvamento está indisponível.');
       }
@@ -407,6 +603,23 @@
     hud();
     toast(settings.thirdPerson ? 'Câmera em terceira pessoa' : 'Câmera em primeira pessoa');
   }
+  function houseMenu() {
+    if (!g) return;
+    const h=g.house;
+    const meters=h?Math.round(Math.hypot(g.p.x-h.x-.5,g.p.z-h.z-.5)):null;
+    panel('house','Minha casa',
+      '<p class="house-lede">Marque sua casa em qualquer lugar ou use uma cama para definir o ponto de renascimento. O marcador fica salvo neste mundo, inclusive depois de sair da região.</p>'+
+      '<div class="house-details">' +
+      (h ? '<div><b>Casa registrada</b><small>X '+h.x+' · Y '+h.y+' · Z '+h.z+'</small><small>Distância: '+meters+' metros</small></div>' :
+        '<div><b>Nenhuma casa marcada</b><small>Use o botão abaixo para marcar a posição atual.</small></div>') +
+      '</div>'+
+      '<div class="stack house-actions">' +
+       btn('house-mark','⌂ Marcar minha casa aqui','primary')+
+       (h ? btn('house-track',g.trackHouse?'◉ Ocultar bússola da casa':'◉ Mostrar bússola da casa','secondary') : '')+
+       (h ? btn('house-clear','Remover marcador da casa','flat') : '') +
+       btn('resume','Voltar ao jogo','secondary')+
+      '</div>',true);
+  }
   function pauseMenu() {
     if (!g) return;
     panel(
@@ -426,6 +639,7 @@
         btn('resume', icon('play') + 'Voltar ao jogo', 'primary') +
         btn('opgame', icon('gear') + 'Opções') +
         btn('guidegame', icon('book') + 'Guia de campo') +
+        btn('housemenu', '⌂ Localizar minha casa') +
         btn('savequit', icon('world') + 'Salvar e voltar ao menu') +
         '</div>' +
         '<button class="pause-goal" data-act="expeditionpause">' +
@@ -450,8 +664,10 @@
     }
     g.stop();
     g = null;
+    const wasGuest=mpGuest;
+    if (mp) multiplayerLeave();
     homeMenu();
-    toast('Mundo salvo');
+    toast(wasGuest ? 'Sessão encerrada' : 'Mundo salvo');
   }
   function options(back) {
     cfgBack = back;
@@ -568,7 +784,7 @@
         '<p class="smallnote">Mova o mouse para olhar. Clique no cenário para capturar o cursor e use Esc para liberá-lo. No celular, deslize o dedo sobre o cenário. As teclas Q e R também servem para minerar e usar.</p>';
     } else if (tab === 1) {
       body =
-        '<div class="guidecontent"><h3>Cultivo e abrigo</h3><p>Quebre grama para obter sementes. Coloque um canteiro junto à água, selecione as sementes e use o canteiro. Colha o trigo dourado e asse pão no forno. Use uma cama para marcar o retorno.</p><h3>Antes da primeira noite</h3><p>Segure Espaço ou Nadar para subir e solte para afundar. Para sair da água, nade em direção a uma margem de até um bloco e segure Espaço ou Nadar. Segure o botão esquerdo em um tronco e se aproxime para recolher a madeira. Abra a mochila com E e transforme um tronco em quatro tábuas.</p><h3>Monte sua oficina</h3><p>Fabrique uma bancada com quatro tábuas e coloque-a no chão. Perto dela, combine três tábuas e duas hastes para produzir sua primeira picareta. Abra a oficina de construção (B no teclado) para fabricar escadas, lajes, cercas, portas, tijolos e telhas.</p><h3>Ilumine o abrigo</h3><p>Procure carvão na pedra ou queime um tronco no forno. Combine carvão e haste para fazer tochas. Os raspejantes recuam diante da luz.</p><h3>Animais pacíficos</h3><p>Durante o dia, procure ovelhas, porcos e vacas nos campos gramados, inclusive no modo Pacífico. Eles não atacam. Equipe trigo para alimentar ovelhas ou vacas, ou frutas para porcos; mire no animal próximo e use o botão direito ou toque no cenário. A lã também pode ser usada para fabricar camas. Animais feridos fogem por alguns segundos.</p><h3>Recupere forças</h3><p>Quebre folhas para encontrar frutas. Selecione-as e use o botão direito para comer. Se cair, volte ao local para recuperar a mochila.</p></div>';
+        '<div class="guidecontent"><h3>Cultivo e abrigo</h3><p>Quebre grama para obter sementes. Coloque um canteiro junto à água, selecione as sementes e use o canteiro. Colha o trigo dourado e asse pão no forno. A cama nova ocupa dois blocos e define o retorno e a bússola da casa. Use H ou o botão Minha casa para marcar qualquer lugar.</p><h3>Antes da primeira noite</h3><p>Segure Espaço ou Nadar para subir e solte para afundar. Para sair da água, nade em direção a uma margem de até um bloco e segure Espaço ou Nadar. Segure o botão esquerdo em um tronco e se aproxime para recolher a madeira. Abra a mochila com E e transforme um tronco em quatro tábuas.</p><h3>Monte sua oficina</h3><p>Fabrique uma bancada com quatro tábuas e coloque-a no chão. Perto dela, combine três tábuas e duas hastes para produzir sua primeira picareta. Abra a oficina de construção (B no teclado) para fabricar escadas, lajes, cercas, portas, tijolos e telhas.</p><h3>Ilumine o abrigo</h3><p>Procure carvão na pedra ou queime um tronco no forno. Combine carvão e haste para fazer tochas. Os raspejantes recuam diante da luz.</p><h3>Animais pacíficos</h3><p>Durante o dia, procure ovelhas, porcos e vacas nos campos gramados, inclusive no modo Pacífico. Eles não atacam. Equipe trigo para alimentar ovelhas ou vacas, ou frutas para porcos; mire no animal próximo e use o botão direito ou toque no cenário. A lã também pode ser usada para fabricar camas. Animais feridos fogem por alguns segundos.</p><h3>Recupere forças</h3><p>Quebre folhas para encontrar frutas. Selecione-as e use o botão direito para comer. Se cair, volte ao local para recuperar a mochila.</p></div>';
     } else if (tab === 2) {
       const expedition = g || worldList[0];
       const names = Voxel.ruins
@@ -596,7 +812,7 @@
         '</ul><p>O primeiro selo libera a pedra rúnica. Com os três, use a bancada para combinar cristal, cobre e vidro em um Farol Prisma. Coloque-o para acender uma aurora sobre sua base.</p></div>';
     } else
       body =
-        '<p>Mundo Prisma é um sandbox voxel de exploração, sobrevivência e construção. Explore os Campos de Âmbar, a Floresta de Névoa e as Dunas de Vidro. Nas dunas, procure os obeliscos com cristais no topo.</p><p class="muted">Versão jogável 0.9.5 · Um jogador<br>Arte, sprites, tipografia de título e efeitos sonoros criados para Mundo Prisma. Seu progresso é salvo neste navegador.</p>';
+        '<p>Mundo Prisma é um sandbox voxel de exploração, sobrevivência e construção. Explore os Campos de Âmbar, a Floresta de Névoa e as Dunas de Vidro. Nas dunas, procure os obeliscos com cristais no topo.</p><p class="muted">Versão jogável 0.9.8 · Solo e multiplayer experimental<br>Arte, sprites, tipografia de título e efeitos sonoros criados para Mundo Prisma. Seu progresso é salvo neste navegador.</p>';
     panel(
       'guide',
       'Guia de campo',
@@ -617,10 +833,21 @@
       case 'bag':
       case 'build':
       case 'chest':
+      case 'house':
       case 'pause':
         return resume();
       case 'new':
         return backPanel === 'worlds' ? showWorlds() : homeMenu();
+      case 'multiplayer':
+      case 'mp-host':
+      case 'mp-join':
+      case 'mp-offer':
+      case 'mp-answer':
+        multiplayerLeave(); return homeMenu();
+      case 'mp-chat':
+        return resume();
+      case 'mp-lost':
+        if(g){g.stop();g=null;} multiplayerLeave();return homeMenu();
       default:
         return homeMenu();
     }
@@ -937,6 +1164,11 @@
   function signal(s, v) {
     if (s === 'ready') {
       if (screen === 'load' && g) resume(false);
+      if(mpRole === 'host' && mp?.connected && !mpStartSent) sendHostWorld();
+    } else if (s === 'worldEdit') {
+      if(mp?.connected && !g?.applyingRemoteEdit) mp.send({t:'edit',...v}).catch(()=>{});
+    } else if (s === 'worldBatch') {
+      if(mp?.connected) mp.send({t:'batch',ops:v}).catch(()=>{});
     } else if (s === 'hud') {
       if (screen === 'play') hud();
     } else if (s === 'station') {
@@ -971,7 +1203,7 @@
     const jumpButton = $('#touch [data-touch="jump"]');
     $('#touchJumpLabel').textContent = g.swimming ? 'Nadar' : 'Pular';
     const active = g.inv[g.selected];
-    const rotation = active && [49, 57, 69].includes(active.b) && g.buildRotation
+    const rotation = active && [49, 57, 69, 46].includes(active.b) && g.buildRotation
       ? ' · Girada +' + (g.buildRotation * 90) + '°' : '';
     const held = $('#held');
     held.hidden = settings.thirdPerson || !active;
@@ -1019,6 +1251,18 @@
         ? 'Expedição concluída'
         : '3 selos · Fabrique o farol';
     }
+    const houseCompass=$('#houseCompass'), houseText=houseCompass.querySelector('span'), houseArrow=houseCompass.querySelector('i');
+    if (g.house && g.trackHouse) {
+      const dx=g.house.x+.5-g.p.x, dz=g.house.z+.5-g.p.z;
+      const angle=Math.atan2(dx,-dz)-g.p.yaw;
+      houseArrow.style.transform='rotate('+angle+'rad)';
+      houseText.textContent='Minha casa · '+Math.round(Math.hypot(dx,dz))+' m';
+      houseCompass.classList.add('tracking');
+    } else {
+      houseArrow.style.transform='rotate(0rad)';
+      houseText.textContent=g.house?'Casa marcada · ver opções':'⌂ Marcar casa';
+      houseCompass.classList.remove('tracking');
+    }
     $('#breakbar').hidden = !g.holding || !g.progress;
     $('#breakbar span').style.width = Math.max(0, g.progress) * 100 + '%';
     const mineFeedback = $('#mineFeedback');
@@ -1054,7 +1298,7 @@
     $('#debug').hidden = !debug;
     if (debug)
       $('#debug').textContent =
-        'PRISMA 0.9.5 · ' +
+        'PRISMA 0.9.8 · ' +
         renderer.type +
         '\n' +
         Math.round(fps) +
@@ -1096,6 +1340,31 @@
     Sound.start();
     if (!['inv', 'chest', 'hot', 'craft'].includes(a)) Sound.play('ui', settings);
     switch (a) {
+      case 'mp-host':
+        multiplayerHostPanel();
+        break;
+      case 'mp-join':
+        multiplayerJoinPanel();
+        break;
+      case 'mp-copy':
+        multiplayerCopy();
+        break;
+      case 'mp-accept':
+        multiplayerAccept();
+        break;
+      case 'mp-answer':
+        multiplayerCreateAnswer();
+        break;
+      case 'mp-chat-send':
+        multiplayerSendChat();
+        break;
+      case 'mp-chat':
+        multiplayerChat();
+        break;
+      case 'mp-exit':
+      case 'mp-leave':
+        if(g){g.stop();g=null;} multiplayerLeave();homeMenu();
+        break;
       case 'back':
         back();
         break;
@@ -1119,6 +1388,18 @@
         break;
       case 'expeditionpause':
         guide('pause', 2);
+        break;
+      case 'housemenu':
+        houseMenu();
+        break;
+      case 'house-mark':
+        g.markHouse(); houseMenu(); toast('Casa marcada. A bússola indica o caminho!');
+        break;
+      case 'house-track':
+        g.trackHouse=!g.trackHouse; g.changed(); houseMenu();
+        break;
+      case 'house-clear':
+        g.clearHouse(); houseMenu(); toast('Marcador removido');
         break;
       case 'guidegame':
         guide('pause');
@@ -1419,6 +1700,9 @@
       case 'KeyV':
         changeView();
         break;
+      case 'KeyH':
+        houseMenu();
+        break;
       case 'KeyJ':
         guide('play', 2);
         break;
@@ -1560,6 +1844,7 @@
   });
   window.addEventListener('pagehide', () => {
     if (g) g.save();
+    mp?.close();
   });
   function frame(now) {
     requestAnimationFrame(frame);
@@ -1578,6 +1863,10 @@
     while (acc >= 1 / 60) {
       g.tick(1 / 60);
       acc -= 1 / 60;
+    }
+    if (mp?.connected && now-mpLastPose>110) {
+      mpLastPose=now; const p=g.p;
+      mp.send({t:'pose',x:+p.x.toFixed(2),y:+p.y.toFixed(2),z:+p.z.toFixed(2),yaw:+p.yaw.toFixed(2),moving:g.keys.size>0 || Math.abs(g.touchMove.forward)+Math.abs(g.touchMove.side)>0.1}).catch(()=>{});
     }
     renderer.draw(g, settings, Math.min(1, acc * 60));
   }

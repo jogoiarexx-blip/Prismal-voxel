@@ -360,6 +360,26 @@ const View = (() => {
           ent[i + 2] = z + xx * Math.sin(yaw) + zz * Math.cos(yaw);
         }
       }
+      // A shared, low-poly avatar for the connected P2P explorer. All boxes use
+      // the same transient entity buffer and shader; no new draw call or texture.
+      if(g.remotePlayer && g.remotePlayer.active) {
+        const p=g.remotePlayer, yaw=p.yaw||0, x=p.x,y=p.y,z=p.z;
+        const start=ent.length, phase=g.elapsed*7;
+        const walk=(p.moving?Math.sin(phase)*.09:0);
+        box(ent,-.25,y+.62,-.17,.50,.68,.34,17); // teal jacket
+        box(ent,-.19,y+1.30,-.20,.38,.37,.40,106); // cream head
+        box(ent,-.21,y+1.63,-.21,.42,.10,.42,12); // prism helmet
+        box(ent,-.33,y+.81,-.13-walk,.10,.40,.25,8);
+        box(ent,.23,y+.81,-.13+walk,.10,.40,.25,8);
+        box(ent,-.19,y,-.13+walk,.18,.64,.26,27);
+        box(ent,.03,y,-.13-walk,.18,.64,.26,27);
+        box(ent,-.12,y+1.42,-.215,.24,.06,.025,111); // visor
+        for(let i=start;i<ent.length;i+=6){
+          const xx=ent[i],zz=ent[i+2];
+          ent[i]=x+xx*Math.cos(yaw)-zz*Math.sin(yaw);
+          ent[i+2]=z+xx*Math.sin(yaw)+zz*Math.cos(yaw);
+        }
+      }
       // Each creature has its own lightweight voxel anatomy and patterned palette.
       // No GLB models, image atlases or additional draw calls are necessary.
       for (const mob of g.mobs) {

@@ -82,6 +82,8 @@ const Game = (() => {
       this.fragments = [];
       this.plots = rec.plots || {};
       this.bed = rec.bed || null;
+      this.house = rec.house && Number.isFinite(rec.house.x) && Number.isFinite(rec.house.z) ? rec.house : null;
+      this.trackHouse = rec.trackHouse !== false;
       this.seed = Voxel.seedHash(rec.seed);
       this.p = { ...rec.p };
       this.inv = rec.inv;
@@ -290,7 +292,20 @@ const Game = (() => {
       this.relight(k);
       this.pump();
       this.changed();
+      if (!this.applyingRemoteEdit) this.signal('worldEdit', {x, y, z, b});
       return true;
+    }
+    applyRemoteEdit(x, y, z, b) {
+      x=Math.floor(x);y=Math.floor(y);z=Math.floor(z);b=Math.floor(b);
+      if(!Number.isFinite(x+z+y+b)||y<=0||y>=Voxel.H||b<0||!(b<105||Voxel.bedFoot(b)||Voxel.bedHead(b)))return false;
+      const chunkKey=key(x>>4,z>>4), loaded=this.chunks.has(chunkKey);
+      this.applyingRemoteEdit=true;
+      try {
+        if(loaded) return this.set(x,y,z,b);
+        (this.edits[chunkKey] ||= {})[idx(x&15,y,z&15)]=b;
+        this.changed();
+        return true;
+      } finally { this.applyingRemoteEdit=false; }
     }
     // Apply a checked project atomically: no destructive overwrites or partial inventory charges.
     blueprintPlan(kind) {
@@ -365,6 +380,28 @@ const Game = (() => {
       for (const k of dirty) if (this.chunks.has(k)) this.relight(k);
       this.pump();
       this.changed();
+      if (!this.applyingRemoteEdit) this.signal('worldBatch', ops);
+    }
+    applyRemoteBatch(ops) {
+      if (!Array.isArray(ops) || ops.length > 300) return false;
+      const valid=ops.every(v=>Array.isArray(v)&&v.length===4&&v.every(Number.isInteger)&&
+        Math.abs(v[0])<100000&&Math.abs(v[2])<100000&&v[1]>0&&v[1]<Voxel.H&&v[3]>=0&&(v[3]<105||Voxel.bedFoot(v[3])||Voxel.bedHead(v[3])));
+      if (!valid) return false;
+      const loaded=[],unloaded=[];
+      for(const entry of ops) {
+        if (this.chunks.has(key(entry[0]>>4,entry[2]>>4))) loaded.push(entry);
+        else unloaded.push(entry);
+      }
+      this.applyingRemoteEdit=true;
+      try {
+        if(loaded.length)this.applyBlockBatch(loaded);
+        for(const [x,y,z,b] of unloaded) {
+          const k=key(x>>4,z>>4);
+          (this.edits[k] ||= {})[idx(x&15,y,z&15)]=b;
+        }
+        if(unloaded.length)this.changed();
+      } finally {this.applyingRemoteEdit=false;}
+      return true;
     }
     placeBlueprint(kind) {
       const plan = this.blueprintPlan(kind);
@@ -675,7 +712,7 @@ const Game = (() => {
       const tool = this.inv[this.selected],
         rock = [3, 9, 10, 11, 14, 20, 32, 34].includes(hit.b);
       const speed = { 22: 3.2, 42: 4, 43: 5, 44: 6, 45: 8 }[tool?.b] || 1;
-      const wood = [5, 8, 12, 15, 27, 46, 49, 50, 51, 52, 53, 55, 57, 58, 59, 60, 61, 62, 63, 64, 68, 77, 78, 79, 83, 84, 85, 86, 91].includes(hit.b);
+      const wood = [5, 8, 12, 15, 27, 46, 49, 50, 51, 52, 53, 55, 57, 58, 59, 60, 61, 62, 63, 64, 68, 77, 78, 79, 83, 84, 85, 86, 91].includes(hit.b) || Voxel.bedFoot(hit.b) || Voxel.bedHead(hit.b);
       const soil = [1, 2, 4, 17, 19, 38, 39, 40].includes(hit.b);
       const toolSpeed = tool?.b === 89 && wood ? 5.4 : tool?.b === 90 && soil ? 4 : rock ? speed : 1;
       if (hit.b === 34 && !this.creative && speed < 4) {
@@ -692,11 +729,13 @@ const Game = (() => {
       const lowerY = doorUpper ? y - 1 : y;
       const doorBase = this.get(x,lowerY,z,true);
       const linkedDoor = Voxel.doorLower(doorBase) && this.get(x,lowerY+1,z,true) === doorBase+40;
+      const bedPair=this.bedPair(x,y,z,b);
       const removed = linkedDoor
         ? [[x,lowerY,z,0],[x,lowerY+1,z,0]]
+        : bedPair?.valid ? [[x,y,z,0],[...bedPair.other,0]]
         : [[x,y,z,0]];
       // Keep mounted torches attached to solid supports; drop them when the wall/floor disappears.
-      if (!linkedDoor) for (const [dx,dy,dz] of [[1,0,0],[-1,0,0],[0,0,1],[0,0,-1],[0,1,0]]) {
+      if (!linkedDoor && !bedPair?.valid) for (const [dx,dy,dz] of [[1,0,0],[-1,0,0],[0,0,1],[0,0,-1],[0,1,0]]) {
         const tx=x+dx, ty=y+dy, tz=z+dz, id=this.get(tx,ty,tz,true);
         const support=Voxel.torchSupport(id);
         const wallLegacy = id === 25 && dy === 0 && !blocks[this.get(tx,ty-1,tz,true)]?.solid &&
@@ -711,6 +750,10 @@ const Game = (() => {
       }
       delete this.plots[k];
       this.applyBlockBatch(removed);
+      // Keep the house waypoint (the house still exists), but never respawn at a missing bed.
+      if (this.bed && removed.some(([bx,by,bz])=>bx===this.bed[0]&&by===this.bed[1]&&bz===this.bed[2])) {
+        this.bed=null; this.changed();
+      }
       if (this.settings.motion) {
         for (let i = 0; i < 6; i++) {
           this.fragments.push({
@@ -884,21 +927,44 @@ const Game = (() => {
     }
     undoFreeBlock() {
       if (!this.creative || !this.lastFreeBlock) return false;
-      const { pos, b, twoHigh } = this.lastFreeBlock;
+      const { pos, b, twoHigh, partnerPos, partnerB } = this.lastFreeBlock;
       const [x, y, z] = pos;
       const storage = this.chests[pos.join(',')];
       if (this.get(x, y, z, true) !== b ||
-          (twoHigh && this.get(x,y+1,z,true) !== b+40) || storage?.some(Boolean)) {
+          (twoHigh && this.get(x,y+1,z,true) !== b+40) ||
+          (partnerPos && this.get(...partnerPos,true)!==partnerB) || storage?.some(Boolean)) {
         this.notify('O bloco foi alterado ou contém itens');
         this.lastFreeBlock = null;
         return false;
       }
       if (twoHigh) this.applyBlockBatch([[x,y,z,0],[x,y+1,z,0]]);
+      else if (partnerPos) this.applyBlockBatch([[x,y,z,0],[...partnerPos,0]]);
       else if (!this.set(x,y,z,0)) return false;
       if (storage) delete this.chests[pos.join(',')];
       this.lastFreeBlock = null;
       this.signal('hud');
       return true;
+    }
+    markHouse(x = this.p.x, y = this.p.y, z = this.p.z, label = 'Minha casa') {
+      if (![x,y,z].every(Number.isFinite)) return false;
+      this.house = {x:Math.floor(x),y:Math.floor(y),z:Math.floor(z),label:String(label).slice(0,40)};
+      this.trackHouse = true;
+      this.changed();
+      return true;
+    }
+    clearHouse() {
+      this.house = null;
+      this.trackHouse = true;
+      this.changed();
+    }
+    bedPair(x,y,z,b) {
+      if (!Voxel.bedFoot(b) && !Voxel.bedHead(b)) return null;
+      const head = Voxel.bedHead(b), footId = head ? b-4 : b;
+      const offset=Voxel.bedOffset(footId);
+      const foot=head ? [x-offset[0],y,z-offset[2]] : [x,y,z];
+      const other=head ? [x-offset[0],y,z-offset[2]] : [x+offset[0],y,z+offset[2]];
+      const otherId=head ? footId : footId+4;
+      return {foot,other,otherId,valid:this.get(...other,true)===otherId};
     }
     preview() {
       const t = this.inv[this.selected], h = this.hit;
@@ -911,12 +977,20 @@ const Game = (() => {
         b = Voxel.torchIdForNormal(h.normal);
       }
       if (y <= 0 || y >= Voxel.H || (this.get(x,y,z,true) !== 0 && this.get(x,y,z) !== 7)) return null;
-      const isDoor = Voxel.doorLower(b);
+      const isDoor = Voxel.doorLower(b), isBed = Voxel.bedFoot(b);
+      const offset=isBed ? Voxel.bedOffset(b) : null;
+      const partnerPos=isBed ? [x+offset[0],y,z+offset[2]] : null;
+      const partnerB=isBed ? b+4 : null;
       const headFree = !isDoor || (y < Voxel.H - 1 && this.get(x,y+1,z,true) === 0);
-      const occupied = Voxel.intersects(b, x, y, z, p.x - .28, p.y, p.z - .28, p.x + .28, p.y + 1.8, p.z + .28) ||
-        (isDoor && Voxel.intersects(b+40,x,y+1,z,p.x-.28,p.y,p.z-.28,p.x+.28,p.y+1.8,p.z+.28)) ||
-        this.mobs.some(m => Math.abs(m.x-x-.5)<.85 && Math.abs(m.z-z-.5)<.85 && Math.abs(m.y-y)<2);
-      return { pos, b, valid: headFree && !occupied };
+      const otherFree = !isBed || (h.normal[1]===1 && this.get(...partnerPos,true)===0 &&
+        blocks[this.get(x,y-1,z,true)]?.solid &&
+        blocks[this.get(partnerPos[0],y-1,partnerPos[2],true)]?.solid);
+      const occupiedAt = (block,xx,yy,zz) => Voxel.intersects(block,xx,yy,zz,p.x-.28,p.y,p.z-.28,p.x+.28,p.y+1.8,p.z+.28) ||
+        this.mobs.some(m=>Math.abs(m.x-xx-.5)<.85&&Math.abs(m.z-zz-.5)<.85&&Math.abs(m.y-yy)<2);
+      const occupied = occupiedAt(b,x,y,z) ||
+        (isDoor && occupiedAt(b+40,x,y+1,z)) ||
+        (isBed && occupiedAt(partnerB,...partnerPos));
+      return { pos, b, partnerPos, partnerB, valid: headFree && otherFree && !occupied };
     }
     use(forcePlace = false) {
       const t = this.inv[this.selected],
@@ -974,9 +1048,13 @@ const Game = (() => {
         this.signal('station', h);
         return;
       }
-      if (h?.b === 46 && !sneaking && !placing) {
-        this.bed = h.p.slice();
-        this.notify('Ponto de retorno definido na cama');
+      if (h && (h.b === 46 || Voxel.bedFoot(h.b) || Voxel.bedHead(h.b)) && !sneaking && !placing) {
+        const pair=this.bedPair(...h.p,h.b);
+        if (pair && !pair.valid) {this.notify('Cama incompleta');return;}
+        const foot=pair?.foot || h.p;
+        this.bed = foot.slice();
+        this.markHouse(foot[0],foot[1],foot[2]);
+        this.notify('Cama definida! Casa marcada na bússola.');
         this.save();
         return;
       }
@@ -1017,11 +1095,13 @@ const Game = (() => {
       const place = this.preview();
       if (!place) return;
       if (!place.valid) { this.notify('Espaço ocupado'); return; }
-      const { pos, b } = place;
+      const { pos, b, partnerPos, partnerB } = place;
       const [x, y, z] = pos;
       if (Voxel.doorLower(b)) this.applyBlockBatch([[x,y,z,b],[x,y+1,z,b+40]]);
+      else if (Voxel.bedFoot(b)) this.applyBlockBatch([[x,y,z,b],[...partnerPos,partnerB]]);
       else if (!this.set(x, y, z, b)) return;
-      this.lastFreeBlock = this.creative ? { pos: pos.slice(), b, twoHigh: Voxel.doorLower(b) } : null;
+      this.lastFreeBlock = this.creative ? { pos: pos.slice(), b, twoHigh: Voxel.doorLower(b),
+        partnerPos: partnerPos?.slice() || null, partnerB } : null;
       this.goals['place' + t.b] = true;
       if (t.b === 30) {
         this.notify('Farol Prisma aceso · aurora ativada');
@@ -1292,7 +1372,12 @@ const Game = (() => {
           Voxel.generate(x >> 4, z >> 4, this.seed, this.sites, this.generator).a[
             idx(x & 15, yy, z & 15)
           ];
-        if (blockAt(y) === 46 && !blockAt(y + 1) && !blockAt(y + 2)) {
+        const lower=blockAt(y), offset=Voxel.bedFoot(lower)?Voxel.bedOffset(lower):null;
+        const paired=!offset || this.bedPair(x,y,z,lower)?.valid ||
+          // On respawn the bed can be in an unloaded chunk; use saved edits.
+          (()=>{const hx=x+offset[0],hz=z+offset[2], hk=key(hx>>4,hz>>4);
+            return this.edits[hk]?.[idx(hx&15,y,hz&15)]===lower+4;})();
+        if ((lower === 46 || Voxel.bedFoot(lower)) && paired && !blockAt(y + 1) && !blockAt(y + 2)) {
           p.x = x + 0.5;
           p.y = y + 1.01;
           p.z = z + 0.5;
@@ -1336,10 +1421,13 @@ const Game = (() => {
         sites: this.sites,
         plots: this.plots,
         bed: this.bed,
+        house: this.house,
+        trackHouse: this.trackHouse,
         seals: this.seals,
       });
     }
     save() {
+      if (this.temporary) { clearTimeout(this.debounce); this.dirtySave=false; return Promise.resolve(true); }
       clearTimeout(this.debounce);
       const data = this.snapshot();
       this.saveState = 'Salvando';

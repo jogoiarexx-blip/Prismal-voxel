@@ -46,6 +46,7 @@
                 ><small id="playDetail">Criar meu primeiro mundo</small></span
               ><kbd>ENTER</kbd>
             </button>
+            <button class="secondary multiplayer-home" id="multiplayer" type="button"><span class="mp-mini-icon">✧</span><span><b>Multiplayer P2P</b><small>Convide um amigo e construam juntos</small></span><span class="mp-tag">2 jogadores</span></button>
             <div class="twins">
               <button class="secondary" id="worlds"><i data-ico="world"></i>Meus mundos</button
               ><button class="secondary" id="options"><i data-ico="gear"></i>Opções</button>
@@ -64,7 +65,7 @@
             <button id="guide"><i data-ico="book"></i>Guia de campo</button
             ><button id="quickNew" hidden><i data-ico="plus"></i>Novo mundo</button>
           </div>
-          <span class="version"><b></b>VERSÃO 0.9.5</span>
+          <span class="version"><b></b>VERSÃO 0.9.8</span>
         </footer>
       </section>
       <section id="game" hidden aria-label="Mundo jogável">
@@ -76,6 +77,7 @@
               <i data-ico="pin"></i><span id="biome"></span><small id="clock"></small>
             </div>
             <div class="game-tools">
+              <button id="mpChatBtn" class="tool mp-chat-trigger" hidden type="button">✉ <span>Conversa</span></button>
               <button id="build" class="tool build-trigger" title="Construir livremente: escolher blocos (B)" aria-label="Escolher blocos para construção livre">▦ <span>Blocos livres</span></button>
               <button class="tool" id="pause" title="Pausar jogo" aria-label="Pausar jogo">
                 <i data-ico="pause"></i>
@@ -85,6 +87,9 @@
           <div id="quest"></div>
           <button id="expCompass" title="Abrir diário da expedição">
             <i aria-hidden="true">▲</i><span></span>
+          </button>
+          <button id="houseCompass" title="Marcar ou localizar a casa (H)" aria-label="Localizar minha casa">
+            <i aria-hidden="true">▲</i><span>⌂ Marcar casa</span>
           </button>
           <div id="cameraHint" hidden></div>
           <div id="cross"></div>
@@ -147,6 +152,7 @@
     <script defer src="js/render.js"></script>
     <script defer src="js/store.js"></script>
     <script defer src="js/game.js"></script>
+    <script defer src="js/multiplayer.js"></script>
     <script defer src="js/ui.js"></script>
   </body>
 </html>

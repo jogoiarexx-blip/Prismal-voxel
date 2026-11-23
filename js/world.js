@@ -134,13 +134,22 @@ const Voxel = (() => {
     ['Lã', 'e7e2d5', 0],              // 123 item
     ['Carne suína crua', 'd78584', 0], // 124 item
     ['Carne bovina crua', 'b96560', 0], // 125 item
+    // Two-block bed halves; one inventory item (46) places both halves.
+    ['Cama de campo (pés N)', '986857', .65], // 126-129: feet
+    ['Cama de campo (pés L)', '986857', .65],
+    ['Cama de campo (pés S)', '986857', .65],
+    ['Cama de campo (pés O)', '986857', .65],
+    ['Cama de campo (cabeceira N)', '986857', .65], // 130-133: head
+    ['Cama de campo (cabeceira L)', '986857', .65],
+    ['Cama de campo (cabeceira S)', '986857', .65],
+    ['Cama de campo (cabeceira O)', '986857', .65],
   ];
   const blocks = data.map(([name, hex, hard], id) => ({
     id,
     name,
     hex,
     hard,
-    solid: !!id && ![7, 21, 22, 23, 24, 25, 35, 36, 37, 41, 42, 43, 44, 45, 47, 80, 81, 82, 88, 89, 90].includes(id) && !(id >= 93 && id <= 96) && id < 105,
+    solid: (!!id && ![7, 21, 22, 23, 24, 25, 35, 36, 37, 41, 42, 43, 44, 45, 47, 80, 81, 82, 88, 89, 90].includes(id) && !(id >= 93 && id <= 96) && id < 105) || (id >= 126 && id <= 133),
     placeable:
       id > 0 && id < 93 && ![7, 21, 22, 23, 24, 28, 29, 35, 37, 39, 40, 41, 42, 43, 44, 45, 47, 50, 51, 52, 58, 59, 60, 61, 62, 63, 64, 70, 71, 72, 80, 81, 82, 86, 89, 90].includes(id),
   }));
@@ -159,23 +168,50 @@ const Voxel = (() => {
       shapes.set(base + orientation, [box(0, 0, 0, 1, .5, 1), upper]);
     }
   }
-  // A floor torch has a dark wooden stalk and a luminous voxel flame.
-  // Wall torches lean from the supporting face, rather than floating in the middle.
-  shapes.set(25, [box(.44, .06, .44, .12, .52, .12, 21), box(.40, .54, .40, .20, .23, .20, 25)]);
-  // 93 / 94 support on the x- / x+ face; 95 / 96 support on z- / z+.
+  // A better torch silhouette: pedestal on the floor, small bracket on walls,
+  // and a compact flame so the light looks attached instead of floating.
+  shapes.set(25, [
+    box(.34, .00, .34, .32, .05, .32, 8),
+    box(.46, .05, .46, .08, .45, .08, 21),
+    box(.41, .50, .41, .18, .07, .18, 8),
+    box(.39, .57, .39, .22, .16, .22, 25),
+    box(.43, .73, .43, .14, .10, .14, 25),
+  ]);
+  // 93 / 94 support on the x- / x+ face; 95 / 96 support on z- / z+ face.
+  // Each one gets a wall plate, a small arm and a flame close to the wall.
   for (const [id, axis, side] of [[93,'x',0],[94,'x',1],[95,'z',0],[96,'z',1]]) {
     const alongX = axis === 'x';
-    const stick = side === 0 ? .13 : .73;
-    const tip = side === 0 ? .36 : .55;
-    const pieces = alongX ? [
-      box(stick,.24,.42,.15,.26,.16,21),
-      box(tip,.47,.43,.13,.22,.14,21),
-      box(tip-.025,.67,.405,.18,.20,.19,25),
-    ] : [
-      box(.42,.24,stick,.16,.26,.15,21),
-      box(.43,.47,tip,.14,.22,.13,21),
-      box(.405,.67,tip-.025,.19,.20,.18,25),
-    ];
+    const pieces = alongX
+      ? (side === 0
+          ? [
+              box(.00,.30,.34,.10,.24,.32,8),
+              box(.09,.37,.45,.23,.10,.10,21),
+              box(.28,.44,.40,.12,.12,.20,8),
+              box(.24,.56,.38,.20,.16,.24,25),
+              box(.28,.72,.42,.12,.08,.16,25),
+            ]
+          : [
+              box(.90,.30,.34,.10,.24,.32,8),
+              box(.68,.37,.45,.23,.10,.10,21),
+              box(.60,.44,.40,.12,.12,.20,8),
+              box(.56,.56,.38,.20,.16,.24,25),
+              box(.60,.72,.42,.12,.08,.16,25),
+            ])
+      : (side === 0
+          ? [
+              box(.34,.30,.00,.32,.24,.10,8),
+              box(.45,.37,.09,.10,.10,.23,21),
+              box(.40,.44,.28,.20,.12,.12,8),
+              box(.38,.56,.24,.24,.16,.20,25),
+              box(.42,.72,.28,.16,.08,.12,25),
+            ]
+          : [
+              box(.34,.30,.90,.32,.24,.10,8),
+              box(.45,.37,.68,.10,.10,.23,21),
+              box(.40,.44,.60,.20,.12,.12,8),
+              box(.38,.56,.56,.24,.16,.20,25),
+              box(.42,.72,.60,.16,.08,.12,25),
+            ]);
     shapes.set(id, pieces);
   }
   shapes.set(53, [box(0, 0, 0, 1, .5, 1)]);
@@ -205,11 +241,51 @@ const Voxel = (() => {
   shapes.set(76, [box(.42, 0, .02, .16, 1, .96), box(.43, .25, 0, .14, .09, 1), box(.43, .73, 0, .14, .09, 1)]);
   shapes.set(78, [box(.05,.72,.05,.9,.18,.9), box(.12,0,.12,.14,.72,.14), box(.74,0,.12,.14,.72,.14), box(.12,0,.74,.14,.72,.14), box(.74,0,.74,.14,.72,.14)]);
   shapes.set(79, [box(.15,.45,.18,.7,.14,.7), box(.16,0,.2,.14,.45,.14), box(.70,0,.2,.14,.45,.14), box(.16,0,.74,.14,.45,.14), box(.70,0,.74,.14,.45,.14), box(.16,.58,.76,.68,.42,.12)]);
+  // Cama de campo: base de madeira, colchão mais baixo, coberta e travesseiro.
+  shapes.set(46, [
+    box(.05,.00,.05,.90,.12,.90,8),
+    box(.08,.12,.08,.12,.18,.12,8), box(.80,.12,.08,.12,.18,.12,8),
+    box(.08,.12,.80,.12,.18,.12,8), box(.80,.12,.80,.12,.18,.12,8),
+    box(.08,.24,.08,.84,.18,.84,115),
+    box(.08,.30,.08,.84,.16,.58,88),
+    box(.08,.30,.66,.84,.12,.18,123),
+    box(.03,.24,.84,.94,.26,.09,8),
+  ]);
   // Lightweight furniture shapes: all faces are packed in the existing chunk mesh.
   shapes.set(83, [box(.06, 0, .06, .88, 1, .88), box(.45, .18, .035, .1, .12, .035), box(.45, .66, .035, .1, .12, .035)]);
   shapes.set(84, [box(.14, .05, .14, .72, .86, .72), box(.10, .28, .10, .80, .12, .80), box(.22, .86, .22, .56, .10, .56)]);
   shapes.set(85, [box(0, 0, 0, 1, .16, 1)]);
   shapes.set(86, [box(0, 0, 0, 1, 1, .16)]);
+  // The modern bed occupies two adjacent ground cells, but is still crafted as item 46.
+  // Rotate every tiny box in place: no imported mesh, atlas, or extra draw calls.
+  function rotateBedBox(p, facing) {
+    const [x,y,z,width,height,depth,...material] = p;
+    if (facing === 0) return p;
+    if (facing === 1) return box(1-z-depth,y,x,depth,height,width,...material);
+    if (facing === 2) return box(1-x-width,y,1-z-depth,width,height,depth,...material);
+    return box(z,y,1-x-width,depth,height,width,...material);
+  }
+  const bedFeetParts = [
+    box(.08,.00,.08,.15,.23,.15,8), box(.77,.00,.08,.15,.23,.15,8),
+    box(.08,.00,.77,.15,.23,.15,8), box(.77,.00,.77,.15,.23,.15,8),
+    box(.03,.21,.03,.94,.13,.94,8), // timber support and frame
+    box(.065,.34,.02,.87,.15,.93,115), // compact mattress
+    box(.045,.48,.02,.91,.12,.85,88), // red wool blanket
+    box(.03,.35,.87,.94,.23,.10,8), // footboard, one coherent piece
+  ];
+  const bedHeadParts = [
+    box(.08,.00,.08,.15,.23,.15,8), box(.77,.00,.08,.15,.23,.15,8),
+    box(.08,.00,.77,.15,.23,.15,8), box(.77,.00,.77,.15,.23,.15,8),
+    box(.03,.21,.03,.94,.13,.94,8),
+    box(.065,.34,.02,.87,.15,.93,115),
+    box(.12,.49,.18,.76,.13,.32,123), // soft pale pillow
+    box(.045,.48,.52,.91,.12,.46,88), // blanket touches the foot section
+    box(.03,.35,.02,.94,.35,.10,8), // tall wooden headboard
+  ];
+  for (let facing = 0; facing < 4; facing++) {
+    shapes.set(126+facing, bedFeetParts.map(p=>rotateBedBox(p,facing)));
+    shapes.set(130+facing, bedHeadParts.map(p=>rotateBedBox(p,facing)));
+  }
   shapes.set(87, [box(.04, .14, .04, .92, .38, .92), box(.04, .52, .73, .92, .42, .23), box(.04, .30, .06, .18, .38, .72), box(.78, .30, .06, .18, .38, .72)]);
   shapes.set(88, [box(.02, 0, .02, .96, .045, .96)]);
   shapes.set(92, [box(.04, 0, .43, .92, .10, .14), box(.04, .90, .43, .92, .10, .14), box(.04, 0, .43, .10, 1, .14), box(.86, 0, .43, .10, 1, .14), box(.45, 0, .45, .10, 1, .10)]);
@@ -218,12 +294,15 @@ const Voxel = (() => {
   const doorLower = (id) => id >= 57 && id <= 64;
   const doorUpper = (id) => id >= 97 && id <= 104;
   const torchWall = (id) => id >= 93 && id <= 96;
+  const bedFoot = (id) => id >= 126 && id <= 129;
+  const bedHead = (id) => id >= 130 && id <= 133;
+  const bedOffset = (id) => [[0,0,-1],[1,0,0],[0,0,1],[-1,0,0]][(id-126)%4];
   const torchIdForNormal = (normal) => normal[0] === 1 ? 93 : normal[0] === -1 ? 94 : normal[2] === 1 ? 95 : normal[2] === -1 ? 96 : 25;
   const torchSupport = (id) => id === 93 ? [-1,0,0] : id === 94 ? [1,0,0] : id === 95 ? [0,0,-1] : id === 96 ? [0,0,1] : id === 25 ? [0,-1,0] : null;
-  const itemId = (id) => id >= 49 && id <= 52 ? 49 : id >= 57 && id <= 64 || doorUpper(id) ? 57 : id >= 69 && id <= 72 ? 69 : torchWall(id) ? 25 : id === 86 ? 85 : id;
+  const itemId = (id) => bedFoot(id) || bedHead(id) ? 46 : id >= 49 && id <= 52 ? 49 : id >= 57 && id <= 64 || doorUpper(id) ? 57 : id >= 69 && id <= 72 ? 69 : torchWall(id) ? 25 : id === 86 ? 85 : id;
   const orientBlock = (id, yaw) => {
     const dir = ((Math.round(yaw / (Math.PI / 2)) % 4) + 4) % 4;
-    return id === 49 || id === 57 || id === 69 ? id + dir : id;
+    return id === 46 ? 126 + dir : id === 49 || id === 57 || id === 69 ? id + dir : id;
   };
   const buildCategories = [
     ['Madeira', [8, 68, 49, 53, 55, 57, 77, 78, 79, 83, 84, 85, 87, 91]],
@@ -942,6 +1021,9 @@ const Voxel = (() => {
     doorLower,
     doorUpper,
     torchWall,
+    bedFoot,
+    bedHead,
+    bedOffset,
     torchIdForNormal,
     torchSupport,
     orientBlock,
