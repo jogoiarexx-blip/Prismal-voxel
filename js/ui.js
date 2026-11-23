@@ -51,7 +51,7 @@
     mpHostWorldId = null, mpGuestProfile = null, mpGuestRevision = 0, mpGuestSeq = 0, mpLastGuestSync = 0,
     mpHostGuestId = null, mpChestBusy = false, mpGuestCheckpointAt = 0, chatUnlockPending = false, mpLastHostCheckpoint = 0,
     mpResyncAt=0, mpLastGuestInvHash=null, mpInventorySaving=false,
-    pendingRecovery=null, lastEmergencyAt=0, lastMobilePerfAt=0, warnedEmergency=false;
+    pendingRecovery=null, lastEmergencyAt=0, lastMobilePerfAt=0, warnedEmergency=false, navArrivedKey=null;
   // A shareable URL fragment carries signaling data without a backend.
   // Remove it from the address bar after reading; it is never sent to GitHub Pages.
   let mpInviteConsumed = false;
@@ -130,7 +130,7 @@
   };
   $('#full').onclick = fullscreen;
   $('#expCard').onclick = () => guide('home', 2);
-  $('#expCompass').onclick = () => guide('play', 2);
+  $('#expCompass').onclick = () => navigateTo('objective');
   $('#houseCompass').onclick = () => houseMenu();
   const motes = $('.motes');
   for (let i = 0; i < 15; i++) {
@@ -1084,22 +1084,50 @@
     hud();
     toast(settings.thirdPerson ? 'Câmera em terceira pessoa' : 'Câmera em primeira pessoa');
   }
+  function navigateTo(mode) {
+    if (!g) return;
+    const target=g.setNavMode(mode);
+    navArrivedKey=null;
+    if (mode==='off') toast('Navegação desativada');
+    else toast(target ? 'Destino: '+target.label : 'Destino indisponível. Escolha outro no navegador.');
+    hud();
+  }
+  function navigationCard(key, title, hint, enabled, selected=false) {
+    return '<button class="nav-choice'+(selected?' on':'')+'" data-act="nav:'+esc(key)+'"'+(!enabled?' disabled':'')+'>'+
+      '<span class="nav-choice-title">'+esc(title)+'</span><small>'+esc(hint)+'</small>'+
+      '<b aria-hidden="true">'+(selected?'✓':'➜')+'</b></button>';
+  }
   function houseMenu() {
     if (!g) return;
-    const h=g.house;
-    const meters=h?Math.round(Math.hypot(g.p.x-h.x-.5,g.p.z-h.z-.5)):null;
-    panel('house','Minha casa',
-      '<p class="house-lede">Marque sua casa em qualquer lugar ou use uma cama para definir o ponto de renascimento. O marcador fica salvo neste mundo, inclusive depois de sair da região.</p>'+
-      '<div class="house-details">' +
-      (h ? '<div><b>Casa registrada</b><small>X '+h.x+' · Y '+h.y+' · Z '+h.z+'</small><small>Distância: '+meters+' metros</small></div>' :
-        '<div><b>Nenhuma casa marcada</b><small>Use o botão abaixo para marcar a posição atual.</small></div>') +
-      '</div>'+
-      '<div class="stack house-actions">' +
-       btn('house-mark','⌂ Marcar minha casa aqui','primary')+
-       (h ? btn('house-track',g.trackHouse?'◉ Ocultar bússola da casa':'◉ Mostrar bússola da casa','secondary') : '')+
-       (h ? btn('house-clear','Remover marcador da casa','flat') : '') +
-       btn('resume','Voltar ao jogo','secondary')+
-      '</div>',true);
+    const active=Navigation.normalize(g.navMode), h=g.house;
+    const target=Navigation.target(g), guidance=Navigation.guidance(g.p,target);
+    const homeDist=h?Math.round(Math.hypot(g.p.x-h.x-.5,g.p.z-h.z-.5)):null;
+    const next=g.destination;
+    const options=[
+      navigationCard('home','⌂ Minha casa',h?'Casa: '+homeDist+' m · '+h.x+', '+h.y+', '+h.z:'Marque sua casa para ativar',!!h,active==='home'),
+      navigationCard('objective','◇ Próximo objetivo',next?(Voxel.ruins[next.id]?.name||'Ruína')+' · '+Math.round(Math.hypot(g.p.x-next.x,g.p.z-next.z))+' m':'Todos os selos já registrados',!!next,active==='objective'),
+      navigationCard('bag','▣ Mochila perdida',g.bag?'Recupere os itens deixados ao morrer':'Nenhuma mochila perdida',!!g.bag,active==='bag'),
+      navigationCard('pin','⚑ Ponto marcado',g.navPin?'X '+g.navPin.x+' · Z '+g.navPin.z:'Marque um local da exploração',!!g.navPin,active==='pin'),
+    ];
+    for(let i=0;i<3;i++) {
+      const s=g.sites?.find(v=>v?.id===i);
+      if(!s) continue;
+      const label=Voxel.ruins[i]?.name||'Ruína '+(i+1);
+      options.push(navigationCard('ruin:'+i, '◇ '+label,
+        (g.seals[i]?'Selo coletado':'Selo pendente')+' · '+Math.round(Math.hypot(g.p.x-s.x,g.p.z-s.z))+' m',true,active==='ruin:'+i));
+    }
+    panel('house','Navegador de destinos',
+      '<p class="house-lede">Escolha um destino para receber orientação no jogo. A seta mostra a direção em <strong>linha reta</strong>: contorne rios, paredões e construções.</p>'+
+      '<div class="nav-active"><small>DESTINO SELECIONADO</small><strong>'+esc(target?.label||'Nenhum destino ativo')+'</strong>'+
+      '<span>'+(guidance ? guidance.distance+' m · '+esc(guidance.arrived?'Você chegou!':guidance.turn+(guidance.height?' · '+guidance.height:'')) : 'Selecione um local abaixo')+'</span></div>'+
+      '<div class="nav-choices">'+options.join('')+'</div>'+
+      '<div class="nav-management">'+btn('house-mark','⌂ Marcar casa aqui','secondary')+
+        btn('nav-pin','⚑ Marcar ponto aqui','secondary')+
+        (g.navPin?btn('nav-clear-pin','Remover ponto marcado','flat'):'')+
+        (h?btn('house-clear','Remover casa','flat'):'')+
+        btn('nav:off','Desligar orientação','flat')+'</div>'+
+      '<p class="smallnote">Atalhos: <kbd>H</kbd> abrir navegador · <kbd>N</kbd> alternar Casa/Objetivo. Toque na barra da bússola no celular.</p>'+
+      btn('resume','Voltar ao jogo','primary'),true);
   }
   function pauseMenu() {
     if (!g) return;
@@ -1120,7 +1148,7 @@
         btn('resume', icon('play') + 'Voltar ao jogo', 'primary') +
         btn('opgame', icon('gear') + 'Opções') +
         btn('guidegame', icon('book') + 'Guia de campo') +
-        btn('housemenu', '⌂ Localizar minha casa') +
+        btn('housemenu', '◇ Navegar: casa e objetivos') +
         btn('save-now', '◉ Salvar progresso agora', 'secondary') +
         '<p class="smallnote">Salvamento: '+esc(g.saveState)+'</p>'+
         (mpRole==='guest' && mpGuestProfile?.recoveryBackup ?
@@ -1270,7 +1298,7 @@
         '<p class="smallnote">Mova o mouse para olhar. Clique no cenário para capturar o cursor e use Esc para liberá-lo. No celular, deslize o dedo sobre o cenário. As teclas Q e R também servem para minerar e usar.</p>';
     } else if (tab === 1) {
       body =
-        '<div class="guidecontent"><h3>Cultivo e abrigo</h3><p>Quebre grama para obter sementes. Coloque um canteiro junto à água, selecione as sementes e use o canteiro. Colha o trigo dourado e asse pão no forno. A cama nova ocupa dois blocos e define o retorno e a bússola da casa. Use H ou o botão Minha casa para marcar qualquer lugar.</p><h3>Antes da primeira noite</h3><p>Segure Espaço ou Nadar para subir e solte para afundar. Para sair da água, nade em direção a uma margem de até um bloco e segure Espaço ou Nadar. Segure o botão esquerdo em um tronco e se aproxime para recolher a madeira. Abra a mochila com E e transforme um tronco em quatro tábuas.</p><h3>Monte sua oficina</h3><p>Fabrique uma bancada com quatro tábuas e coloque-a no chão. Perto dela, combine três tábuas e duas hastes para produzir sua primeira picareta. Abra a oficina de construção (B no teclado) para fabricar escadas, lajes, cercas, portas, tijolos e telhas.</p><h3>Ilumine o abrigo</h3><p>Procure carvão na pedra ou queime um tronco no forno. Combine carvão e haste para fazer tochas. Os raspejantes recuam diante da luz.</p><h3>Animais pacíficos</h3><p>Durante o dia, procure ovelhas, porcos e vacas nos campos gramados, inclusive no modo Pacífico. Eles não atacam. Equipe trigo para alimentar ovelhas ou vacas, ou frutas para porcos; mire no animal próximo e use o botão direito ou toque no cenário. A lã também pode ser usada para fabricar camas. Animais feridos fogem por alguns segundos.</p><h3>Recupere forças</h3><p>Quebre folhas para encontrar frutas. Selecione-as e use o botão direito para comer. Se cair, volte ao local para recuperar a mochila.</p></div>';
+        '<div class="guidecontent"><h3>Cultivo e abrigo</h3><p>Quebre grama para obter sementes. Coloque um canteiro junto à água, selecione as sementes e use o canteiro. Colha o trigo dourado e asse pão no forno. A cama nova ocupa dois blocos e define o retorno e a bússola da casa. Use H para marcar a casa ou outro ponto e alternar entre casa e objetivos com N.</p><h3>Antes da primeira noite</h3><p>Segure Espaço ou Nadar para subir e solte para afundar. Para sair da água, nade em direção a uma margem de até um bloco e segure Espaço ou Nadar. Segure o botão esquerdo em um tronco e se aproxime para recolher a madeira. Abra a mochila com E e transforme um tronco em quatro tábuas.</p><h3>Monte sua oficina</h3><p>Fabrique uma bancada com quatro tábuas e coloque-a no chão. Perto dela, combine três tábuas e duas hastes para produzir sua primeira picareta. Abra a oficina de construção (B no teclado) para fabricar escadas, lajes, cercas, portas, tijolos e telhas.</p><h3>Ilumine o abrigo</h3><p>Procure carvão na pedra ou queime um tronco no forno. Combine carvão e haste para fazer tochas. Os raspejantes recuam diante da luz.</p><h3>Animais pacíficos</h3><p>Durante o dia, procure ovelhas, porcos e vacas nos campos gramados, inclusive no modo Pacífico. Eles não atacam. Equipe trigo para alimentar ovelhas ou vacas, ou frutas para porcos; mire no animal próximo e use o botão direito ou toque no cenário. A lã também pode ser usada para fabricar camas. Animais feridos fogem por alguns segundos.</p><h3>Recupere forças</h3><p>Quebre folhas para encontrar frutas. Selecione-as e use o botão direito para comer. Se cair, volte ao local para recuperar a mochila.</p></div>';
     } else if (tab === 2) {
       const expedition = g || worldList[0];
       const names = Voxel.ruins
@@ -1293,12 +1321,12 @@
         })
         .join('');
       body =
-        '<div class="guidecontent"><h3>Ecos dos Arquitetos</h3><p>Siga a bússola até as três ruínas. Aproxime-se do núcleo turquesa e use o botão direito ou R para despertar seu selo.</p><ul class="ruin-list">' +
+        '<div class="guidecontent"><h3>Ecos dos Arquitetos</h3><p>Abra o Navegador (H) para selecionar a próxima ruína ou voltar à casa. Siga a bússola até as três ruínas. Aproxime-se do núcleo turquesa e use o botão direito ou R para despertar seu selo.</p><ul class="ruin-list">' +
         names +
         '</ul><p>O primeiro selo libera a pedra rúnica. Com os três, use a bancada para combinar cristal, cobre e vidro em um Farol Prisma. Coloque-o para acender uma aurora sobre sua base.</p></div>';
     } else
       body =
-        '<p>Mundo Prisma é um sandbox voxel de exploração, sobrevivência e construção. Explore os Campos de Âmbar, a Floresta de Névoa e as Dunas de Vidro. Nas dunas, procure os obeliscos com cristais no topo.</p><p class="muted">Versão jogável 0.9.17 · Solo e multiplayer experimental<br>Arte, sprites, tipografia de título e efeitos sonoros criados para Mundo Prisma. Seu progresso é salvo neste navegador.</p>';
+        '<p>Mundo Prisma é um sandbox voxel de exploração, sobrevivência e construção. Explore os Campos de Âmbar, a Floresta de Névoa e as Dunas de Vidro. Nas dunas, procure os obeliscos com cristais no topo.</p><p class="muted">Versão jogável 0.9.18 · Solo e multiplayer experimental<br>Arte, sprites, tipografia de título e efeitos sonoros criados para Mundo Prisma. Seu progresso é salvo neste navegador.</p>';
     panel(
       'guide',
       'Guia de campo',
@@ -1803,32 +1831,32 @@
         : g.hit
           ? name(g.hit.b)
           : '';
-    const site = g.destination;
-    const compass = $('#expCompass');
-    if (site) {
-      const dx = site.x + 0.5 - g.p.x,
-        dz = site.z + 0.5 - g.p.z;
-      const rel = Math.atan2(dx, -dz) - g.p.yaw;
-      compass.querySelector('i').style.transform = 'rotate(' + rel + 'rad)';
-      compass.querySelector('span').textContent =
-        Voxel.ruins[site.id].name + ' · ' + Math.round(Math.hypot(dx, dz)) + ' m';
+    const navTarget=Navigation.target(g);
+    const nav=Navigation.guidance(g.p,navTarget);
+    const compass=$('#expCompass');
+    const activeRuins=g.destination;
+    compass.querySelector('i').style.transform='rotate(0rad)';
+    compass.querySelector('span').textContent=activeRuins ?
+      '◇ Objetivo · '+esc(Voxel.ruins[activeRuins.id]?.name||'Ruína') :
+      (g.goals.place30?'Expedição concluída':'3 selos · Fabrique o farol');
+    const navBtn=$('#houseCompass'), navLabel=navBtn.querySelector('span'),navArrow=navBtn.querySelector('i'),navText=$('#navDirection');
+    if(navTarget && nav){
+      navArrow.style.transform='rotate('+nav.angle+'rad)';
+      navLabel.textContent=(navTarget.type==='home'?'⌂ ':navTarget.type==='bag'?'▣ ':'◇ ')+navTarget.label+' · '+nav.distance+' m';
+      navText.textContent=nav.arrived?'✓ Você chegou':nav.turn+(nav.height?' · '+nav.height:'');
+      navBtn.classList.add('tracking');
+      navBtn.classList.toggle('arrived',nav.arrived);
+      if(nav.arrived && navArrivedKey!==nav.key){
+        navArrivedKey=nav.key;
+        toast('Destino alcançado: '+navTarget.label);
+      }else if(!nav.arrived && navArrivedKey===nav.key && nav.distance>18){
+        navArrivedKey=null;
+      }
     } else {
-      compass.querySelector('i').style.transform = 'rotate(0)';
-      compass.querySelector('span').textContent = g.goals.place30
-        ? 'Expedição concluída'
-        : '3 selos · Fabrique o farol';
-    }
-    const houseCompass=$('#houseCompass'), houseText=houseCompass.querySelector('span'), houseArrow=houseCompass.querySelector('i');
-    if (g.house && g.trackHouse) {
-      const dx=g.house.x+.5-g.p.x, dz=g.house.z+.5-g.p.z;
-      const angle=Math.atan2(dx,-dz)-g.p.yaw;
-      houseArrow.style.transform='rotate('+angle+'rad)';
-      houseText.textContent='Minha casa · '+Math.round(Math.hypot(dx,dz))+' m';
-      houseCompass.classList.add('tracking');
-    } else {
-      houseArrow.style.transform='rotate(0rad)';
-      houseText.textContent=g.house?'Casa marcada · ver opções':'⌂ Marcar casa';
-      houseCompass.classList.remove('tracking');
+      navArrow.style.transform='rotate(0rad)';
+      navLabel.textContent=g.navMode==='off'?'Navegação desligada':'Escolher destino (H)';
+      navText.textContent='Casa · ruínas · mochila';
+      navBtn.classList.remove('tracking','arrived');
     }
     $('#breakbar').hidden = !g.holding || !g.progress;
     $('#breakbar span').style.width = Math.max(0, g.progress) * 100 + '%';
@@ -1865,7 +1893,7 @@
     $('#debug').hidden = !debug;
     if (debug)
       $('#debug').textContent =
-        'PRISMA 0.9.17 · ' +
+        'PRISMA 0.9.18 · ' +
         renderer.type +
         '\n' +
         Math.round(fps) +
@@ -2002,14 +2030,23 @@
       case 'housemenu':
         houseMenu();
         break;
+      case 'nav':
+        if(g) {navigateTo(node.dataset.act.slice(4));houseMenu();}
+        break;
+      case 'nav-pin':
+        g.markNavPin(); navArrivedKey=null; houseMenu(); toast('Ponto de interesse marcado');
+        break;
+      case 'nav-clear-pin':
+        g.clearNavPin(); navArrivedKey=null; houseMenu(); toast('Ponto removido');
+        break;
       case 'house-mark':
-        g.markHouse(); houseMenu(); toast('Casa marcada. A bússola indica o caminho!');
+        g.markHouse(); navArrivedKey=null; houseMenu(); toast('Casa marcada. A bússola indica o caminho!');
         break;
       case 'house-track':
         g.trackHouse=!g.trackHouse; g.changed(); houseMenu();
         break;
       case 'house-clear':
-        g.clearHouse(); houseMenu(); toast('Marcador removido');
+        g.clearHouse(); navArrivedKey=null; houseMenu(); toast('Marcador removido');
         break;
       case 'guidegame':
         guide('pause');
@@ -2321,6 +2358,9 @@
         break;
       case 'KeyH':
         houseMenu();
+        break;
+      case 'KeyN':
+        navigateTo(g.navMode==='home'?'objective':g.house?'home':'objective');
         break;
       case 'KeyJ':
         guide('play', 2);

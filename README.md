@@ -1,4 +1,4 @@
-# Mundo Prisma v0.9.17 — recuperação e desempenho — Recuperação P2P e inventários duráveis — Proteção de progresso e cooperação
+# Mundo Prisma v0.9.18 — recuperação e desempenho — Recuperação P2P e inventários duráveis — Proteção de progresso e cooperação
 
 **Estabilização:** a gravação do mundo agora faz novas tentativas com espera crescente (5 a 120 segundos) caso a gravação local falhe. Mudanças feitas durante uma gravação continuam pendentes e são salvas novamente. Partidas solo criam um checkpoint a cada 45 segundos; o anfitrião de P2P, a cada 30 segundos. Há um botão “Salvar progresso agora” no menu de pausa, com o status da gravação. As transferências de baú são serializadas por mundo, evitando conflitos entre operações simultâneas; o convidado recebe uma resposta explícita se o baú estiver ocupado. O inventário e os mundos existentes permanecem compatíveis.
 
@@ -307,3 +307,11 @@ Execute `node tests/coop.test.cjs`, `node tests/chat.test.cjs` e `node tests/web
 - **Recuperação segura:** ignora dados inválidos ou anteriores ao salvamento, não apaga um checkpoint mais novo quando uma gravação antiga termina e não usa o checkpoint de convidado como mundo oficial.
 - **Mobile:** distância de construção dos setores reduzida no controle por toque e escala dinâmica de renderização (72 a 100% da qualidade escolhida) quando o FPS cai.
 - **Limite:** checkpoints grandes (>1,8 milhão de caracteres) ou sem espaço livre no armazenamento local não poderão ser gravados. O usuário deve manter backups manuais de mundos importantes.
+
+## Navegador v0.9.18
+
+- Destino ativo salvo por mundo: casa, próxima ruína, ruína escolhida, mochila perdida ou ponto de interesse.
+- Orientação com seta relativa à câmera, distância em linha reta, instrução de curva, indicação de altura e chegada.
+- H abre o painel; N alterna Casa/Objetivo; toque na barra para escolher destino; botão de expedição acompanha próximo objetivo.
+- Chegada informada uma vez por visita, rearmando ao se afastar do alvo.
+- Não há cálculo de caminho para contornar obstáculos: é necessário desviar de rios, montanhas e paredes.

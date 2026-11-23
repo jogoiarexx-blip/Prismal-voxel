@@ -83,7 +83,10 @@ const Game = (() => {
       this.plots = rec.plots || {};
       this.bed = rec.bed || null;
       this.house = rec.house && Number.isFinite(rec.house.x) && Number.isFinite(rec.house.z) ? rec.house : null;
-      this.trackHouse = rec.trackHouse !== false;
+      this.trackHouse = rec.trackHouse !== false; // legacy preference
+      // Navigation is saved in each world; older worlds default to their house.
+      this.navMode = Navigation.normalize(rec.navMode || (this.house && this.trackHouse ? 'home' : 'objective'));
+      this.navPin = rec.navPin && ['x','y','z'].every(k=>Number.isFinite(rec.navPin[k])) ? rec.navPin : null;
       this.seed = Voxel.seedHash(rec.seed);
       this.p = { ...rec.p };
       this.inv = rec.inv;
@@ -1176,12 +1179,33 @@ const Game = (() => {
       if (![x,y,z].every(Number.isFinite)) return false;
       this.house = {x:Math.floor(x),y:Math.floor(y),z:Math.floor(z),label:String(label).slice(0,40)};
       this.trackHouse = true;
+      // Marking a house immediately selects it as the active waypoint.
+      this.navMode = 'home';
       this.changed();
       return true;
+    }
+    setNavMode(mode) {
+      const selected=Navigation.normalize(mode);
+      this.navMode=selected;
+      this.changed();
+      return Navigation.target(this);
+    }
+    markNavPin(label='Meu ponto') {
+      const p=this.p;
+      this.navPin={x:Math.floor(p.x),y:Math.floor(p.y),z:Math.floor(p.z),label:String(label).slice(0,36)};
+      this.navMode='pin';
+      this.changed();
+      return this.navPin;
+    }
+    clearNavPin() {
+      this.navPin=null;
+      if (this.navMode==='pin') this.navMode=this.house?'home':'objective';
+      this.changed();
     }
     clearHouse() {
       this.house = null;
       this.trackHouse = true;
+      if (this.navMode==='home') this.navMode='objective';
       this.changed();
     }
     bedPair(x,y,z,b) {
@@ -1695,6 +1719,8 @@ const Game = (() => {
         bed: this.bed,
         house: this.house,
         trackHouse: this.trackHouse,
+        navMode: this.navMode,
+        navPin: this.navPin,
         seals: this.seals,
       });
     }

@@ -43,7 +43,7 @@ function setupWorld({save=true}={}){
  const ui=fs.readFileSync(path+'js/ui.js','utf8');
  const sw=fs.readFileSync(path+'offline.js','utf8');
  ok('chat HUD and script registration',()=>{assert.match(html,/id="mpChatFeed"/);assert.match(html,/id="mpChatComposer"/);assert.match(html,/js\/coop\.js/);assert.match(ui,/setTimeout\(\(\)=>item\.remove\(\),10000\)/);assert.match(ui,/KeyT/)});
- ok('offline resources versioned',()=>{assert.match(sw,/0\.9\.17/);assert.match(sw,/\.\/js\/coop\.js/);assert.match(html,/VERSÃO 0\.9\.17/)});
+ ok('offline resources versioned',()=>{const v=html.match(/VERSÃO (\d+\.\d+\.\d+)/)?.[1];assert.ok(v);assert.ok(sw.includes(v));assert.match(sw,/\.\/js\/coop\.js/)});
  ok('world snapshot preserves guest storage',()=>{const gm=fs.readFileSync(path+'js/game.js','utf8');assert.match(gm,/guestProfiles: this\.guestProfiles/);assert.match(gm,/chestRevisions: this\.chestRevisions/)});
  console.log('TOTAL PASS',count);
 })().catch(e=>{console.error(e);process.exit(1)})

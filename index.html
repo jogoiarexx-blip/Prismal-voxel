@@ -65,7 +65,7 @@
             <button id="guide"><i data-ico="book"></i>Guia de campo</button
             ><button id="quickNew" hidden><i data-ico="plus"></i>Novo mundo</button>
           </div>
-          <span class="version"><b></b>VERSÃO 0.9.17</span>
+          <span class="version"><b></b>VERSÃO 0.9.18</span>
         </footer>
       </section>
       <section id="game" hidden aria-label="Mundo jogável">
@@ -92,11 +92,11 @@
             <div><input id="mpChatQuickInput" maxlength="280" placeholder="Enviar mensagem…" aria-label="Mensagem para o amigo">
               <button type="submit">Enviar</button><button type="button" id="mpChatClose" aria-label="Fechar conversa">×</button></div>
           </form>
-          <button id="expCompass" title="Abrir diário da expedição">
+          <button id="expCompass" title="Seguir o próximo objetivo (atalho N)" aria-label="Seguir o próximo objetivo">
             <i aria-hidden="true">▲</i><span></span>
           </button>
-          <button id="houseCompass" title="Marcar ou localizar a casa (H)" aria-label="Localizar minha casa">
-            <i aria-hidden="true">▲</i><span>⌂ Marcar casa</span>
+          <button id="houseCompass" title="Escolher destino (H)" aria-label="Abrir navegador de destinos">
+            <i aria-hidden="true">▲</i><span>Escolher destino</span><small id="navDirection" aria-live="off"></small>
           </button>
           <div id="cameraHint" hidden></div>
           <div id="cross"></div>
@@ -158,6 +158,7 @@
     <script defer src="js/world.js"></script>
     <script defer src="js/render.js"></script>
     <script defer src="js/store.js"></script>
+    <script defer src="js/navigation.js"></script>
     <script defer src="js/game.js"></script>
     <script defer src="js/multiplayer.js"></script>
     <script defer src="js/coop.js"></script>
