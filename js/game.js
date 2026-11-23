@@ -330,9 +330,10 @@ const Game = (() => {
           if(ok && b===0 && [5,27].includes(previous) && !this.networkGuest)this.finishTree(x,y,z,previous);
           return ok;
         }
-        (this.edits[chunkKey] ||= {})[idx(x&15,y,z&15)]=b;
+        // Use the same revision-aware path as the batch editor. Otherwise a
+        // worker job started before this edit could overwrite the visible block.
+        this.applyBlockBatch([[x,y,z,b]]);
         if([134,135].includes(b))this.saplings[x+','+y+','+z]={start:this.elapsed};
-        this.changed();
         return true;
       } finally { this.applyingRemoteEdit=false; }
     }
@@ -393,8 +394,11 @@ const Game = (() => {
       for (const [x,y,z,id] of ops) {
         const cx = x >> 4, cz = z >> 4, k = key(cx,cz);
         const index = idx(x & 15,y,z & 15);
+        // Save edits even if the chunk was unloaded while a blueprint, tree
+        // collapse or network update was in progress. Rebuild on next load.
         (this.edits[k] ||= {})[index] = id;
-        this.chunks.get(k).a[index] = id;
+        const chunk = this.chunks.get(k);
+        if (chunk) chunk.a[index] = id;
         const xs = [0], zs = [0];
         if ((x & 15) < 3) xs.push(-1);
         if ((x & 15) > 12) xs.push(1);
@@ -403,8 +407,14 @@ const Game = (() => {
         for (const a of xs) for (const b of zs) dirty.add(key(cx+a,cz+b));
       }
       for (const k of dirty) {
+        // The worker may already be meshing this chunk from an older snapshot.
+        // Bump the revision even when unloaded, so received() rejects stale work.
         this.revs.set(k, (this.revs.get(k) || 0) + 1);
-        if (this.chunks.has(k)) this.pending.add(k);
+        const [px,pz] = k.split(',').map(Number);
+        const inStream = Number.isFinite(this.radius) &&
+          Math.abs(px - this.cx) <= this.radius + 1 &&
+          Math.abs(pz - this.cz) <= this.radius + 1;
+        if (this.chunks.has(k) || inStream) this.pending.add(k);
       }
       for (const k of dirty) if (this.chunks.has(k)) this.relight(k);
       this.pump();
@@ -416,19 +426,11 @@ const Game = (() => {
       const valid=ops.every(v=>Array.isArray(v)&&v.length===4&&v.every(Number.isInteger)&&
         Math.abs(v[0])<100000&&Math.abs(v[2])<100000&&v[1]>0&&v[1]<Voxel.H&&v[3]>=0&&(v[3]<105||Voxel.bedFoot(v[3])||Voxel.bedHead(v[3])||v[3]===134||v[3]===135||v[3]===136));
       if (!valid) return false;
-      const loaded=[],unloaded=[];
-      for(const entry of ops) {
-        if (this.chunks.has(key(entry[0]>>4,entry[2]>>4))) loaded.push(entry);
-        else unloaded.push(entry);
-      }
       this.applyingRemoteEdit=true;
       try {
-        if(loaded.length)this.applyBlockBatch(loaded);
-        for(const [x,y,z,b] of unloaded) {
-          const k=key(x>>4,z>>4);
-          (this.edits[k] ||= {})[idx(x&15,y,z&15)]=b;
-        }
-        if(unloaded.length)this.changed();
+        // One atomic revision pass also invalidates worker jobs for offscreen
+        // edits. Neighbouring visible meshes are refreshed at chunk borders.
+        this.applyBlockBatch(ops);
       } finally {this.applyingRemoteEdit=false;}
       return true;
     }
