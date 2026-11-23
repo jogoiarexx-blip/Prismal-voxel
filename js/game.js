@@ -98,7 +98,8 @@ const Game = (() => {
       this.previousEye = null;
       this.chests = rec.chests || {};
       this.saplings = rec.saplings || {};
-      this.chestRevisions = Object.create(null);
+      this.chestRevisions = rec.chestRevisions || Object.create(null);
+      this.guestProfiles = rec.guestProfiles || Object.create(null);
       this.mobs = rec.mobs || [];
       // IDs survive saves and let the host address creatures without ambiguity.
       this.nextMobId = Math.max(1, ...this.mobs.map(m => Number.isSafeInteger(m.id) ? m.id + 1 : 1));
@@ -1676,6 +1677,8 @@ const Game = (() => {
         elapsed: this.elapsed,
         edits: this.edits,
         chests: this.chests,
+        chestRevisions: this.chestRevisions,
+        guestProfiles: this.guestProfiles,
         saplings: this.saplings,
         drops: this.drops,
         mobs: this.mobs,
@@ -1700,8 +1703,8 @@ const Game = (() => {
         .then(() => Saves.put(data))
         .then(
           () => {
-            this.saveState = 'Em dia';
             this.dirtySave = this.changeVersion !== savedVersion;
+            this.saveState = this.dirtySave ? 'Alterações pendentes' : 'Em dia';
             return true;
           },
           () => {

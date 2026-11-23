@@ -2201,3 +2201,38 @@ body.touchgame .game-tools .build-trigger span { display:none; }
   text-shadow:0 1px #0009;}
 #game .mp-status[hidden]{display:none;}
 @media(max-width:600px){#game .mp-status{top:151px;right:8px;max-width:60vw;font-size:9px;padding:5px 7px;}}
+
+
+/* v0.9.13 — Chat P2P overlay, no gameplay pause; bubbles expire in 10 seconds. */
+#gamehud .mp-chat-feed {position:absolute;left:max(16px,env(safe-area-inset-left));bottom:154px;
+  width:min(360px,46vw);max-height:190px;display:flex;flex-direction:column;justify-content:flex-end;gap:7px;
+  z-index:5;pointer-events:none;overflow:hidden;}
+#gamehud .mp-chat-bubble {padding:10px 12px;background:#101e2be8;border:1px solid #c8a466a6;
+  border-left:3px solid #5de2c7;border-radius:9px;box-shadow:0 4px 14px #0008;
+  color:#f8f2da;font:600 13px/1.4 'Segoe UI',sans-serif;overflow-wrap:anywhere;animation:mp-chat-in .18s ease-out;}
+#gamehud .mp-chat-bubble strong {color:#90f6e2;}
+@keyframes mp-chat-in {from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+#gamehud .mp-chat-composer {position:absolute;left:max(16px,env(safe-area-inset-left));bottom:355px;
+  z-index:7;width:min(420px,calc(100vw - 32px));padding:12px;border:1px solid #d8af68;border-radius:12px;
+  background:#111e2bf5;box-shadow:0 12px 24px #000a;pointer-events:auto;}
+#gamehud .mp-chat-composer[hidden] {display:none!important;}
+#gamehud .mp-chat-composer label {display:block;margin-bottom:8px;color:#f6d890;font:700 12px 'Segoe UI',sans-serif;}
+#gamehud .mp-chat-composer div {display:flex;gap:6px;align-items:stretch;}
+#gamehud .mp-chat-composer input {flex:1;min-width:0;padding:10px;color:#fff;background:#192c36;
+  border:1px solid #93a2a0;border-radius:7px;font-size:16px;}
+#gamehud .mp-chat-composer button {flex-shrink:0;padding:8px 11px;border-radius:7px;border:1px solid #d8af68;
+  background:#ae7d35;color:#fff8e5;font-weight:700;}
+#gamehud .mp-chat-composer #mpChatClose {background:#27353e;color:#f8dba6;}
+#dialog .mp-advanced {margin:10px 0 16px;padding:12px;border:1px solid #716a55;border-radius:10px;background:#11232c;}
+#dialog .mp-advanced summary {cursor:pointer;color:#f7d796;font-weight:700;}
+#dialog .mp-advanced textarea {margin-top:12px;}
+@media(max-width:650px) {
+ #gamehud .mp-chat-feed {bottom:240px;left:max(8px,env(safe-area-inset-left));width:min(78vw,330px);max-height:130px;}
+ #gamehud .mp-chat-composer {bottom:calc(370px + env(safe-area-inset-bottom));left:8px;}
+ #gamehud .mp-chat-bubble {font-size:12px;padding:8px;}
+}
+@media(max-height:440px) and (orientation:landscape) {
+ #gamehud .mp-chat-feed {bottom:93px;width:min(42vw,300px);max-height:105px;}
+ #gamehud .mp-chat-composer {bottom:125px;}
+}
+@media(prefers-reduced-motion:reduce){#gamehud .mp-chat-bubble{animation:none;}}

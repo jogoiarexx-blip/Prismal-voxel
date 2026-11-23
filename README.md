@@ -1,4 +1,14 @@
-# Mundo Prisma v0.9.12 — árvores, fazenda, zumbis e baús cooperativos
+# Mundo Prisma v0.9.13 — Prévia de estabilização da versão 1.0
+
+Esta versão prioriza consistência de baús e perfis do convidado no P2P, recuperação manual de sessões, chat sobreposto, convite por link e gravação segura das operações de baú.
+
+**Importante:** um código P2P de 6 dígitos sem servidor não é possível neste modo: o WebRTC precisa trocar as informações de sinalização. Compartilhe o link em um toque e devolva a resposta. Um código curto de sala exigiria um sinalizador confiável e uma opção TURN para redes restritivas.
+
+**Chat:** clique em Conversa ou pressione T na partida, digite e envie sem pausar o jogo. Mensagens recebidas e enviadas aparecem por dez segundos no canto inferior esquerdo.
+
+**Reconexão:** se a conexão cair de vez, o anfitrião usa Pausa → Recriar convite P2P, e o convidado usa Reconectar com novo convite. O anfitrião persiste o perfil e inventário associado ao identificador do convidado, e cada transação de baú é gravada antes da confirmação. Testes reais entre redes diferentes continuam obrigatórios para sair do estágio experimental.
+
+# Mundo Prisma v0.9.13 — árvores, fazenda, zumbis e baús cooperativos
 
 Atualização incremental sobre a v0.9.11, com compatibilidade com mundos `schema:1`.
 

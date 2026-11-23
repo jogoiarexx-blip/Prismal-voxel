@@ -79,7 +79,25 @@ const Saves = (() => {
       return false;
     }
   }
-  return { list, get: (id) => perform('get', id), put: (r) => perform('put', r), settings, prefs };
+  const localGuests = new Map();
+  function guestProfile(worldId) {
+    const key=prefix+'guest:'+String(worldId).slice(0,90);
+    if(localGuests.has(key))return localGuests.get(key);
+    try {const raw=JSON.parse(localStorage.getItem(key)||'null');
+      if(raw && /^[a-zA-Z0-9-]{12,80}$/.test(raw.id)){localGuests.set(key,raw);return raw;}
+    } catch {}
+    const data={id:crypto.randomUUID?.() || 'guest-'+Date.now().toString(36)+Math.random().toString(36).slice(2),rev:0,tx:0};
+    localGuests.set(key,data);
+    try {localStorage.setItem(key,JSON.stringify(data));}catch{}
+    return data;
+  }
+  function saveGuestProfile(worldId,data) {
+    if(!worldId||!data||typeof data.id!=='string')return false;
+    const key=prefix+'guest:'+String(worldId).slice(0,90);
+    localGuests.set(key,data);
+    try{localStorage.setItem(key,JSON.stringify(data));return true;}catch{return false;}
+  }
+  return { list, get: (id) => perform('get', id), put: (r) => perform('put', r), settings, prefs, guestProfile, saveGuestProfile };
 })();
 const Sound = (() => {
   let ctx,

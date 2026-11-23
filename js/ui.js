@@ -47,9 +47,12 @@
     mpStartSent = false, mpRemote = null, mpMessages = [], mpLastPose = 0,
     mpLoading = false, mpGuest = false, mpWorldReady = false,
     mpEditBuffer = [], mpGuestEdits = [], mpLastHud = 0, mpLastSeq = -1, mpPoseSeq = 0,
-    mpLastEntity = 0, mpEntitySeq = 0, mpLastRemoteHit = 0, mpLootSends = new Set();
+    mpLastEntity = 0, mpEntitySeq = 0, mpLastRemoteHit = 0, mpLootSends = new Set(),
+    mpHostWorldId = null, mpGuestProfile = null, mpGuestRevision = 0, mpGuestSeq = 0, mpLastGuestSync = 0,
+    mpHostGuestId = null, mpChestBusy = false, mpGuestCheckpointAt = 0, chatUnlockPending = false, mpLastHostCheckpoint = 0;
   // A shareable URL fragment carries signaling data without a backend.
   // Remove it from the address bar after reading; it is never sent to GitHub Pages.
+  let mpInviteConsumed = false;
   const mpInviteFromUrl = (() => {
     try {
       if (!location.hash.startsWith('#join=')) return '';
@@ -212,6 +215,8 @@
   $('#options').onclick = () => options('home');
   $('#multiplayer').onclick = () => multiplayerMenu();
   $('#mpChatBtn').onclick = () => multiplayerChat();
+  $('#mpChatComposer').onsubmit = (e) => {e.preventDefault();multiplayerSendChat();};
+  $('#mpChatClose').onclick = () => closeQuickChat();
   $('#guide').onclick = () => guide('home');
   $('#navGuide').onclick = () => guide('home');
   $('#navWorlds').onclick = () => showWorlds();
@@ -227,11 +232,42 @@
     chestLoaded=false;chestPending=false;chestRevision=-1;remoteChestInventory=null;
     mpWorldReady=false;mpEditBuffer=[];mpGuestEdits=[];mpLastSeq=-1;mpPoseSeq=0;
     mpLastEntity=0;mpEntitySeq=0;mpLastRemoteHit=0;mpLootSends.clear();
+    mpHostWorldId=null;mpGuestProfile=null;mpGuestRevision=0;mpGuestSeq=0;mpHostGuestId=null;mpChestBusy=false;
+    closeQuickChat();$('#mpChatFeed').replaceChildren();
     if (g) {g.networkGuest=false;g.networkHost=false;}
     if (mpRemote) mpRemote.active=false;
     mpRemote=null;
     $('#mpChatBtn').hidden=true;
     const badge=$('#mpStatus');if(badge)badge.hidden=true;
+  }
+  function quickChatBubble(from,body) {
+    const feed=$('#mpChatFeed');
+    if(!feed)return;
+    const item=document.createElement('div');
+    item.className='mp-chat-bubble';
+    const who=document.createElement('strong');who.textContent=from+': ';
+    const words=document.createElement('span');words.textContent=String(body).slice(0,280);
+    item.append(who,words);feed.append(item);
+    while(feed.children.length>4)feed.firstElementChild.remove();
+    setTimeout(()=>item.remove(),10000);
+  }
+  function closeQuickChat() {
+    const box=$('#mpChatComposer');if(box)box.hidden=true;
+    $('#mpChatQuickInput')?.blur();
+  }
+  function saveGuestCheckpoint() {
+    if(mpRole!=='guest'||!g?.ready||!mpHostWorldId||!mpGuestProfile)return;
+    mpGuestProfile.rev=mpGuestRevision;mpGuestProfile.tx=chestTx;mpGuestProfile.seq=mpGuestSeq;
+    mpGuestProfile.inv=structuredClone(g.inv);mpGuestProfile.p={...g.p};
+    mpGuestProfile.saved=Date.now();
+    Saves.saveGuestProfile(mpHostWorldId,mpGuestProfile);
+  }
+  function guestInventorySync() {
+    if(mpRole!=='guest'||!mp?.connected||!g?.ready||!mpGuestProfile||!mpHostWorldId||!mpWorldReady)return;
+    mp.send({t:'guest-inv',id:mpGuestProfile.id,rev:mpGuestRevision,seq:++mpGuestSeq,inv:g.inv}).catch(()=>{});
+  }
+  function currentGuestProfile() {
+    return mpHostGuestId && g?.guestProfiles?.[mpHostGuestId];
   }
   function multiplayerMenu() {
     if (g && g.alive) return toast('Saia da partida atual antes de criar uma sala.');
@@ -247,7 +283,7 @@
         '<button class="mp-choice" data-act="mp-host"><span class="mp-emoji">✦</span><b>Criar sala</b><small>Escolha um mundo e gere o convite.</small></button>' +
         '<button class="mp-choice" data-act="mp-join"><span class="mp-emoji">◇</span><b>Entrar na sala</b><small>Cole o convite de quem criou.</small></button>' +
       '</div>' +
-      '<div class="mp-hint"><strong>Como funciona?</strong> Duas pessoas trocam convite e resposta. Não é preciso criar conta nem instalar aplicativos. Sem um servidor de sinalização, o código é longo, mas a conexão é direta.</div>' +
+      '<div class="mp-hint"><strong>Como entrar?</strong> Compartilhe o link de convite. Seu amigo abre, copia a resposta e envia para você. O código técnico longo fica em Opções avançadas. Um código curto de 6 dígitos precisa de um servidor de sinalização.</div>' +
       '<p class="smallnote">Cooperação experimental para duas pessoas: jogadores, criaturas, combate, coleta e construções. O anfitrião salva o mundo. Algumas redes móveis exigem TURN.</p>',
       true);
   }
@@ -281,9 +317,9 @@
         mp=PrismaNet.create({name:nickname,onMessage:onMultiplayerMessage,onStatus:onMultiplayerStatus});
         const invite=await mp.host();
         panel('mp-offer','Seu convite está pronto',
-          '<p class="mp-lead">1. Envie este convite ao amigo, por mensagem. Ele deve abrir <b>Multiplayer → Entrar na sala</b>.</p>'+
-          '<textarea id="mpShareCode" class="mp-code" readonly aria-label="Convite P2P">'+esc(invite)+'</textarea>'+
-          '<div class="btns">'+btn('mp-copy','Copiar código','secondary')+btn('mp-copy-link','Copiar link do convite','primary')+'</div>'+
+          '<p class="mp-lead">1. Compartilhe o link. O amigo abrirá automaticamente a tela de entrada.</p>'+
+          '<div class="btns">'+btn('mp-copy-link','Copiar link do convite','primary')+btn('mp-share','Compartilhar convite','secondary')+'</div>'+
+          '<details class="mp-advanced"><summary>Opções avançadas · código técnico</summary><textarea id="mpShareCode" class="mp-code" readonly aria-label="Convite P2P">'+esc(invite)+'</textarea>'+btn('mp-copy','Copiar código técnico','secondary')+'</details>'+
           '<p class="mp-lead">2. Quando receber a resposta dele, cole abaixo para conectar.</p>'+
           '<textarea id="mpAnswerIn" class="mp-code" placeholder="Cole aqui o código de resposta do seu amigo" aria-label="Resposta P2P"></textarea>'+
           btn('mp-accept','Conectar e começar a jogar','primary fullwidth')+
@@ -292,11 +328,35 @@
       finally{mpLoading=false;}
     };
   }
+  async function multiplayerRehost() {
+    if(!g?.ready || mpRole!=='host')return;
+    if(mpLoading)return;
+    mpLoading=true;
+    try {
+      await g.save();
+      const username=mp?.name||'Anfitrião';
+      mp?.close();
+      mpStartSent=false;mpWorldReady=false;mpGuestEdits=[];mpEditBuffer=[];
+      mpRemote={active:false};mpRecord=g.snapshot();mpFresh=false;
+      mp=PrismaNet.create({name:username,onMessage:onMultiplayerMessage,onStatus:onMultiplayerStatus});
+      const invite=await mp.host();
+      panel('mp-offer','Reconectar seu amigo',
+        '<p class="mp-lead">Envie um novo link para o amigo. O mundo e seus baús permanecem salvos.</p>'+
+        '<div class="btns">'+btn('mp-copy-link','Copiar novo link','primary')+btn('mp-share','Compartilhar','secondary')+'</div>'+
+        '<details class="mp-advanced"><summary>Código técnico alternativo</summary><textarea id="mpShareCode" class="mp-code" readonly>'+esc(invite)+'</textarea>'+btn('mp-copy','Copiar código','secondary')+'</details>'+
+        '<label class="field">Resposta do amigo<textarea id="mpAnswerIn" class="mp-code" placeholder="Cole aqui a resposta"></textarea></label>'+
+        btn('mp-accept','Retomar partida cooperativa','primary fullwidth'),true);
+      // Copy actions read this same field even if the advanced area is collapsed.
+    } catch(e){toast('Não foi possível renovar a sala: '+e.message);}
+    finally{mpLoading=false;}
+  }
   function multiplayerJoinPanel() {
+    const prefill=mpInviteConsumed ? '' : mpInviteFromUrl;
+    mpInviteConsumed=true;
     panel('mp-join','Entrar na sala',
-      '<p class="mp-lead">Peça o convite a quem criou a sala. O código pode ser longo porque esta versão não usa servidor de sinalização.</p>'+
+      '<p class="mp-lead">Abra o link do anfitrião para preencher o convite automaticamente. Se recebeu um código técnico, cole abaixo.</p>'+
       '<label class="field">Seu apelido<input id="mpNickname" maxlength="28" value="Explorador" autocomplete="off"></label>'+
-      '<label class="field">Código do convite<textarea id="mpOfferIn" class="mp-code" placeholder="Cole o convite ou abra o link enviado pelo anfitrião">'+esc(mpInviteFromUrl)+'</textarea></label>'+
+      '<label class="field">Código do convite<textarea id="mpOfferIn" class="mp-code" placeholder="Cole o convite ou abra o link enviado pelo anfitrião">'+esc(prefill)+'</textarea></label>'+
       btn('mp-answer','Criar resposta','primary fullwidth')+
       '<p class="smallnote">A partida do convidado não sobrescreve seus mundos locais. Quem criou a sala conserva o mundo salvo.</p>',true);
   }
@@ -307,16 +367,17 @@
     if(!offer)return toast('Cole primeiro o convite do anfitrião.');
     mpLoading=true;
     try {
-      mpRole='guest';mpRemote={active:false};mpMessages=[];mpGuest=true;
+      mp?.close();
+      mpRole='guest';mpRemote={active:false};mpGuest=true;mpWorldReady=false;
       mp=PrismaNet.create({name:nick,onMessage:onMultiplayerMessage,onStatus:onMultiplayerStatus});
       const answer=await mp.join(offer);
       panel('mp-answer','Resposta criada',
-        '<p class="mp-lead">Envie o código abaixo para quem criou a sala. Ele deve colar na caixa <b>Resposta</b> e clicar em Conectar.</p>'+
-        '<textarea id="mpShareCode" class="mp-code" readonly aria-label="Resposta P2P">'+esc(answer)+'</textarea>'+
+        '<p class="mp-lead">Copie a resposta e envie ao anfitrião. Ela será colada na tela da sala.</p>'+
         btn('mp-copy','Copiar resposta','primary fullwidth')+
+        '<details class="mp-advanced"><summary>Ver resposta técnica</summary><textarea id="mpShareCode" class="mp-code" readonly aria-label="Resposta P2P">'+esc(answer)+'</textarea></details>'+
         '<p class="mp-connecting">Aguardando o anfitrião conectar…</p>'+
         '<p class="smallnote">Você entrará automaticamente no mundo quando a conexão estiver pronta.</p>',true);
-    }catch(e){console.error(e);toast('Código inválido ou conexão indisponível: '+e.message);multiplayerLeave();multiplayerJoinPanel();}
+    }catch(e){console.error(e);toast('Código inválido ou conexão indisponível: '+e.message);if(!g)multiplayerLeave();multiplayerJoinPanel();}
     finally{mpLoading=false;}
   }
   function multiplayerCopy() {
@@ -336,6 +397,17 @@
       .catch(()=>toast('Não foi possível copiar o link. Use Copiar código.'));
     else toast('Seu navegador não permite copiar links automaticamente. Use Copiar código.');
   }
+  async function multiplayerShare() {
+    const invite=$('#mpShareCode')?.value;
+    if(!invite||mpRole!=='host')return;
+    const url=location.origin+location.pathname+location.search+'#join='+encodeURIComponent(invite);
+    if(url.length>18000)return toast('Link excede o limite; copie o código técnico.');
+    if(navigator.share){
+      try{await navigator.share({title:'Mundo Prisma — jogar em dupla',url});return;}
+      catch(e){if(e?.name==='AbortError')return;}
+    }
+    multiplayerCopyLink();
+  }
   async function multiplayerAccept() {
     if(!mp || mpRole!=='host')return;
     const response=$('#mpAnswerIn')?.value.trim();
@@ -350,6 +422,7 @@
   function onMultiplayerStatus(s) {
     if(s==='connected') {
       if(mpRole==='host' && mpRecord && !g) launch(mpRecord,mpFresh,false);
+      else if(mpRole==='host' && g?.ready) {resume(false);sendHostWorld();}
       else if(mpRole==='guest') panel('mp-answer','Sincronizando mundo…',
         '<p class="mp-lead">Conexão P2P estabelecida. Recebendo os blocos do anfitrião…</p>',true,false);
     } else if(s==='reconnecting' || s==='slow') {
@@ -358,15 +431,24 @@
       toast('Conexão P2P recuperada.');
       if(mpRole==='host' && g && !mpWorldReady) sendHostWorld();
     } else if(s==='failed') {
-      toast('A conexão P2P falhou. Gere novos códigos para conectar novamente.');
+      toast('P2P interrompido. É necessário renovar o convite para reconectar.');
+      if(mpRole==='guest' && g?.ready) {
+        saveGuestCheckpoint();
+        panel('mp-lost','Conexão interrompida',
+          '<p>O mundo do anfitrião permanece salvo. Peça outro link e entre novamente.</p>'+
+          btn('mp-rejoin','Reconectar com novo link','primary fullwidth')+
+          btn('mp-leave','Sair da partida','secondary'));
+      }
     } else if(s==='disconnected') {
       $('#mpChatBtn').hidden=true;
       if(mpRemote) mpRemote.active=false;
       if(mpRole==='guest' && g) {
         pauseSim();
         panel('mp-lost','Convidado desconectado',
-          '<p>A ligação P2P foi perdida. Seu progresso só fica salvo no mundo do anfitrião.</p>'+btn('mp-leave','Voltar ao menu','primary'));
-      } else if(mpRole==='host') toast('Seu amigo saiu. O mundo permanece aberto para você.');
+          '<p>A conexão caiu. Seu inventário foi salvo neste navegador e poderá ser recuperado pelo anfitrião quando a sala voltar.</p>'+
+          btn('mp-rejoin','Reconectar com novo convite','primary fullwidth')+
+          btn('mp-leave','Voltar ao menu','secondary'));
+      } else if(mpRole==='host') toast('Seu amigo saiu. Abra Pausa → Recriar convite para reconectar.');
     }
   }
   function onMultiplayerMessage(msg) {
@@ -374,32 +456,30 @@
     if(msg.t==='hello') {toast('Conectado com '+mp.remoteName);return;}
     if(msg.t==='chest-open' && mpRole==='host' && mpWorldReady && g?.ready) {
       const pos=msg.pos;
-      if(!validSharedChest(pos) || !validInventory(msg.inv,36)) {
+      if(!validSharedChest(pos) || msg.id!==mpHostGuestId || !currentGuestProfile()) {
         mp.send({t:'chest-error',pos,reason:'Baú indisponível. Aproxime-se e tente novamente.'}).catch(()=>{});
         return;
       }
-      remoteChestInventory=structuredClone(msg.inv);
+      remoteChestInventory=structuredClone(currentGuestProfile().inv);
       const items=g.chests[pos] ||= Array(18).fill(null);
-      mp.send({t:'chest-state',pos,rev:g.chestRevisions[pos]||0,items}).catch(()=>{});
+      mp.send({t:'chest-state',pos,rev:g.chestRevisions[pos]||0,items,
+        inv:remoteChestInventory,profileRev:currentGuestProfile().rev,tx:chestTx,initial:true}).catch(()=>{});
       return;
     } else if(msg.t==='chest-action' && mpRole==='host' && mpWorldReady && g?.ready) {
-      const pos=msg.pos,rev=g.chestRevisions[pos]||0;
-      if(!validSharedChest(pos)||!remoteChestInventory)return;
-      const chest=g.chests[pos] ||= Array(18).fill(null);
-      const valid=Number.isSafeInteger(msg.tx) && msg.tx>0 &&
-        Number.isInteger(msg.rev) && msg.rev===rev &&
-        ['inv','chest'].includes(msg.from) && ['inv','chest'].includes(msg.to) &&
-        Number.isInteger(msg.index) && Number.isInteger(msg.target) &&
-        typeof msg.quick==='boolean' && typeof msg.split==='boolean';
-      if(valid) {
-        const shadow=structuredClone(remoteChestInventory),snapshot=structuredClone(chest);
-        if(Game.Session.chestMove(shadow,snapshot,msg.from,msg.index,msg.to,msg.target,msg.quick,msg.split)) {
-          remoteChestInventory=shadow;g.chests[pos]=snapshot;
-          g.chestRevisions[pos]=(g.chestRevisions[pos]||0)+1;g.changed();
-        }
-      }
-      mp.send({t:'chest-state',pos,rev:g.chestRevisions[pos]||0,
-        items:g.chests[pos],inv:remoteChestInventory,tx:msg.tx}).catch(()=>{});
+      const pos=msg.pos;
+      if(msg.id!==mpHostGuestId || !validSharedChest(pos) || mpChestBusy)return;
+      mpChestBusy=true;
+      PrismaCoop.transact(g,mpHostGuestId,pos,msg,Game.Session.chestMove,Voxel.blocks.length)
+        .then(result=>{
+          if(result.state){
+            if(result.status==='committed')remoteChestInventory=structuredClone(result.state.inv);
+            mp?.send(result.state).catch(()=>{});
+          } else if(result.status==='failed') {
+            mp?.send({t:'chest-error',pos,reason:result.reason}).catch(()=>{});
+          }
+        }).catch(e=>{console.error('Falha na transferência de baú',e);
+          mp?.send({t:'chest-error',pos,reason:'Falha inesperada ao sincronizar baú.'}).catch(()=>{});
+        }).finally(()=>{mpChestBusy=false;});
       return;
     } else if(msg.t==='chest-error' && mpRole==='guest' && g) {
       if(msg.pos===chestPos) {
@@ -420,27 +500,62 @@
       chestLoaded=true;
       // An unsolicited chest refresh must not clear a pending transaction.
       if(Number.isInteger(msg.tx) && msg.tx===chestTx || !chestPending)chestPending=false;
-      if(Array.isArray(msg.inv) && validInventory(msg.inv,36) &&
-         Number.isInteger(msg.tx) && msg.tx===chestTx) {
+      if(validInventory(msg.inv,36) &&
+         (msg.initial === true || Number.isInteger(msg.tx) && msg.tx===chestTx)) {
         g.inv=structuredClone(msg.inv);g.changed();bagSel=null;
+        if(Number.isInteger(msg.profileRev))mpGuestRevision=msg.profileRev;
+        saveGuestCheckpoint();
       }
       if(screen==='chest')chest(null,false);
       return;
     }
     if(msg.t==='world-ready' && mpRole==='host' && g) {
+      const id=String(msg.id||'');
+      if(!/^[a-zA-Z0-9-]{12,80}$/.test(id)||!validInventory(msg.inv,36))return;
+      const known=g.guestProfiles[id];
+      const accepted=PrismaCoop.ensureProfile(g,id,msg.inv,Voxel.blocks.length);
+      if(!accepted)return;
+      mpHostGuestId=id;
+      if(!known)g.changed();
+      remoteChestInventory=structuredClone(g.guestProfiles[id].inv);
+      mp.send({t:'guest-profile',id,rev:g.guestProfiles[id].rev,tx:g.guestProfiles[id].lastTx,seq:g.guestProfiles[id].seq||0,inv:g.guestProfiles[id].inv}).catch(()=>{});
       mpWorldReady=true;mpLastEntity=0;flushHostEdits();toast('Mundo sincronizado com '+mp.remoteName);return;
     }
-    if(msg.t==='world' && mpRole==='guest' && !g) {
+    if(msg.t==='guest-profile' && mpRole==='guest' && g?.ready && mpGuestProfile && msg.id===mpGuestProfile.id) {
+      if(!validInventory(msg.inv,36)||!Number.isInteger(msg.rev)||msg.rev<0)return;
+      g.inv=structuredClone(msg.inv);g.changed();
+      mpGuestRevision=msg.rev;
+      chestTx=Math.max(chestTx,Number.isSafeInteger(msg.tx)?msg.tx:0);
+      mpGuestSeq=Math.max(mpGuestSeq,Number.isSafeInteger(msg.seq)?msg.seq:0);
+      mpWorldReady=true;saveGuestCheckpoint();
+      toast('Inventário sincronizado com o anfitrião.');return;
+    }
+    if(msg.t==='guest-inv' && mpRole==='host' && mpWorldReady && g?.ready) {
+      const profile=currentGuestProfile();
+      if(!profile || msg.id!==mpHostGuestId || mpChestBusy || !validInventory(msg.inv,36) ||
+         msg.rev!==profile.rev || !Number.isSafeInteger(msg.seq) || msg.seq<=(profile.seq||0))return;
+      profile.inv=structuredClone(msg.inv);profile.seq=msg.seq;g.changed();
+      return;
+    }
+    if(msg.t==='world' && mpRole==='guest') {
       const src=msg.rec;
       if(!src || src.schema!==1 || ![1,2,3].includes(src.generator) || typeof src.seed!=='string' ||
         typeof src.name!=='string' || !src.edits || typeof src.edits!=='object')return toast('Dados do mundo incompatíveis.');
       const rec=structuredClone(src);
+      const existing=g && mpHostWorldId===src.id ? {p:{...g.p},inv:structuredClone(g.inv)} : null;
+      if(g){g.stop();g=null;}
+      mpHostWorldId=src.id;
+      mpGuestProfile=Saves.guestProfile(src.id);
+      mpGuestRevision=Number.isInteger(mpGuestProfile.rev)?mpGuestProfile.rev:0;
+      mpGuestSeq=Number.isInteger(mpGuestProfile.seq)?mpGuestProfile.seq:0;
+      chestTx=Math.max(chestTx,Number.isInteger(mpGuestProfile.tx)?mpGuestProfile.tx:0);
       rec.id='p2p-visitante-'+Date.now();
       rec.name=String(src.name).slice(0,48);
-      rec.p={...rec.p,x:rec.p.x+1.8,z:rec.p.z+1.8};
-      rec.inv=Game.fresh('Visitante',rec.seed,rec.mode,rec.difficulty).inv;
+      rec.p=existing?.p || mpGuestProfile.p || {...rec.p,x:rec.p.x+1.8,z:rec.p.z+1.8};
+      rec.inv=existing?.inv || (validInventory(mpGuestProfile.inv,36)?mpGuestProfile.inv:Game.fresh('Visitante',rec.seed,rec.mode,rec.difficulty).inv);
       rec.mobs=[];rec.selected=0;
       mpGuestEdits=[];
+      mpWorldReady=false;
       launch(rec,false,true);
     } else if(msg.t==='pose' && g && mpRemote) {
       const {x,y,z,yaw,moving}=msg;
@@ -516,7 +631,7 @@
     } else if(msg.t==='chat' && typeof msg.text==='string') {
       const body=msg.text.slice(0,280);
       mpMessages.push({from:mp.remoteName,text:body});mpMessages=mpMessages.slice(-40);
-      if(screen==='mp-chat')multiplayerChat();else toast(mp.remoteName+': '+body.slice(0,65));
+      quickChatBubble(mp.remoteName,body);
     }
   }
   async function sendHostWorld() {
@@ -577,19 +692,22 @@
   }
   function multiplayerChat() {
     if(!mp?.connected)return toast('Conecte-se primeiro a uma sala.');
-    panel('mp-chat','Conversa P2P',
-      '<div class="mp-chat-messages" aria-live="polite">'+
-      (mpMessages.length ? mpMessages.map(m=>'<p><strong>'+esc(m.from)+'</strong>: '+esc(m.text)+'</p>').join('') :
-      '<p class="muted">Conversa vazia. Envie uma mensagem para começar.</p>')+'</div>'+
-      '<label class="field">Mensagem<input maxlength="280" id="mpChatInput" placeholder="Escreva algo para seu amigo" autocomplete="off"></label>'+
-      btn('mp-chat-send','Enviar mensagem','primary fullwidth'),true);
-    $('#mpChatInput').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();multiplayerSendChat();}};
+    const box=$('#mpChatComposer');
+    if(!box.hidden){closeQuickChat();return;}
+    box.hidden=false;
+    if(document.pointerLockElement){chatUnlockPending=true;document.exitPointerLock();}
+    if(g){g.keys.clear();g.holding=false;}
+    $('#mpChatQuickInput').focus({preventScroll:true});
   }
   function multiplayerSendChat() {
-    const input=$('#mpChatInput'),body=input?.value.trim();if(!body||!mp?.connected)return;
-    mp.send({t:'chat',text:body.slice(0,280)}).catch(()=>toast('Mensagem não enviada'));
-    mpMessages.push({from:'Você',text:body.slice(0,280)});mpMessages=mpMessages.slice(-40);
-    multiplayerChat();
+    const input=$('#mpChatQuickInput'),body=input?.value.trim();
+    if(!body||!mp?.connected)return;
+    const contents=body.slice(0,280);
+    input.value='';
+    mp.send({t:'chat',text:contents}).then(()=>{
+      mpMessages.push({from:'Você',text:contents});mpMessages=mpMessages.slice(-40);
+      quickChatBubble('Você',contents);
+    }).catch(()=>toast('Mensagem não enviada'));
   }
   function newWorld(back) {
     backPanel = back;
@@ -901,6 +1019,7 @@
         btn('opgame', icon('gear') + 'Opções') +
         btn('guidegame', icon('book') + 'Guia de campo') +
         btn('housemenu', '⌂ Localizar minha casa') +
+        (mpRole==='host' && !mp?.connected ? btn('mp-rehost','♻ Recriar convite P2P','secondary') : '')+
         btn('savequit', icon('world') + 'Salvar e voltar ao menu') +
         '</div>' +
         '<button class="pause-goal" data-act="expeditionpause">' +
@@ -1073,7 +1192,7 @@
         '</ul><p>O primeiro selo libera a pedra rúnica. Com os três, use a bancada para combinar cristal, cobre e vidro em um Farol Prisma. Coloque-o para acender uma aurora sobre sua base.</p></div>';
     } else
       body =
-        '<p>Mundo Prisma é um sandbox voxel de exploração, sobrevivência e construção. Explore os Campos de Âmbar, a Floresta de Névoa e as Dunas de Vidro. Nas dunas, procure os obeliscos com cristais no topo.</p><p class="muted">Versão jogável 0.9.12 · Solo e multiplayer experimental<br>Arte, sprites, tipografia de título e efeitos sonoros criados para Mundo Prisma. Seu progresso é salvo neste navegador.</p>';
+        '<p>Mundo Prisma é um sandbox voxel de exploração, sobrevivência e construção. Explore os Campos de Âmbar, a Floresta de Névoa e as Dunas de Vidro. Nas dunas, procure os obeliscos com cristais no topo.</p><p class="muted">Versão jogável 0.9.13 · Solo e multiplayer experimental<br>Arte, sprites, tipografia de título e efeitos sonoros criados para Mundo Prisma. Seu progresso é salvo neste navegador.</p>';
     panel(
       'guide',
       'Guia de campo',
@@ -1108,7 +1227,7 @@
       case 'mp-chat':
         return resume();
       case 'mp-lost':
-        if(g){g.stop();g=null;} multiplayerLeave();return homeMenu();
+        return multiplayerJoinPanel();
       default:
         return homeMenu();
     }
@@ -1338,12 +1457,7 @@
     );
     bindSlots();
   }
-  function validInventory(items,count) {
-    return Array.isArray(items) && items.length===count && items.every(t=>t===null ||
-      (typeof t==='object' && Number.isInteger(t.b) && t.b>0 && t.b<Voxel.blocks.length &&
-       Number.isInteger(t.n) && t.n>=1 && t.n<=64 &&
-       (t.dur===undefined || (Number.isFinite(t.dur) && t.dur>=0 && t.dur<=1000))));
-  }
+  const validInventory = (items,count) => PrismaCoop.validInventory(items,count,Voxel.blocks.length);
   function validSharedChest(pos) {
     if(!mpRemote?.active || typeof pos!=='string' || !/^-?\d+,-?\d+,-?\d+$/.test(pos))return false;
     const [x,y,z]=pos.split(',').map(Number);
@@ -1362,6 +1476,7 @@
     if(!mp?.connected||!chestLoaded||chestPending)return;
     chestPending=true;const tx=++chestTx;
     mp.send({t:'chest-action',pos:chestPos,rev:chestRevision,tx,
+      id:mpGuestProfile?.id,profileRev:mpGuestRevision,
       from,index,to,target,quick:!!quick,split:!!split}).catch(()=>{
       chestPending=false;toast('Não foi possível sincronizar os itens do baú.');
     });
@@ -1372,7 +1487,8 @@
       bagSel = null;
       if(mpRole==='guest' && mp?.connected) {
         chestLoaded=false;chestPending=true;chestRevision=-1;
-        mp.send({t:'chest-open',pos:chestPos,inv:g.inv}).catch(()=>{
+        guestInventorySync();
+        mp.send({t:'chest-open',pos:chestPos,id:mpGuestProfile?.id}).catch(()=>{
           chestPending=false;toast('Não foi possível abrir o baú do anfitrião.');
         });
       }
@@ -1401,6 +1517,7 @@
     bindSlots();
   }
   function transfer(type, i, quick = false) {
+    if(screen==='chest' && mpRole==='host' && mpChestBusy) {toast('Baú salvando. Aguarde a confirmação.');return;}
     if(screen==='chest' && mpRole==='guest' && mp?.connected) {
       if(!chestLoaded || chestPending) {toast('Aguarde a sincronização do baú');return;}
       const src=type==='inv'?g.inv:g.chests[chestPos];
@@ -1445,6 +1562,7 @@
     dialog.querySelectorAll('.slot[data-act^="inv:"],.slot[data-act^="chest:"]').forEach((el) => {
       el.oncontextmenu = (e) => {
         e.preventDefault();
+        if(screen==='chest' && mpRole==='host' && mpChestBusy)return;
         const [type, index] = el.dataset.act.split(':');
         const slots = type === 'inv' ? g.inv : g.chests[chestPos],
           stack = slots[+index],
@@ -1481,7 +1599,7 @@
       if(mpRole === 'host' && mp?.connected && !mpStartSent) sendHostWorld();
       if(mpRole === 'guest' && mp?.connected && g) {
         flushGuestEdits();
-        mp.send({t:'world-ready'}).catch(()=>toast('Falha ao confirmar a entrada no mundo.'));
+        mp.send({t:'world-ready',id:mpGuestProfile?.id,inv:g.inv}).catch(()=>toast('Falha ao confirmar a entrada no mundo.'));
       }
     } else if (s === 'worldEdit') {
       if(mp?.connected && !g?.applyingRemoteEdit) queueWorldEdit([[v.x,v.y,v.z,v.b]]);
@@ -1634,7 +1752,7 @@
     $('#debug').hidden = !debug;
     if (debug)
       $('#debug').textContent =
-        'PRISMA 0.9.12 · ' +
+        'PRISMA 0.9.13 · ' +
         renderer.type +
         '\n' +
         Math.round(fps) +
@@ -1682,8 +1800,17 @@
       case 'mp-join':
         multiplayerJoinPanel();
         break;
+      case 'mp-rehost':
+        multiplayerRehost();
+        break;
+      case 'mp-rejoin':
+        multiplayerJoinPanel();
+        break;
       case 'mp-copy-link':
         multiplayerCopyLink();
+        break;
+      case 'mp-share':
+        multiplayerShare();
         break;
       case 'mp-copy':
         multiplayerCopy();
@@ -1952,7 +2079,8 @@
       mouseActive = true;
       releaseGesture();
       skipWarp = true;
-    } else if (lockedBefore && screen === 'play' && !g.paused) pauseMenu();
+    } else if (chatUnlockPending) {chatUnlockPending=false;}
+    else if (lockedBefore && screen === 'play' && !g.paused) pauseMenu();
     lockedBefore = locked;
     cameraHint();
   });
@@ -1965,6 +2093,11 @@
         e.preventDefault();
         mainPlay();
       }
+      return;
+    }
+    if(!$('#mpChatComposer').hidden) {
+      if(e.code==='Escape'){e.preventDefault();closeQuickChat();renderer?.canvas?.focus({preventScroll:true});}
+      else if(e.target===$('#mpChatQuickInput'))e.stopPropagation();
       return;
     }
     if (screen !== 'play') {
@@ -2010,6 +2143,9 @@
     switch (e.code) {
       case 'Escape':
         pauseMenu();
+        break;
+      case 'KeyT':
+        if(mp?.connected)multiplayerChat();
         break;
       case 'KeyE':
         inventory();
@@ -2182,13 +2318,16 @@
   if (matchMedia('(pointer: coarse)').matches) document.body.classList.add('touchgame');
   applyMobilePrefs();
   document.addEventListener('visibilitychange', () => {
+    if(document.hidden) { saveGuestCheckpoint(); if(mpRole==='host' && g?.ready)g.save(); }
     if (document.hidden && g && screen === 'play') pauseMenu();
   });
   window.addEventListener('blur', () => {
     if (g && screen === 'play') pauseMenu();
   });
   window.addEventListener('pagehide', () => {
-    if (g) g.save();
+    saveGuestCheckpoint();
+    if(mpRole==='host' && g?.ready)g.save();
+    else if (g) g.save();
     mp?.close();
   });
   function frame(now) {
@@ -2221,6 +2360,12 @@
     }
     smoothRemote(dt,now);
     if(mp?.connected && now-mpLastHud>1200) {mpLastHud=now;updateP2PHud();}
+    if(mpRole==='host' && g?.ready && now-mpLastHostCheckpoint>30000) {
+      mpLastHostCheckpoint=now;g.save().catch(()=>{});
+    }
+    if(mpRole==='guest' && mpWorldReady && now-mpLastGuestSync>4500) {
+      mpLastGuestSync=now;guestInventorySync();saveGuestCheckpoint();
+    }
     renderer.draw(g, settings, Math.min(1, acc * 60));
   }
   if(mpInviteFromUrl)setTimeout(()=>multiplayerJoinPanel(),120);
