@@ -30,6 +30,15 @@ const PrismaCoop = (() => {
     transactionQueues.set(game,current.catch(()=>{}));
     return current;
   }
+  function readChest(game,id,pos,seq,maxId=256){
+    return inWorldQueue(game,()=>{
+      const profile=validId(id)&&game.guestProfiles?.[id];
+      if(!profile||!Number.isSafeInteger(seq)||seq<0||seq>(profile.seq||0)||!validInventory(profile.inv,36,maxId))return {status:'conflict'};
+      const items=game.chests[pos]||Array(18).fill(null);
+      if(!validInventory(items,18,maxId))return {status:'invalid'};
+      return {status:'ready',state:{t:'chest-state',pos,rev:game.chestRevisions[pos]||0,items:structuredClone(items),inv:structuredClone(profile.inv),profileRev:profile.rev,initial:true}};
+    });
+  }
   function transact(game,id,pos,msg,chestMove,maxId=256) {
     return inWorldQueue(game,()=>transactUnlocked(game,id,pos,msg,chestMove,maxId));
   }
@@ -108,6 +117,6 @@ const PrismaCoop = (() => {
       conflicted:!!(pending && !replay && pending.seq>host.seq),
       seq:Math.max(host.seq,replay?pending.seq:0)};
   }
-  return {validId,validInventory,ensureProfile,transact,snapshot,syncInventory,recoverGuestInventory};
+  return {validId,validInventory,ensureProfile,transact,snapshot,syncInventory,recoverGuestInventory,readChest};
 })();
 if(typeof module!=='undefined')module.exports=PrismaCoop;
