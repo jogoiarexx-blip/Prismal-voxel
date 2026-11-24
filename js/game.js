@@ -1771,9 +1771,38 @@ const Game = (() => {
       const inside=Math.abs(m.x-hx-.5)<1.45&&Math.abs(m.z-hz-.5)<1.45&&Math.abs(m.y-h-1)<.5;
       const door=[hx+.5,hz+2.5], entry=[hx+.5,hz+3.5];
       const go=(x,z,speed=.82)=>{
-        const vx=x-m.x,vz=z-m.z;
         m.activity='walk';
-        return Math.hypot(vx,vz)>.36&&walk(m,vx,vz,speed,radius,height);
+        if(!Number.isFinite(x)||!Number.isFinite(z)||Math.hypot(x-m.x,z-m.z)<=.36)return false;
+        const target=Math.floor(x)+','+Math.floor(z);
+        // Bounded local grid search, at most once per two seconds per resident.
+        // Cache only waypoints; movement still uses the real actor collider.
+        const nav=m.villageNav;
+        if(!nav||nav.target!==target||this.elapsed>nav.until){
+          const sx=Math.floor(m.x),sz=Math.floor(m.z),tx=Math.floor(x),tz=Math.floor(z);
+          const start={x:sx,z:sz,y:m.y,prev:null};
+          const queue=[start],seen=new Set([sx+','+sz]);
+          let best=start,bestDist=Math.abs(sx-tx)+Math.abs(sz-tz);
+          for(let i=0;i<queue.length&&i<180;i++){
+            const a=queue[i],dist=Math.abs(a.x-tx)+Math.abs(a.z-tz);
+            if(dist<bestDist){best=a;bestDist=dist;}
+            if(!dist)break;
+            for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){
+              const xx=a.x+dx,zz=a.z+dz,k=xx+','+zz;
+              if(seen.has(k)||Math.abs(xx-hx)>9||Math.abs(zz-hz)>10)continue;
+              const yy=this.floorAt(xx+.5,zz+.5,a.y+1.1,true);
+              if(yy===null||yy>a.y+1.01||yy<a.y-1.15)continue;
+              if(this.get(xx,yy,zz,true)!==0||this.get(xx,yy+1,zz,true)!==0)continue;
+              seen.add(k);queue.push({x:xx,z:zz,y:yy,prev:a});
+            }
+          }
+          const points=[];
+          for(let a=best;a.prev;a=a.prev)points.unshift([a.x+.5,a.z+.5]);
+          m.villageNav={target,points,until:this.elapsed+2};
+        }
+        const points=m.villageNav.points;
+        while(points.length&&Math.hypot(points[0][0]-m.x,points[0][1]-m.z)<.17)points.shift();
+        const goal=points[0]||[x,z];
+        return walk(m,goal[0]-m.x,goal[1]-m.z,speed,radius,height);
       };
       if(night){
         if(inside){m.activity='sleep';m.motion=0;return false;}
@@ -1792,7 +1821,7 @@ const Game = (() => {
         }
         const farm=m.garden;
         if(farm){
-          if(inside)return go(...door);
+          if(m.z<hz+3.25&&Math.abs(m.x-hx-.5)<2.5)return go(...entry);
           const x=farm.x-.5,z=farm.z+.5;
           if(Math.hypot(m.x-x,m.z-z)>.8)return go(x,z);
           m.activity='farm';m.face=Math.atan2(farm.x+.5-m.x,-(farm.z+.5-m.z));
@@ -1815,13 +1844,13 @@ const Game = (() => {
           return go(...entry);
         }
         const stationX=hx+(job===1?1:-1),stationZ=hz-1;
-        if(this.get(stationX,h+1,stationZ,true)===(job===1?14:12)){
+        if((job===1?[14,136]:[12]).includes(this.get(stationX,h+1,stationZ,true))){
           m.activity=job===1?'forge':'build';
           m.face=Math.atan2(stationX+.5-m.x,-(stationZ+.5-m.z));return false;
         }
         m.activity='rest';return false;
       }
-      if(inside)return go(...door);
+      if(m.z<hz+3.25&&Math.abs(m.x-hx-.5)<2.5)return go(...entry);
       m.roamTimer=(m.roamTimer||0)-dt;
       if(m.roamTimer<=0){
         const time=Math.floor(this.elapsed/4),a=Voxel.hash(m.id,time,this.seed^73)*Math.PI*2;
