@@ -2338,3 +2338,34 @@ body.touchgame .game-tools .build-trigger span { display:none; }
   font:12px/1.6 ui-monospace,Consolas,monospace; box-sizing:border-box; }
 #debug { max-width:min(340px,calc(100vw - 24px)); white-space:pre-wrap; pointer-events:none; }
 @media(max-width:600px) { #debug {right:8px;top:92px;font-size:10px;line-height:1.35;} }
+
+
+/* v0.9.22 — Acessibilidade de HUD: texto redimensionável sem alterar canvas,
+   hotbar, posição de clique, controles de toque ou geometria do mundo. */
+#gamehud #quest {font-size:calc(14px * var(--prisma-hud-scale, 1));line-height:1.35;max-width:min(390px, 72vw);}
+#gamehud #quest small {font-size:calc(9px * var(--prisma-hud-scale, 1));}
+#gamehud .location {font-size:calc(12px * var(--prisma-hud-scale, 1));}
+#gamehud .location small {font-size:calc(10px * var(--prisma-hud-scale, 1));}
+#gamehud .hudstats {font-size:calc(13px * var(--prisma-hud-scale, 1));}
+#gamehud #itemname {font-size:calc(13px * var(--prisma-hud-scale, 1));}
+#gamehud .keyhint {font-size:calc(10px * var(--prisma-hud-scale, 1));}
+#gamehud #target {font-size:calc(10px * var(--prisma-hud-scale, 1));}
+#gamehud #houseCompass #compassTitle {font-size:calc(11px * var(--prisma-hud-scale, 1));}
+#gamehud #houseCompass #navDirection {font-size:calc(10px * var(--prisma-hud-scale, 1));}
+#gamehud #houseCompass .compass-mark b {font-size:calc(12px * var(--prisma-hud-scale, 1));}
+body.prisma-high-contrast #gamehud #quest,
+body.prisma-high-contrast #gamehud .location,
+body.prisma-high-contrast #gamehud .hudstats,
+body.prisma-high-contrast #gamehud #target,
+body.prisma-high-contrast #gamehud #itemname {background:#071011f2;color:#ffffff;border:1px solid #f3d484;text-shadow:1px 1px 1px #000;}
+body.prisma-high-contrast #gamehud #quest small {color:#ffe479;}
+body.prisma-high-contrast #gamehud #houseCompass {background:#071011f2;border:1px solid #ffe479;border-radius:5px;}
+body.prisma-high-contrast #gamehud #houseCompass .compass-mark,
+body.prisma-high-contrast #gamehud #houseCompass .compass-mark.major {background:#f5f5f5;}
+body.prisma-high-contrast #gamehud #houseCompass .compass-mark b,
+body.prisma-high-contrast #gamehud #houseCompass #navDirection {color:#fff;}
+body.prisma-high-contrast #gamehud #houseCompass .compass-waypoint {color:#ffeb00;text-shadow:1px 1px 3px #000, 0 0 4px #fff;}
+body.prisma-high-contrast #gamehud #cross {filter:drop-shadow(0 0 2px #000);}
+body.prisma-high-contrast #gamehud #cross:before,
+body.prisma-high-contrast #gamehud #cross:after {background:#ffea4a;box-shadow:0 0 0 1px #000,0 0 0 2px #fff;}
+@media(max-width:480px) {#gamehud #quest {max-width:min(72vw,280px);}}

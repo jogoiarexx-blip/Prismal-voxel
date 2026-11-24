@@ -55,6 +55,8 @@ const Saves = (() => {
     sensitivity: 1,
     touchSensitivity: 1.15,
     touchSize: 1,
+    hudScale: 1,
+    highContrast: false,
     leftHanded: false,
     autoJump: true,
     haptics: true,

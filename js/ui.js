@@ -86,6 +86,10 @@
     document.body.classList.toggle('lefty', Boolean(settings.leftHanded));
     document.documentElement.style.setProperty('--touch-size',
       String(Math.max(0.8, Math.min(1.25, Number(settings.touchSize) || 1))));
+    // Accessibility: typography-only HUD scaling avoids stretching the WebGL canvas.
+    const hudScale = Math.max(0.75, Math.min(1.5, Number(settings.hudScale) || 1));
+    document.documentElement.style.setProperty('--prisma-hud-scale', String(hudScale));
+    document.body.classList.toggle('prisma-high-contrast', settings.highContrast === true);
     if (g) g.touchAutoJump = document.body.classList.contains('touchgame') && settings.autoJump !== false;
   }
   function haptic(pattern = 12) {
@@ -1165,9 +1169,13 @@
   function diagnosticText() {
     if (!g) return 'Nenhuma partida aberta';
     const perf = perfFrames.snapshot();
+    // Count stored changes on demand, never in the per-frame render loop.
+    const editedRegions = Object.keys(g.edits || {});
+    const editedBlocks = editedRegions.reduce((sum, k) => sum + Object.keys(g.edits[k] || {}).length, 0);
+    const chestCount = Object.keys(g.chests || {}).length;
     const qualityNames = ['Baixa','Média','Alta'];
     return [
-      'MUNDO PRISMA · DIAGNÓSTICO LOCAL v0.9.21',
+      'MUNDO PRISMA · DIAGNÓSTICO LOCAL v0.9.22',
       'Gerado: ' + new Date().toISOString(),
       'Motor: ' + renderer.type + ' · qualidade: ' + (qualityNames[settings.quality] || settings.quality),
       'FPS médio: ' + perf.averageFPS + ' · FPS 1% low: ' + perf.low1FPS,
@@ -1175,6 +1183,7 @@
       'Resolução dinâmica: ' + Math.round((renderer.dynamicScale || 1) * 100) + '%',
       'Draw calls: ' + renderer.calls + ' · triângulos: ' + renderer.tris,
       'Chunks: ' + g.chunks.size + ' · jobs pendentes: ' + g.pending.size + ' · worker ocupado: ' + !!g.busy,
+      'Persistência: ' + editedRegions.length + ' regiões alteradas · ' + editedBlocks + ' blocos editados · ' + chestCount + ' baús',
       'XYZ: ' + [g.p.x,g.p.y,g.p.z].map(v=>Math.floor(v)).join(', ') + ' · chunk: ' + g.cx + ',' + g.cz,
       'Bioma: ' + ($('#biome').textContent || '-') + ' · seed: ' + g.meta.seed,
       'Estado do salvamento: ' + g.saveState,
@@ -1264,6 +1273,9 @@
         '<h3 class="setting-subheading">Controles no celular</h3>' +
         slider('touchSensitivity', 'Sensibilidade da câmera ao deslizar', 0.5, 2.5, 0.05, settings.touchSensitivity ?? 1.15, '×') +
         slider('touchSize', 'Tamanho do joystick', 0.8, 1.25, 0.05, settings.touchSize ?? 1, '×') +
+        '<h3 class="setting-subheading">Leitura e acessibilidade</h3>' +
+        slider('hudScale', 'Tamanho dos textos do HUD', 0.75, 1.5, 0.05, Math.max(.75,Math.min(1.5,Number(settings.hudScale)||1)), '×') +
+        '<label class="checkline"><input id="highContrast" type="checkbox"> Alto contraste na mira, bússola e indicadores</label>' +
         '<label class="checkline"><input id="autoJump" type="checkbox"> Pular automaticamente obstáculos baixos</label>' +
         '<label class="checkline"><input id="leftHanded" type="checkbox"> Inverter lados dos controles</label>' +
         '<label class="checkline"><input id="haptics" type="checkbox"> Vibrar ao quebrar e colocar blocos</label>' +
@@ -1288,6 +1300,7 @@
       ['autoJump', 'autoJump'],
       ['leftHanded', 'leftHanded'],
       ['haptics', 'haptics'],
+      ['highContrast', 'highContrast'],
     ]) {
       let input = $('#' + id);
       input.checked = settings[prop];
@@ -1298,7 +1311,7 @@
         if (prop === 'sound') Sound.play('ui', settings);
       };
     }
-    for (const id of ['fov', 'sensitivity', 'touchSensitivity', 'touchSize', 'volume', 'recuo']) {
+    for (const id of ['fov', 'sensitivity', 'touchSensitivity', 'touchSize', 'hudScale', 'volume', 'recuo']) {
       let n = $('#' + id);
       n.oninput = () => {
         let v = Number(n.value);
@@ -1395,7 +1408,7 @@
         '</ul><p>O primeiro selo libera a pedra rúnica. Com os três, use a bancada para combinar cristal, cobre e vidro em um Farol Prisma. Coloque-o para acender uma aurora sobre sua base.</p></div>';
     } else
       body =
-        '<p>Mundo Prisma é um sandbox voxel de exploração, sobrevivência e construção. Explore os Campos de Âmbar, a Floresta de Névoa e as Dunas de Vidro. Nas dunas, procure os obeliscos com cristais no topo.</p><p class="muted">Versão jogável 0.9.21 · Solo e multiplayer experimental<br>Arte, sprites, tipografia de título e efeitos sonoros criados para Mundo Prisma. Seu progresso é salvo neste navegador.</p>';
+        '<p>Mundo Prisma é um sandbox voxel de exploração, sobrevivência e construção. Explore os Campos de Âmbar, a Floresta de Névoa e as Dunas de Vidro. Nas dunas, procure os obeliscos com cristais no topo.</p><p class="muted">Versão jogável 0.9.22 · Solo e multiplayer experimental<br>Arte, sprites, tipografia de título e efeitos sonoros criados para Mundo Prisma. Seu progresso é salvo neste navegador.</p>';
     panel(
       'guide',
       'Guia de campo',
@@ -1959,7 +1972,7 @@
     $('#debug').hidden = !debug;
     if (debug)
       $('#debug').textContent =
-        'PRISMA 0.9.21 · ' +
+        'PRISMA 0.9.22 · ' +
         renderer.type +
         '\n' +
         perfFrames.snapshot().averageFPS +
