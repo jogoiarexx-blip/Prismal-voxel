@@ -1,3 +1,13 @@
+# Mundo Prisma v0.9.45 — Otimização das mecânicas (prévia)
+
+- IA: 60 decisões/s até 12 blocos, 15 entre 12 e 22, 10 entre 22 e 30; acumula o tempo de decisão e mantém temporizadores e física do jogador no passo anterior. Ataques próximos não são desacelerados.
+- Culling de criaturas, partículas e drops nos dois renderizadores; itens continuam no mundo. Pilhas próximas compatíveis se agrupam até 64 no solo, preservando quantidade e durabilidade. Sem agrupar drops P2P.
+- Cache breve de luzes próximas, invalidado ao atualizar iluminação ou descarregar chunks; HUD evita reescrever vitais e tarefa sem mudanças, F3 calcula estatísticas uma vez. F3, guia e diagnóstico leem versão da tela inicial; cache offline atualizado.
+- Corrigida recuperação parcial de mochila, inclusive marcação de alterações para salvamento; varredura rotativa de mudas evita deixar as posteriores permanentemente sem processamento.
+- Verificados 14 arquivos JS e seis conjuntos de regressão em ambiente isolado, incluindo 100 drops agrupados em duas pilhas e 60/15/10 decisões por segundo. Teste: `node tests/performance-0945.test.js`. Números de decisões e pilhas não equivalem a ganhos de FPS; falta benchmark real. Geradores 1–7 e schema mantidos. Próximos: guardas, invasões e testes mobile; meshing por seção e persistência regional seguem pendentes.
+
+---
+
 # Mundo Prisma v0.9.44 — Vilarejos vivos (prévia)
 
 - Gerador opcional 7, Vilarejos vivos: terraços e hortas irrigadas em locais adequados. Geradores 1–6 mantidos; mundos anteriores não ganham novas estruturas automaticamente.
