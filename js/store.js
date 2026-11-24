@@ -61,6 +61,8 @@ const Saves = (() => {
     autoJump: true,
     haptics: true,
     volume: 0.45,
+    effectsVolume:1,
+    interfaceVolume:1,
     sound: true,
     motion: true,
     invert: false,
@@ -160,11 +162,22 @@ const Sound = (() => {
       if (ctx.state === 'suspended') ctx.resume().catch(() => {});
     } catch {}
   }
+  function footstep(id) {
+    if([5,8,12,15,27,49,50,51,52,53,55,68,77,78,79,83,84,91].includes(id))return 'stepWood';
+    if([3,9,10,11,14,20,32,34,48,54,65,66,69,70,71,72,74,76].includes(id))return 'stepStone';
+    if([4,33,75].includes(id))return 'stepSand';
+    return 'step';
+  }
   function play(kind, settings) {
     if (!settings.sound || !ctx || !settings.volume) return;
+    const channel=kind==='ui'?'interfaceVolume':'effectsVolume';
+    const raw=settings[channel]??1;
+    const gain=Number.isFinite(raw)?Math.max(0,Math.min(1,raw)):1;
+    if(!gain)return;
     const now = ctx.currentTime;
-    if (kind === 'step' && now - last < 0.24) return;
-    if (kind === 'step') last = now;
+    const walking=kind.startsWith('step');
+    if (walking && now - last < 0.24) return;
+    if (walking) last = now;
     const specs = {
       ui: [410, 610, 0.075, 'sine'],
       mine: [125, 48, 0.12, 'triangle'],
@@ -174,6 +187,9 @@ const Sound = (() => {
       discovery: [330, 990, 0.65, 'sine'],
       swim: [190, 80, 0.13, 'sine'],
       step: [71, 42, 0.045, 'triangle'],
+      stepWood:[165,68,.075,'triangle'],
+      stepStone:[225,95,.052,'triangle'],
+      stepSand:[118,36,.065,'sine'],
       hurt: [210, 62, 0.18, 'sawtooth'],
       enemy: [98, 57, 0.31, 'triangle'],
       eat: [350, 170, 0.12, 'triangle'],
@@ -186,7 +202,7 @@ const Sound = (() => {
     osc.frequency.exponentialRampToValueAtTime(b, now + len);
     amp.gain.setValueAtTime(0.0001, now);
     amp.gain.exponentialRampToValueAtTime(
-      Math.max(0.001, settings.volume * (kind === 'step' ? 0.05 : 0.14)),
+      Math.max(0.001, settings.volume * gain * (walking ? 0.05 : 0.14)),
       now + 0.01,
     );
     amp.gain.exponentialRampToValueAtTime(0.0001, now + len);
@@ -194,5 +210,5 @@ const Sound = (() => {
     osc.start(now);
     osc.stop(now + len + 0.015);
   }
-  return { start, play };
+  return { start, play, footstep };
 })();
