@@ -1395,11 +1395,12 @@ body.touchgame #quest { max-width: min(54vw, 360px); }
   }
 }
 
-#held { position:absolute; right:9%; bottom:7%; transform:rotate(-17deg); pointer-events:none; }
-#held img { width:clamp(54px,9vw,130px); image-rendering:pixelated; filter:drop-shadow(3px 5px 0 #18201f55); }
-#held.swing { animation:swing .36s ease-in-out infinite alternate; }
-@keyframes swing { to { transform:translate(-12%,-12%) rotate(-38deg); } }
-@media(max-width:650px){#held {right:7%;bottom:27%;} #held img {width:46px;}}
+#held {position:absolute;right:1.5%;bottom:-3%;width:clamp(170px,24vw,330px);height:auto;pointer-events:none;transform-origin:75% 82%;image-rendering:pixelated;will-change:transform;}
+#held[hidden]{display:none!important;}
+#held.left-held{right:auto;left:1.5%;transform-origin:25% 82%;}
+body.touchgame #held {right:5%;bottom:calc(106px + env(safe-area-inset-bottom));width:clamp(112px,29vw,185px);}
+body.touchgame #held.left-held{right:auto;left:5%;}
+@media(max-height:480px) and (orientation:landscape){body.touchgame #held{bottom:calc(65px + env(safe-area-inset-bottom));width:clamp(105px,20vw,170px);}}
 
 #game.raining::after{content:"";position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(106deg,transparent 0 40px,#aad4df40 41px,transparent 42px 89px);mask-image:repeating-linear-gradient(0deg,transparent 0 40px,#000 41px 49px,transparent 50px 82px);animation:rainfall .55s linear infinite;}
 @keyframes rainfall{to{background-position:-24px 82px;mask-position:0 82px}}

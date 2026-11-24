@@ -6,6 +6,7 @@
     game = $('#game'),
     overlay = $('#overlay'),
     dialog = $('#dialog');
+  const heldView = new PrismaHeld.View($('#held'), Voxel);
   let settings = Saves.settings(),
     g = null,
     renderer = null,
@@ -201,6 +202,7 @@
   }
   worlds();
   function pauseSim() {
+    heldView.hide();
     if (g) {
       g.paused = true;
       g.keys.clear();
@@ -235,6 +237,7 @@
     dialog.focus({ preventScroll: true });
   }
   function homeMenu() {
+    heldView.hide();
     screen = 'home';
     overlay.hidden = true;
     home.hidden = false;
@@ -1175,7 +1178,7 @@
     const chestCount = Object.keys(g.chests || {}).length;
     const qualityNames = ['Baixa','Média','Alta'];
     return [
-      'MUNDO PRISMA · DIAGNÓSTICO LOCAL v0.9.23',
+      'MUNDO PRISMA · DIAGNÓSTICO LOCAL v0.9.24',
       'Gerado: ' + new Date().toISOString(),
       'Motor: ' + renderer.type + ' · qualidade: ' + (qualityNames[settings.quality] || settings.quality),
       'FPS médio: ' + perf.averageFPS + ' · FPS 1% low: ' + perf.low1FPS,
@@ -1408,7 +1411,7 @@
         '</ul><p>O primeiro selo libera a pedra rúnica. Com os três, use a bancada para combinar cristal, cobre e vidro em um Farol Prisma. Coloque-o para acender uma aurora sobre sua base.</p></div>';
     } else
       body =
-        '<p>Mundo Prisma é um sandbox voxel de exploração, sobrevivência e construção. Explore os Campos de Âmbar, a Floresta de Névoa e as Dunas de Vidro. Nas dunas, procure os obeliscos com cristais no topo.</p><p class="muted">Versão jogável 0.9.23 · Solo e multiplayer experimental<br>Arte, sprites, tipografia de título e efeitos sonoros criados para Mundo Prisma. Seu progresso é salvo neste navegador.</p>';
+        '<p>Mundo Prisma é um sandbox voxel de exploração, sobrevivência e construção. Explore os Campos de Âmbar, a Floresta de Névoa e as Dunas de Vidro. Nas dunas, procure os obeliscos com cristais no topo.</p><p class="muted">Versão jogável 0.9.24 · Solo e multiplayer experimental<br>Arte, sprites, tipografia de título e efeitos sonoros criados para Mundo Prisma. Seu progresso é salvo neste navegador.</p>';
     panel(
       'guide',
       'Guia de campo',
@@ -1843,6 +1846,7 @@
     } else if(s==='chestBreak') {
       broadcastChest(v,true);
     } else if (s === 'blockBroken' || s === 'blockPlaced' || s === 'hitEnemy') {
+      if (s !== 'blockBroken') heldView.pulse(s === 'blockPlaced' ? 'place' : 'attack');
       touchActionEffect(s);
     } else if (s === 'hurt') {
       if (settings.noFlash) return;
@@ -1882,13 +1886,7 @@
     const active = g.inv[g.selected];
     const rotation = active && [49, 57, 69, 46].includes(active.b) && g.buildRotation
       ? ' · Girada +' + (g.buildRotation * 90) + '°' : '';
-    const held = $('#held');
-    held.hidden = settings.thirdPerson || !active;
-    if (held.dataset.item !== String(active?.b)) {
-      held.dataset.item = String(active?.b);
-      held.innerHTML = active ? img(active.b) : '';
-    }
-    held.classList.toggle('swing', Boolean(g.holding && settings.motion));
+    heldView.update(g, settings, 0, screen === 'play');
     $('#itemname').textContent = active
       ? name(active.b) +
         (Voxel.durability[active.b] ? ' · ' + active.dur + '/' + Voxel.durability[active.b] : '')
@@ -1972,7 +1970,7 @@
     $('#debug').hidden = !debug;
     if (debug)
       $('#debug').textContent =
-        'PRISMA 0.9.23 · ' +
+        'PRISMA 0.9.24 · ' +
         renderer.type +
         '\n' +
         perfFrames.snapshot().averageFPS +
@@ -2657,6 +2655,7 @@
       mpLastGuestSync=now;guestInventorySync();saveGuestCheckpoint();
     }
     renderer.draw(g, settings, Math.min(1, acc * 60));
+    heldView.update(g, settings, dt, screen === 'play');
   }
   if(mpInviteFromUrl)setTimeout(()=>multiplayerJoinPanel(),120);
   requestAnimationFrame(frame);

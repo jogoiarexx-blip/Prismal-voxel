@@ -19,5 +19,6 @@ assert.match(css,/#gamehud #quest \{font-size:calc\(14px \* var\(--prisma-hud-sc
 assert.match(css,/body\.prisma-high-contrast #gamehud #cross:before/);
 assert.match(css,/body\.prisma-high-contrast #gamehud #houseCompass/);
 assert.match(ui,/Persistência:.*regiões alteradas/);
-assert.match(index,/VERSÃO 0\.9\.23/);
+const version=fs.readFileSync(path.join(root,'offline.js'),'utf8').match(/CACHE = PREFIX \+ '(\d+\.\d+\.\d+)'/)[1];
+assert.ok(index.includes('VERSÃO '+version),'displayed version matches offline cache');
 console.log('PASS accessibility: HUD text scaling, contrast, saved settings, world-edit diagnostic and version');
