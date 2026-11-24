@@ -38,14 +38,14 @@ const Game = (() => {
     return bag.reduce((a, t) => a + (t?.b === b ? t.n : 0), 0);
   }
   function fresh(name, seed, mode, difficulty, generator = 3) {
-    generator = [4,5].includes(generator) ? generator : 3;
+    generator = [4,5,6].includes(generator) ? generator : 3;
     let h = land(0, 3, Voxel.seedHash(seed), generator).h;
     let inv = empty();
     if (mode === 'creative') [8, 49, 53, 57, 55, 16, 83, 85, 87].forEach((v, i) => (inv[i] = slot(v, 64)));
     else {
       inv[0] = slot(23, 3);
     }
-    const sites = generator===5 ? Voxel.planRuins(Voxel.seedHash(seed),{}, {x:.5,z:3.5},5) : null;
+    const sites = generator>=5 ? Voxel.planRuins(Voxel.seedHash(seed),{}, {x:.5,z:3.5},generator) : null;
     return {
       schema: 1,
       generator,
@@ -79,7 +79,7 @@ const Game = (() => {
         mode: rec.mode,
         difficulty: rec.difficulty,
       };
-      if (![1, 2, 3, 4, 5].includes(rec.generator) || rec.schema !== 1)
+      if (![1, 2, 3, 4, 5, 6].includes(rec.generator) || rec.schema !== 1)
         throw Error('Versão de mundo incompatível');
       this.generator = rec.generator;
       this.fragments = [];
@@ -183,7 +183,8 @@ const Game = (() => {
     stream(force = false) {
       const cx = Math.floor(this.p.x / 16),
         cz = Math.floor(this.p.z / 16),
-        r = (typeof document !== 'undefined' && document.body?.classList.contains('touchgame') ? [2,3,4] : [3,4,5])[this.settings.quality];
+        mobile = typeof document !== 'undefined' && document.body?.classList.contains('touchgame'),
+        r = Math.max(2,(mobile ? [2,3,4] : [3,4,5])[this.settings.quality]-(mobile?this.adaptiveRadiusReduction||0:0));
       if (!force && this.cx === cx && this.cz === cz && this.radius === r) return;
       this.cx = cx;
       this.cz = cz;
