@@ -180,6 +180,23 @@ const Voxel = (() => {
     ['Armadura de cobre', 'c88b56', 0], // 176
     ['Armadura de ferro', 'cbd4d8', 0], // 177
     ['Moeda prisma', 'efc66a', 0], // 178
+    ['Espada de madeira', 'b88e57', 0], // 179
+    ['Espada de pedra', '93918b', 0], // 180
+    ['Espada de cobre', 'd69b66', 0], // 181
+    ['Espada prisma', 'aa80d0', 0], // 182
+    ['Machado de madeira', 'b88e57', 0], // 183
+    ['Machado de pedra', '93918b', 0], // 184
+    ['Machado de cobre', 'd69b66', 0], // 185
+    ['Machado prisma', 'aa80d0', 0], // 186
+    ['Pá de madeira', 'b88e57', 0], // 187
+    ['Pá de cobre', 'd69b66', 0], // 188
+    ['Pá de ferro', 'bdc4c2', 0], // 189
+    ['Pá prisma', 'aa80d0', 0], // 190
+    ['Arco', '98663b', 0], // 191
+    ['Flecha', 'c2baa4', 0], // 192
+    ['Escudo de madeira', '98663b', 0], // 193
+    ['Armadura prisma', 'aa80d0', 0], // 194
+    ['Escudo de ferro', 'bdc4c2', 0], // 195
   ];
   const blocks = data.map(([name, hex, hard], id) => ({
     id,
@@ -667,7 +684,7 @@ const Voxel = (() => {
       3,
     ],
   );
-  const durability = { 22: 48, 42: 80, 43: 120, 44: 180, 45: 260, 47: 100, 89: 160, 90: 80, 146: 80, 176: 65, 177: 110 };
+  const durability = { 22: 48, 42: 80, 43: 120, 44: 180, 45: 260, 47: 100, 89: 160, 90: 80, 146: 80, 176: 65, 177: 110, 179:30,180:55,181:80,182:200,183:40,184:75,185:115,186:240,187:35,188:115,189:165,190:235,191:100,193:80,194:190,195:150 };
   recipes.push(
     [
       38,
@@ -792,7 +809,12 @@ const Voxel = (() => {
   recipes.push([167,1,[[8,4],[21,2]],12],[171,1,[[8,2],[40,2]],12],[172,1,[[8,5]],12],[173,1,[[3,5]],12]);
   // Equipment is appended to preserve every existing block and recipe ID.
   recipes.push([176,1,[[24,8],[21,2]],12],[177,1,[[35,8],[21,2]],12]);
-  const armor = {176:.20,177:.35};
+  const armor = {176:.20,177:.35,194:.50};
+  const equipment = Object.freeze({"47":{"kind":"sword","power":5},"89":{"kind":"axe","power":5.4},"90":{"kind":"shovel","power":4},"179":{"kind":"sword","power":2},"180":{"kind":"sword","power":3},"181":{"kind":"sword","power":4},"182":{"kind":"sword","power":8},"183":{"kind":"axe","power":2.5},"184":{"kind":"axe","power":3.5},"185":{"kind":"axe","power":4.5},"186":{"kind":"axe","power":7},"187":{"kind":"shovel","power":2.4},"188":{"kind":"shovel","power":5},"189":{"kind":"shovel","power":6},"190":{"kind":"shovel","power":8},"191":{"kind":"bow","power":4},"193":{"kind":"shield","power":0},"195":{"kind":"shield","power":0}});
+  const weaponDamage = id=>equipment[id]?.kind==='sword'?equipment[id].power:durability[id]&&!armor[id]&&!['bow','shield'].includes(equipment[id]?.kind)?2:1;
+  recipes.push([179,1,[[8,2],[21,1]],12],[180,1,[[3,2],[21,1]],12],[181,1,[[24,2],[21,1]],12],[182,1,[[11,2],[21,1]],12],[183,1,[[8,3],[21,2]],12],[184,1,[[3,3],[21,2]],12],[185,1,[[24,3],[21,2]],12],[186,1,[[11,3],[21,2]],12],[187,1,[[8,1],[21,2]],12],[188,1,[[24,1],[21,2]],12],[189,1,[[35,1],[21,2]],12],[190,1,[[11,1],[21,2]],12],
+    [191,1,[[21,3],[123,2]],12],[192,4,[[21,1],[3,1],[143,1]],12],
+    [193,1,[[8,6],[21,2]],12],[194,1,[[11,8],[35,4]],12],[195,1,[[35,6],[8,2]],12]);
   // A recipe belongs to exactly one station: 0 (backpack), 12 (workbench),
   // or 14 (furnace). Keep recipe indexes stable for saves and UI events.
   const recipeStation = (recipe) => recipe?.[3] || 0;
@@ -1516,7 +1538,7 @@ const Voxel = (() => {
     recipeStation,
     recipesAtStation,
     durability,
-    armor,
+    armor,equipment,weaponDamage,
     farmAnimals,
     farmFood,
     cropForItem, cropInfo,
