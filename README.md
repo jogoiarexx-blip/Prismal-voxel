@@ -1,3 +1,13 @@
+# Mundo Prisma v0.9.40 — Fronteiras e sobrevivência (prévia)
+
+- Novo gerador opcional 6: selecione **Fronteiras · vilarejos e florestas** ao criar um mundo. Mantém cavernas, riachos, montanhas e expedições do gerador anterior, adicionando grupos de casas com telhas, janelas, bancada, forno e iluminação. A distribuição das árvores varia por região.
+- Novas armaduras de cobre e ferro (20% e 35% de redução nominal de dano de combate, respectivamente, com arredondamento e mínimo de 1 ponto). Fabrique na bancada usando 8 barras do metal e 2 hastes; mantenha a armadura na barra rápida. Somente a mais forte protege. Não impede fome, afogamento ou queda; desgaste por ataque.
+- Shader de relevo procedural próximo, com desvanecimento à distância, luz solar mais quente ao entardecer e oclusão ambiente reforçada. Sem texturas externas adicionais.
+- Mobile: redução temporária de um anel de chunks após FPS baixo persistir com resolução dinâmica mínima; recuperação gradual. Não altera preferências salvas.
+- Testes: `node tests/voxel-0940.test.js`. Verificação isolada: 45 chunks das gerações 1–5 idênticos à main anterior; 61 casas em três sementes (39 cruzando fronteiras de chunks); sintaxe JS e proteção de armadura verificadas. Ainda falta validação WebGL em navegador, benchmark em celular real e sessão P2P real. O gerador 6 requer esta versão em ambos os aparelhos.
+
+---
+
 # Mundo Prisma v0.9.23 — Oficina artesanal e acabamento dos blocos
 
 - Escadas de madeira e pedra com degraus, bordas e juntas; IDs e orientações mantidos.
