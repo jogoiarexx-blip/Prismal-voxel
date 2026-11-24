@@ -691,7 +691,7 @@ const Game = (() => {
       if (this.holding) this.mine(dt);
       if (Math.floor(this.elapsed) !== Math.floor(this.elapsed - dt)) {
         const period = Math.floor(this.elapsed / 85);
-        this.raining = Voxel.hash(period, 0, this.seed ^ 612) > 0.53;
+        if(!this.networkGuest)this.raining = Voxel.hash(period, 0, this.seed ^ 612) > 0.53;
         this.exposed = this.raining && !this.submerged;
         if (this.exposed)
           for (let y = Math.ceil(this.eye()[1]); y < Voxel.H; y++) {
