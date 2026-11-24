@@ -582,6 +582,13 @@ const View = (() => {
         };
         if(kind==='Aldeão'){
           const coat=[17,109,68][mob.job]||17;
+          if(mob.activity==='sleep'){
+            piece(-.25,.07,-.65,.50,.32,.86,coat);
+            piece(-.22,.10,-.98,.44,.35,.37,106);
+            piece(-.21,.06,.19,.42,.22,.51,27);
+            piece(-.23,.04,.65,.46,.19,.18,112);
+          }else{
+          const work=['farm','forge','build'].includes(mob.activity)?Math.sin(t*6)*.13:0;
           piece(-.29,.57,-.20,.58,.72,.40,coat);
           piece(-.23,1.28,-.23,.46,.41,.46,106);
           piece(-.10,1.37,-.32,.20,.13,.11,105);
@@ -591,11 +598,16 @@ const View = (() => {
           piece(-.23,.70,-.36,.46,.18,.16,coat);
           piece(-.13,.70,-.39,.26,.12,.07,106);
           for(const side of [-1,1]){
-            piece(side*.35-.085,.68,-.18,.17,.50,.29,coat);
+            piece(side*.35-.085,.68+side*work,-.18-work,.17,.50,.29,coat);
             piece(side*.15-.11,.12,-.12+side*step*.14,.22,.46,.27,27);
             piece(side*.15-.12,.01,-.23+side*step*.14,.24,.14,.36,112);
           }
           piece(-.27,.59,-.22,.54,.10,.44,12);
+          if(mob.activity==='farm'||mob.activity==='forge'||mob.activity==='build'){
+            piece(.29,.65+work,-.43,.08,.37,.08,21);
+            piece(.18,.92+work,-.49,.30,.12,.15,mob.activity==='farm'?3:35);
+          }
+          }
         } else if (kind === 'Ovelha') {
           // White fluffy body, grey face and four articulated black hooves.
           const wool=(mob.shorn||(mob.woolReady||0)>g.elapsed)?116:115;
@@ -1076,6 +1088,7 @@ const View = (() => {
         const color=m.hurt>0?'#efb169':col;
         if(kind==='Aldeão'){
           const coat=['#608971','#667178','#70503a'][m.job]||'#608971';
+          if(m.activity==='sleep'){drawSprite(m.x,m.y+.20,m.z,.74,coat);drawSprite(m.x,m.y+.24,m.z-.46,.34,'#f1d69e');continue;}
           drawSprite(m.x,m.y+.85,m.z,.75,coat);
           drawSprite(m.x,m.y+1.49,m.z,.48,'#f1d69e');
           drawSprite(m.x,m.y+1.74,m.z,.38,'#845d37');
