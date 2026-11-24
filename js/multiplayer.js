@@ -100,7 +100,7 @@ const PrismaNet = (() => {
             return;
           }
           if(msg.t==='part') {
-            if(!Number.isSafeInteger(msg.id)||!Number.isSafeInteger(msg.i)||!Number.isSafeInteger(msg.n)||msg.n<1||msg.n>500||msg.i<0||msg.i>=msg.n||typeof msg.d!=='string'||msg.d.length>13000) return;
+            if(!Number.isSafeInteger(msg.id)||!Number.isSafeInteger(msg.i)||!Number.isSafeInteger(msg.n)||msg.n<1||msg.n>625||msg.i<0||msg.i>=msg.n||typeof msg.d!=='string'||msg.d.length>8000) return;
             let p=parts.get(msg.id);
             if(!p) { if(parts.size>3)parts.clear(); p={at:Date.now(),items:new Array(msg.n),size:0,received:0};parts.set(msg.id,p); }
             if(p.items.length!==msg.n || Date.now()-p.at>60000){parts.delete(msg.id);return;}
@@ -178,11 +178,11 @@ const PrismaNet = (() => {
       activeSends++;queuedChars+=raw.length;
       queue=queue.catch(()=>{}).then(async()=>{
         await drain(channel);
-        if(raw.length<=11000){channel.send(raw);metrics.reliableSent++;return true;}
-        const id=nextId++,n=Math.ceil(raw.length/11000);
+        if(raw.length<=8000){channel.send(raw);metrics.reliableSent++;return true;}
+        const id=nextId++,n=Math.ceil(raw.length/8000);
         for(let i=0;i<n;i++){
           await drain(channel);
-          channel.send(JSON.stringify({t:'part',id,i,n,d:raw.slice(i*11000,(i+1)*11000)}));
+          channel.send(JSON.stringify({t:'part',id,i,n,d:raw.slice(i*8000,(i+1)*8000)}));
         }
         metrics.reliableSent++;return true;
       }).finally(()=>{activeSends=Math.max(0,activeSends-1);queuedChars=Math.max(0,queuedChars-raw.length);});
