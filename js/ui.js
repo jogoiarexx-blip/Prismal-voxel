@@ -297,8 +297,12 @@
     const box=$('#mpChatComposer');if(box)box.hidden=true;
     $('#mpChatQuickInput')?.blur();
   }
-  function saveGuestCheckpoint() {
+  function saveGuestCheckpoint(capture=false) {
     if(mpRole!=='guest'||!g?.ready||!mpHostWorldId||!mpGuestProfile)return;
+    if(capture&&mpWorldReady&&!chestPending){
+      const key=JSON.stringify(g.inv),old=mpGuestProfile.pendingInv;
+      if(key!==mpLastGuestInvHash&&(!old||JSON.stringify(old.inv)!==key||old.rev!==mpGuestRevision))mpGuestProfile.pendingInv={seq:++mpGuestSeq,rev:mpGuestRevision,inv:structuredClone(g.inv)};
+    }
     mpGuestProfile.rev=mpGuestRevision;mpGuestProfile.tx=chestTx;mpGuestProfile.seq=mpGuestSeq;
     mpGuestProfile.inv=structuredClone(g.inv);mpGuestProfile.p={...g.p};
     mpGuestProfile.saved=Date.now();
@@ -506,13 +510,13 @@
       else if(mpRole==='guest') panel('mp-answer','Sincronizando mundo…',
         '<p class="mp-lead">Conexão P2P estabelecida. Recebendo os blocos do anfitrião…</p>',true,false);
     } else if(s==='reconnecting' || s==='slow') {
-      if(mpRole==='guest'&&g?.ready&&s==='reconnecting'){saveGuestCheckpoint();mpWorldReady=false;pauseSim();panel('load','Reconectando…','<p>Construção pausada para preservar os dados da sessão.</p>',true,false);}
+      if(mpRole==='guest'&&g?.ready&&s==='reconnecting'){saveGuestCheckpoint(true);mpWorldReady=false;pauseSim();panel('load','Reconectando…','<p>Construção pausada para preservar os dados da sessão.</p>',true,false);}
       toast(s==='slow' ? 'Conexão lenta: verificando o amigo…' : 'P2P instável: tentando recuperar a conexão…');
     } else if(s==='recovered') {
       toast('Conexão recuperada: conferindo mundo e inventários…');
       if(mpRole==='host')restartWorldSync();
       else if(mpRole==='guest' && g?.ready) {
-        saveGuestCheckpoint();mpWorldReady=false;mpLastSeq=-1;
+        saveGuestCheckpoint(true);mpWorldReady=false;mpLastSeq=-1;
         pauseSim();
         panel('load','Sincronizando novamente…',
           '<p class="mp-lead">A conexão voltou. Conferindo o mundo e seus itens com o anfitrião antes de liberar a construção.</p>',true,false);
@@ -521,14 +525,14 @@
     } else if(s==='failed') {
       toast('P2P interrompido. É necessário renovar o convite para reconectar.');
       if(mpRole==='guest' && g?.ready) {
-        saveGuestCheckpoint();mpWorldReady=false;pauseSim();
+        saveGuestCheckpoint(true);mpWorldReady=false;pauseSim();
         panel('mp-lost','Conexão interrompida',
           '<p>O mundo do anfitrião permanece salvo. Peça outro link e entre novamente.</p>'+
           btn('mp-rejoin','Reconectar com novo link','primary fullwidth')+
           btn('mp-leave','Sair da partida','secondary'));
       }
     } else if(s==='disconnected') {
-      saveGuestCheckpoint();mpWorldReady=false;
+      saveGuestCheckpoint(true);mpWorldReady=false;
       if(mpRole==='host' && g?.ready)g.save().catch(()=>{});
       $('#mpChatBtn').hidden=true;
       if(mpRemote) mpRemote.active=false;
@@ -553,10 +557,13 @@
         mp.send({t:'chest-error',pos,reason:'Baú indisponível. Aproxime-se e tente novamente.'}).catch(()=>{});
         return;
       }
-      remoteChestInventory=structuredClone(currentGuestProfile().inv);
-      const items=g.chests[pos] ||= Array(18).fill(null);
-      mp.send({t:'chest-state',pos,rev:g.chestRevisions[pos]||0,items,
-        inv:remoteChestInventory,profileRev:currentGuestProfile().rev,tx:chestTx,initial:true}).catch(()=>{});
+      const session=g,connection=mp,id=mpHostGuestId;
+      PrismaCoop.readChest(session,id,pos,msg.seq,Voxel.blocks.length).then(result=>{
+        if(g!==session||mp!==connection||!mp.connected)return;
+        if(!result.state||!validSharedChest(pos))return mp.send({t:'chest-error',pos,reason:'Inventário pendente. Feche e abra o baú novamente.'});
+        session.chests[pos] ||= Array(18).fill(null);remoteChestInventory=structuredClone(result.state.inv);
+        return mp.send(result.state);
+      }).catch(()=>{});
       return;
     } else if(msg.t==='chest-action' && mpRole==='host' && mpWorldReady && g?.ready) {
       const pos=msg.pos;
@@ -1270,6 +1277,7 @@
   }
   async function quit() {
     if (!g) return;
+    if(mpRole==='guest'){saveGuestCheckpoint(true);guestInventorySync();}
     const ok = await g.save();
     if (!ok) {
       toast('Falha ao salvar. A partida continua aberta.');
@@ -1753,7 +1761,7 @@
       if(mpRole==='guest' && mp?.connected) {
         chestLoaded=false;chestPending=true;chestRevision=-1;
         guestInventorySync();
-        mp.send({t:'chest-open',pos:chestPos,id:mpGuestProfile?.id}).catch(()=>{
+        mp.send({t:'chest-open',pos:chestPos,id:mpGuestProfile?.id,seq:mpGuestSeq}).catch(()=>{
           chestPending=false;toast('Não foi possível abrir o baú do anfitrião.');
         });
       }
@@ -2661,7 +2669,7 @@
     return ok;
   }
   document.addEventListener('visibilitychange', () => {
-    if(document.hidden) { emergencyCheckpoint(); saveGuestCheckpoint(); if(g?.ready && mpRole!=='guest')g.save(); }
+    if(document.hidden) { emergencyCheckpoint(); saveGuestCheckpoint(true); if(g?.ready && mpRole!=='guest')g.save(); }
     if (document.hidden && g && screen === 'play') pauseMenu();
   });
   window.addEventListener('blur', () => {
@@ -2669,7 +2677,7 @@
   });
   window.addEventListener('pagehide', () => {
     emergencyCheckpoint();
-    saveGuestCheckpoint();
+    saveGuestCheckpoint(true);
     if(mpRole==='host' && g?.ready)g.save();
     else if (g) g.save();
     mp?.close();
@@ -2688,7 +2696,7 @@
     if(mpRole==='host'&&mpWorldReady&&mp?.connected&&now-mpLastEntity>320){
       mpLastEntity=now;mp.sendFast({t:'entities',seq:++mpEntitySeq,mobs:g.networkMobState(),drops:g.networkDropState(),time:g.time,day:g.day,raining:g.raining});
     }
-    if(mpRole==='guest'&&mpWorldReady&&now-mpLastGuestSync>4500){mpLastGuestSync=now;guestInventorySync();saveGuestCheckpoint();}
+    if(mpRole==='guest'&&mpWorldReady&&!chestPending&&screen!=='chest'&&now-mpLastGuestSync>4500){mpLastGuestSync=now;guestInventorySync();saveGuestCheckpoint();}
     if(g.paused) {
       if(screen==='bag'&&bagStation===14&&!document.hidden&&!g.networkGuest) {
         g.tickFurnaces(dt);updateFurnaceProgress();
