@@ -25,7 +25,7 @@ const Navigation = (() => {
       label=point ? ((typeof Voxel !== 'undefined' ? Voxel.ruins?.[point.id]?.name : null) || 'Próxima ruína') : '';
       key=point ? 'objective:'+point.id : '';
     } else if (mode.startsWith('treasure:')) {
-      if(session.generator!==5 || typeof Voxel==='undefined')return null;
+      if(session.generator<5 || typeof Voxel==='undefined')return null;
       point=Voxel.treasurePoint(site(Number(mode.slice(9))));
       label=point?.label || 'Tesouro';key=mode;
     } else if (mode.startsWith('ruin:')) {
