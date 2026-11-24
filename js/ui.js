@@ -373,7 +373,7 @@
       worldList.map(w=>'<option value="'+esc(w.id)+'">'+esc(w.name)+' · '+mode(w.mode)+'</option>').join('')+'</select></label>'+
       '<div id="mpNewWorldFields" class="mp-new-world">'+
       '<label class="field">Nome do mundo<input id="mpWorldName" value="Aventura em dupla" maxlength="48"></label>'+
-      '<label class="field">Modo<select id="mpWorldMode"><option value="survival">Sobrevivência</option><option value="creative">Criativo (blocos ilimitados)</option></select></label><label class="field">Geração<select id="mpWorldGenerator"><option value="3">Clássico</option><option value="4">Exploração</option><option value="5">Expedição · ruínas e tesouros</option><option value="6">Fronteiras · vilarejos e florestas</option></select></label></div>'+
+      '<label class="field">Modo<select id="mpWorldMode"><option value="survival">Sobrevivência</option><option value="creative">Criativo (blocos ilimitados)</option></select></label><label class="field">Geração<select id="mpWorldGenerator"><option value="3">Clássico</option><option value="4">Exploração</option><option value="5">Expedição · ruínas e tesouros</option><option value="6">Fronteiras · vilarejos e florestas</option><option value="7">Vilarejos vivos · hortas e caminhos</option></select></label></div>'+
       '<button class="primary fullwidth" id="mpMakeInvite">Gerar convite P2P</button>'+
       '<p class="smallnote">Compartilhe o convite apenas com alguém de confiança. Antes de abrir um mundo importante, use Meus mundos → Backup. O Criativo é recomendado para construir em dupla.</p>',true);
     const sel=$('#mpWorldSelect'), fresh=$('#mpNewWorldFields');
@@ -666,7 +666,7 @@
     }
     if(msg.t==='world' && mpRole==='guest') {
       const src=msg.rec;
-      if(!src || src.schema!==1 || ![1,2,3,4,5,6].includes(src.generator) || typeof src.seed!=='string' ||
+      if(!src || src.schema!==1 || ![1,2,3,4,5,6,7].includes(src.generator) || typeof src.seed!=='string' ||
         typeof src.name!=='string' || !src.edits || typeof src.edits!=='object')return toast('Dados do mundo incompatíveis.');
       const rec=structuredClone(src);
       const existing=g && mpHostWorldId===src.id ? {p:{...g.p},inv:structuredClone(g.inv)} : null;
@@ -866,7 +866,7 @@
             '<small>Construa livremente, sem limite de blocos, e voe para explorar.</small></span>' +
             '<span class="mode-check" aria-hidden="true">✓</span></button>' +
         '</div>' +
-        '<label class="field"><span class="field-heading">✦ Geração do terreno</span><select id="worldGenerator"><option value="3">Clássico · terreno atual</option><option value="4">Exploração · cavernas profundas e riachos</option><option value="5">Expedição · ruínas, cabana e cripta</option><option value="6">Fronteiras · vilarejos e florestas</option></select><small>A mesma semente reproduz o mapa quando a geração é igual.</small></label>' +
+        '<label class="field"><span class="field-heading">✦ Geração do terreno</span><select id="worldGenerator"><option value="3">Clássico · terreno atual</option><option value="4">Exploração · cavernas profundas e riachos</option><option value="5">Expedição · ruínas, cabana e cripta</option><option value="6">Fronteiras · vilarejos e florestas</option><option value="7">Vilarejos vivos · hortas e caminhos</option></select><small>A mesma semente reproduz o mapa quando a geração é igual.</small></label>' +
         '<label class="field rhythm-field" id="difficultyField"><span class="field-heading"><span class="field-badge" aria-hidden="true">◷</span> Ritmo da partida</span>' +
           '<select id="difficulty"><option value="normal">Normal · ciclo de 24 minutos</option>' +
           '<option value="short">Ciclo rápido · 4 minutos</option>' +
@@ -953,7 +953,7 @@
     } catch(e) {console.error(e); toast('Falha ao exportar mundo.');}
   }
   function validateBackup(rec) {
-    if (!rec || rec.schema !== 1 || ![1,2,3,4,5,6].includes(rec.generator) ||
+    if (!rec || rec.schema !== 1 || ![1,2,3,4,5,6,7].includes(rec.generator) ||
         typeof rec.seed !== 'string' || rec.seed.length > 150 ||
         typeof rec.name !== 'string' || !rec.name.trim() ||
         !['survival','creative'].includes(rec.mode) ||
@@ -1955,7 +1955,7 @@
       ? Voxel.farmAnimals.includes(aimedCreature.kind)
         ? (aimedCreature.juvenile?'Filhote de ':'')+aimedCreature.kind+(aimedCreature.tamed?(aimedCreature.follow?' · seguindo':' · domesticado'):'') + (g.inv[g.selected]?.b === Voxel.farmFood[aimedCreature.kind]
           ? ' · Usar para alimentar' : aimedCreature.tamed&&!g.inv[g.selected]?' · Usar: seguir/parar':aimedCreature.kind==='Vaca'?' · Balde para ordenhar':aimedCreature.kind==='Ovelha'?' · Tesoura para tosquiar':' · Animal pacífico')
-        : aimedCreature.kind==='Aldeão' ? 'Aldeão · '+(['Fazendeiro','Ferreiro','Construtor'][aimedCreature.job]||'Fazendeiro')+' · Usar para negociar' : aimedCreature.kind || 'Raspejante'
+        : aimedCreature.kind==='Aldeão' ? 'Aldeão · '+(['Fazendeiro','Ferreiro','Construtor'][aimedCreature.job]||'Fazendeiro')+(aimedCreature.activity==='sleep'?' · Dormindo':' · '+({farm:'Cultivando',forge:'Trabalhando no forno',build:'Trabalhando na bancada',walk:'Caminhando',rest:'Descansando'}[aimedCreature.activity]||'Usar para negociar')) : aimedCreature.kind || 'Raspejante'
       : g.hit?.b === 28
         ? 'R · Despertar núcleo'
         : g.hit
