@@ -569,7 +569,7 @@ const View = (() => {
         const dead=mob.hp<=0 ? Math.max(.10,Math.min(1,(mob.dying||0)/.55)) : 1;
         const s=Math.min(1.2,Math.max(.08,(kind==='Guardião Prisma' ? 1.06 : kind==='Vaca' ? 1.14 :
           kind==='Ovelha' ? .97 : kind==='Porco' ? .91 :
-          kind==='Vigia de Cascalho' ? 1.02 : kind==='Zumbi' || kind==='Aldeão' ? 1.02 : kind==='Saltim' ? .72 : kind==='Galinha'?.64:.82)*dead*Voxel.farmScale(mob)));
+          kind==='Vigia de Cascalho' ? 1.02 : kind==='Zumbi' || kind==='Aldeão' || kind==='Guarda' ? 1.02 : kind==='Saltim' ? .72 : kind==='Galinha'?.64:.82)*dead*Voxel.farmScale(mob)));
         const start=ent.length;
         // One shared vertex buffer, no extra draw calls or additional texture atlases.
         // Clamped, positive cuboids prevent warped/stretched enemies even after
@@ -588,7 +588,18 @@ const View = (() => {
         const eyes=(height,depth,material=110,spacing=.18,size=.09)=>{
           for (const side of [-1,1]) piece(side*spacing-size/2,height,-depth,size,size,size*.6,material);
         };
-        if(kind==='Aldeão'){
+        if(kind==='Guarda'){
+          const swing=(mob.attack||0)*.7;
+          piece(-.30,.57,-.22,.60,.69,.44,109);
+          piece(-.22,1.29,-.23,.44,.39,.46,106);
+          piece(-.26,1.61,-.27,.52,.16,.54,35);
+          piece(-.26,1.43,-.27,.10,.19,.08,109);piece(.16,1.43,-.27,.10,.19,.08,109);
+          eyes(1.48,.25,112,.12,.08);
+          for(const side of [-1,1]){piece(side*.15-.11,.12,-.13+side*step*.14,.22,.46,.28,109);piece(side*.15-.12,.01,-.23+side*step*.14,.24,.14,.36,112);}
+          piece(-.42,.68,-.20,.18,.48,.30,109);piece(.24,.68+swing,-.25-swing,.18,.48,.30,109);
+          piece(.31,.86+swing,-.39-swing,.08,.60,.08,35);piece(.19,.88+swing,-.43-swing,.32,.08,.15,113);
+          piece(-.47,.65,-.45,.34,.48,.10,68);piece(-.37,.81,-.51,.14,.14,.06,35);
+        }else if(kind==='Aldeão'){
           const coat=[17,109,68][mob.job]||17;
           if(mob.activity==='sleep'){
             piece(-.25,.07,-.65,.50,.32,.86,coat);
@@ -1100,6 +1111,9 @@ const View = (() => {
         const scale=(boss?1.5:kind==='Vaca'?1.2:kind==='Ovelha'?1.08:
           kind==='Vigia de Cascalho'?1.15:kind==='Galinha'?.6:.85)*die*Voxel.farmScale(m);
         const color=m.hurt>0?'#efb169':col;
+        if(kind==='Guarda'){
+          drawSprite(m.x,m.y+.89,m.z,.75,'#687580');drawSprite(m.x,m.y+1.49,m.z,.45,'#d3d8da');drawSprite(m.x+.36,m.y+1.02,m.z,.23,'#e7c780');drawSprite(m.x-.35,m.y+.85,m.z,.35,'#70503a');continue;
+        }
         if(kind==='Aldeão'){
           const coat=['#608971','#667178','#70503a'][m.job]||'#608971';
           if(m.activity==='sleep'){drawSprite(m.x,m.y+.20,m.z,.74,coat);drawSprite(m.x,m.y+.24,m.z-.46,.34,'#f1d69e');continue;}
