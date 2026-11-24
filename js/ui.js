@@ -49,7 +49,7 @@
     mpStartSent = false, mpRemote = null, mpMessages = [], mpLastPose = 0,
     mpLoading = false, mpGuest = false, mpWorldReady = false,
     mpEditBuffer = [], mpGuestEdits = [], mpLastHud = 0, mpLastSeq = -1, mpPoseSeq = 0,
-    mpLastEntity = 0, mpEntitySeq = 0, mpLastRemoteHit = 0, mpLootSends = new Set(),
+    mpLastEntity = 0, mpEntitySeq = 0, mpLastRemoteHit = 0, mpLootSends = new Set(), mpPickup=null, mpPickupRequest=0,
     mpHostWorldId = null, mpGuestProfile = null, mpGuestRevision = 0, mpGuestSeq = 0, mpLastGuestSync = 0,
     mpHostGuestId = null, mpChestBusy = false, mpGuestCheckpointAt = 0, chatUnlockPending = false, mpLastHostCheckpoint = 0,
     mpResyncAt=0, mpLastGuestInvHash=null, mpInventorySaving=false,
@@ -272,7 +272,7 @@
     mpGuest=false; mpLoading=false; mpMessages=[];
     chestLoaded=false;chestPending=false;chestRevision=-1;remoteChestInventory=null;
     mpWorldReady=false;mpEditBuffer=[];mpGuestEdits=[];mpLastSeq=-1;mpPoseSeq=0;
-    mpLastEntity=0;mpEntitySeq=0;mpLastRemoteHit=0;mpLootSends.clear();
+    mpLastEntity=0;mpEntitySeq=0;mpLastRemoteHit=0;mpLootSends.clear();mpPickup=null;mpPickupRequest=0;
     mpHostWorldId=null;mpGuestProfile=null;mpGuestRevision=0;mpGuestSeq=0;mpHostGuestId=null;mpChestBusy=false;
     mpResyncAt=0;mpLastGuestInvHash=null;mpInventorySaving=false;
     closeQuickChat();$('#mpChatFeed').replaceChildren();
@@ -299,7 +299,7 @@
   }
   function saveGuestCheckpoint(capture=false) {
     if(mpRole!=='guest'||!g?.ready||!mpHostWorldId||!mpGuestProfile)return;
-    if(capture&&mpWorldReady&&!chestPending){
+    if(capture&&mpWorldReady&&!chestPending&&!mpPickup){
       const key=JSON.stringify(g.inv),old=mpGuestProfile.pendingInv;
       if(key!==mpLastGuestInvHash&&(!old||JSON.stringify(old.inv)!==key||old.rev!==mpGuestRevision))mpGuestProfile.pendingInv={seq:++mpGuestSeq,rev:mpGuestRevision,inv:structuredClone(g.inv)};
     }
@@ -646,8 +646,8 @@
       mpGuestSeq=Math.max(mpGuestSeq,committedSeq,recovery.seq);
       if(!recovery.replay) {mpGuestProfile.pendingInv=null;mpLastGuestInvHash=JSON.stringify(msg.inv);}
       else mpLastGuestInvHash=null;
-      mpWorldReady=true;saveGuestCheckpoint();
-      if(screen==='load')resume(false);
+      mpPickup=null;mpWorldReady=true;saveGuestCheckpoint();
+      if(screen==='load'||screen==='loot-sync')resume(false);
       if(recovery.replay) {guestInventorySync(true);toast('Recuperando itens pendentes após a reconexão…');}
       else if(recovery.conflicted)toast('Há itens não confirmados no backup local. O anfitrião mantém o inventário oficial.');
       else toast('Inventário sincronizado com o anfitrião.');
@@ -756,17 +756,27 @@
     } else if (msg.t==='mob-damage' && mpRole==='guest' && g?.ready &&
                Number.isFinite(msg.n) && msg.n>0 && msg.n<=24 && typeof msg.why==='string') {
       g.damage(msg.n,msg.why.slice(0,32));
-    } else if (msg.t==='pickup' && mpRole==='host' && mpWorldReady && g?.ready && mpRemote?.active) {
-      const d=g.drops.find(d=>d.id===msg.id && d.n>0);
-      if(!d || mpLootSends.has(d.id) || !Number.isInteger(msg.cap) || msg.cap<1 || msg.cap>64 ||
-         Math.hypot(d.x-mpRemote.x,d.z-mpRemote.z)>2.6 || Math.abs(d.y-mpRemote.y)>2.6)return;
-      const n=Math.min(d.n,msg.cap);
-      mpLootSends.add(d.id);
-      mp.send({t:'loot-grant',id:d.id,b:d.b,n,dur:d.dur}).then(()=>{
-        d.n-=n;g.drops=g.drops.filter(v=>v.n>0);g.changed();
-      }).catch(()=>{}).finally(()=>mpLootSends.delete(d.id));
-    } else if(msg.t==='loot-grant' && mpRole==='guest' && g?.ready) {
-      g.receiveNetworkLoot(msg);
+    } else if (msg.t==='pickup' && mpRole==='host' && mpWorldReady && g?.ready) {
+      if(msg.id!==mpHostGuestId)return;
+      const session=g,connection=mp,id=mpHostGuestId;
+      PrismaCoop.pickup(session,id,msg,Game.fill,()=>g===session&&mp===connection&&mpWorldReady?mpRemote:null,Voxel.blocks.length)
+        .then(result=>{if(result.state&&mp===connection&&g===session&&mp.connected)return mp.send(result.state);})
+        .catch(e=>console.warn('Coleta P2P não confirmada',e));
+    } else if(msg.t==='loot-state' && mpRole==='guest' && g?.ready && mpPickup && msg.id===mpGuestProfile?.id && msg.request===mpPickup.request) {
+      if(!validInventory(msg.inv,36)||!Number.isSafeInteger(msg.rev)||msg.rev<mpGuestRevision||!Number.isSafeInteger(msg.seq))return;
+      const pending=mpGuestProfile.pendingInv;
+      if(pending&&pending.seq>msg.seq){
+        // The inventory update failed: keep local progress, never apply a stale bag.
+        mpPickup=null;saveGuestCheckpoint();toast('Coleta adiada: inventário ainda não confirmado.');if(screen==='loot-sync')resume(false);return;
+      }
+      g.inv=structuredClone(msg.inv);mpGuestRevision=msg.rev;mpGuestSeq=Math.max(mpGuestSeq,msg.seq);
+      mpGuestProfile.pendingInv=null;mpLastGuestInvHash=JSON.stringify(g.inv);
+      g.guestPickupPending.delete(mpPickup.drop);if(msg.status==='committed')g.drops=g.drops.filter(d=>d.id!==msg.drop);
+      mpPickup=null;saveGuestCheckpoint();
+      if(msg.status==='committed')toast('+'+msg.amount+' '+name(msg.b));
+      else if(msg.status==='failed')toast('Não foi possível salvar a coleta. O item permanece no mundo.');
+      else if(msg.status==='full')toast('Mochila cheia');
+      if(screen==='loot-sync')resume(false);
     } else if(msg.t==='chat' && typeof msg.text==='string') {
       const body=msg.text.slice(0,280);
       mpMessages.push({from:mp.remoteName,text:body});mpMessages=mpMessages.slice(-40);
@@ -1073,7 +1083,7 @@
     }
   }
   function resume(lock = true) {
-    if (!g || !g.ready) return;
+    if (!g || !g.ready || mpRole==='guest'&&(!mpWorldReady||mpPickup)) return;
     screen = 'play';
     overlay.hidden = true;
     home.hidden = true;
@@ -1901,7 +1911,13 @@
     } else if(s==='p2pDamage' && mpRole==='host' && mpWorldReady && mp?.connected) {
       mp.send({t:'mob-damage',n:v.n,why:v.why}).catch(()=>{});
     } else if(s==='p2pPickup' && mpRole==='guest' && mp?.connected) {
-      mp.send({t:'pickup',id:v.id,cap:v.cap}).catch(()=>{});
+      if(mpPickup||!mpWorldReady||screen!=='play')return;
+      guestInventorySync();
+      mpPickup={request:++mpPickupRequest,drop:v.id,at:performance.now()};
+      const request=mpPickup;
+      panel('loot-sync','Coletando item…','<p>Confirmando a coleta com o anfitrião.</p>',false,false);
+      mp.send({t:'pickup',id:mpGuestProfile.id,drop:v.id,request:request.request,
+        rev:mpGuestRevision,seq:mpGuestProfile.pendingInv?.seq||0}).catch(()=>{if(mpPickup===request)request.at=0;});
     } else if (s === 'hud') {
       if (screen === 'play') hud();
     } else if (s === 'villageTrade') {
@@ -2688,6 +2704,11 @@
     const dt = Math.min(0.1, frameSeconds);
     lastFrame = now;
     if (!g || !g.ready) return;
+    if(mpPickup&&now-mpPickup.at>8000){
+      mpPickup=null;saveGuestCheckpoint(true);mpWorldReady=false;
+      panel('load','Conferindo coleta…','<p>Reconectando o inventário para evitar perda ou duplicação de itens.</p>',true,false);
+      mp?.send({t:'resync-request'}).catch(()=>toast('Solicite um novo convite se a conexão não voltar.'));
+    }
     // Keep network poses/heartbeat data flowing while inventory or pause is open.
     if(mp?.connected&&mpWorldReady&&now-mpLastPose>95){
       mpLastPose=now;const p=g.p;
@@ -2696,7 +2717,7 @@
     if(mpRole==='host'&&mpWorldReady&&mp?.connected&&now-mpLastEntity>320){
       mpLastEntity=now;mp.sendFast({t:'entities',seq:++mpEntitySeq,mobs:g.networkMobState(),drops:g.networkDropState(),time:g.time,day:g.day,raining:g.raining});
     }
-    if(mpRole==='guest'&&mpWorldReady&&!chestPending&&screen!=='chest'&&now-mpLastGuestSync>4500){mpLastGuestSync=now;guestInventorySync();saveGuestCheckpoint();}
+    if(mpRole==='guest'&&mpWorldReady&&!mpPickup&&!chestPending&&screen!=='chest'&&now-mpLastGuestSync>4500){mpLastGuestSync=now;guestInventorySync();saveGuestCheckpoint();}
     if(g.paused) {
       if(screen==='bag'&&bagStation===14&&!document.hidden&&!g.networkGuest) {
         g.tickFurnaces(dt);updateFurnaceProgress();
