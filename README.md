@@ -1,3 +1,12 @@
+# Mundo Prisma v0.9.48 — P2P protocolo 2 (prévia)
+
+- WebRTC com canal confiável ordenado para mundo, inventário e comandos, e canal não ordenado sem retransmissões para posições e entidades. Filas limitadas, fragmentos de 8 mil caracteres e contadores de tráfego no diagnóstico. Convites antigos incompatíveis: atualizar ambos os dispositivos e gerar novo convite.
+- Posições e estados continuam sendo enviados em menus; visitante espera confirmação de inventário para iniciar, pausa durante desconexão e recupera alterações locais pendentes. Relógio e chuva reconciliados pelo estado do anfitrião. Corrigida referência do jogador remoto ao recriar a sala.
+- Abertura de baús serializada após confirmação da sequência de inventário; bloqueia respostas antigas. Snapshot de entrada não inclui inventário, armadura, mochila de morte ou perfis privados do anfitrião.
+- Teste `node tests/p2p-0948.test.js`: transporte simulado, protocolo, fragmentos, congestionamento e corrida de inventário/baú. Sem validação de WebRTC em redes reais. Continua limitado a dois jogadores, STUN e troca manual de convite/resposta; sem TURN ou servidor de sinalização. Coleta de drops ainda não é transação durável, e arco/comércio/forno compartilhado seguem limitados. Não declarar proteção total contra duplicação.
+
+---
+
 # Mundo Prisma v0.9.47 — Equipamentos avançados (prévia)
 
 - 17 novos IDs (179–195), 17 receitas de bancada, 87 receitas no total. Espadas de madeira/pedra/cobre/prisma, machados de madeira/pedra/cobre/prisma, pás de madeira/cobre/ferro/prisma, arco, flecha, escudos de madeira/ferro e armadura prisma. IDs anteriores preservados.
