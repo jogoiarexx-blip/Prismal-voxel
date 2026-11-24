@@ -416,7 +416,7 @@
       mp?.close();
       mpStartSent=false;mpWorldReady=false;mpGuestEdits=[];mpEditBuffer=[];
       mpLastSeq=-1;mpPoseSeq=0;mpEntitySeq=0;mpResyncAt=0;
-      mpRemote={active:false};mpRecord=g.snapshot();mpFresh=false;
+      mpRemote={active:false};g.remotePlayer=mpRemote;mpRecord=g.snapshot();mpFresh=false;
       mp=PrismaNet.create({name:username,onMessage:onMultiplayerMessage,onStatus:onMultiplayerStatus});
       const invite=await mp.host();
       panel('mp-offer','Reconectar seu amigo',
@@ -506,6 +506,7 @@
       else if(mpRole==='guest') panel('mp-answer','Sincronizando mundo…',
         '<p class="mp-lead">Conexão P2P estabelecida. Recebendo os blocos do anfitrião…</p>',true,false);
     } else if(s==='reconnecting' || s==='slow') {
+      if(mpRole==='guest'&&g?.ready&&s==='reconnecting'){saveGuestCheckpoint();mpWorldReady=false;pauseSim();panel('load','Reconectando…','<p>Construção pausada para preservar os dados da sessão.</p>',true,false);}
       toast(s==='slow' ? 'Conexão lenta: verificando o amigo…' : 'P2P instável: tentando recuperar a conexão…');
     } else if(s==='recovered') {
       toast('Conexão recuperada: conferindo mundo e inventários…');
@@ -520,14 +521,14 @@
     } else if(s==='failed') {
       toast('P2P interrompido. É necessário renovar o convite para reconectar.');
       if(mpRole==='guest' && g?.ready) {
-        saveGuestCheckpoint();
+        saveGuestCheckpoint();mpWorldReady=false;pauseSim();
         panel('mp-lost','Conexão interrompida',
           '<p>O mundo do anfitrião permanece salvo. Peça outro link e entre novamente.</p>'+
           btn('mp-rejoin','Reconectar com novo link','primary fullwidth')+
           btn('mp-leave','Sair da partida','secondary'));
       }
     } else if(s==='disconnected') {
-      saveGuestCheckpoint();
+      saveGuestCheckpoint();mpWorldReady=false;
       if(mpRole==='host' && g?.ready)g.save().catch(()=>{});
       $('#mpChatBtn').hidden=true;
       if(mpRemote) mpRemote.active=false;
@@ -639,6 +640,7 @@
       if(!recovery.replay) {mpGuestProfile.pendingInv=null;mpLastGuestInvHash=JSON.stringify(msg.inv);}
       else mpLastGuestInvHash=null;
       mpWorldReady=true;saveGuestCheckpoint();
+      if(screen==='load')resume(false);
       if(recovery.replay) {guestInventorySync(true);toast('Recuperando itens pendentes após a reconexão…');}
       else if(recovery.conflicted)toast('Há itens não confirmados no backup local. O anfitrião mantém o inventário oficial.');
       else toast('Inventário sincronizado com o anfitrião.');
@@ -681,20 +683,20 @@
       rec.name=String(src.name).slice(0,48);
       rec.p=existing?.p || mpGuestProfile.p || {...rec.p,x:rec.p.x+1.8,z:rec.p.z+1.8};
       rec.inv=existing?.inv || (validInventory(mpGuestProfile.inv,36)?mpGuestProfile.inv:Game.fresh('Visitante',rec.seed,rec.mode,rec.difficulty).inv);
-      rec.mobs=[];rec.selected=0;rec.wornArmor=null;
+      rec.mobs=[];rec.drops=[];rec.bag=null;rec.selected=0;rec.wornArmor=null;
       mpGuestEdits=[];
       mpWorldReady=false;
       launch(rec,false,true);
     } else if(msg.t==='pose' && g && mpRemote) {
       const {x,y,z,yaw,moving}=msg;
       const seq=Number.isSafeInteger(msg.seq)?msg.seq:null;
-      if([x,y,z,yaw].every(Number.isFinite) && [x,y,z].every(v=>Math.abs(v)<100000) &&
+      if([x,y,z,yaw].every(Number.isFinite) && Math.abs(x)<100000&&Math.abs(z)<100000&&y>=0&&y<Voxel.H &&
           (seq===null || seq>mpLastSeq)) {
         if(seq!==null)mpLastSeq=seq;
         Object.assign(mpRemote,{targetX:x,targetY:y,targetZ:z,targetYaw:yaw,
           moving:!!moving,crouch:!!msg.crouch,sprint:!!msg.sprint,swing:!!msg.swing,
           life:Number.isFinite(msg.life)?Math.max(0,Math.min(100,msg.life)):100,
-          held:Number.isInteger(msg.held)?msg.held:0,
+          held:Number.isInteger(msg.held)&&msg.held>=0&&msg.held<Voxel.blocks.length?msg.held:0,
           lastPacket:performance.now(),active:true});
         if(!Number.isFinite(mpRemote.x))Object.assign(mpRemote,{x,y,z,yaw});
       }
@@ -717,7 +719,7 @@
         (![15,83,84].includes(g.get(v[0],v[1],v[2],true)) || [15,83,84].includes(v[3])))))return;
       g.applyRemoteBatch(msg.ops);
     } else if (msg.t==='entities' && mpRole==='guest' && g?.ready) {
-      g.applyNetworkEntities(msg);
+      if(mpWorldReady&&g.applyNetworkEntities(msg)&&Number.isFinite(msg.time)&&msg.time>=0&&msg.time<1&&Number.isSafeInteger(msg.day)&&msg.day>=1){g.time=msg.time;g.day=msg.day;g.raining=msg.raining===true;}
     } else if (msg.t==='mob-hit' && mpRole==='host' && mpWorldReady && g?.ready && mpRemote?.active) {
       const id=msg.id;
       const now=performance.now();
@@ -768,7 +770,10 @@
     if(!g||!mp?.connected||mpStartSent)return;
     mpStartSent=true;mpWorldReady=false;mpEditBuffer=[];
     try {
-      const ok = await mp.send({t:'world',rec:g.snapshot()});
+      const rec=g.snapshot();
+      // Do not send private host inventory, other guest profiles or death backpack.
+      delete rec.guestProfiles;delete rec.wornArmor;rec.inv=Array(36).fill(null);rec.bag=null;rec.drops=[];rec.mobs=[];
+      const ok = await mp.send({t:'world',rec});
       if (!ok) throw Error('Canal de dados encerrado antes da transmissão do mundo.');
     } catch(e) {
       mpStartSent=false;
@@ -778,11 +783,11 @@
   // Host buffers world changes until the guest confirms its chunks are ready.
   // The baseline is sent first; later block edits are replayed in channel order.
   function queueWorldEdit(ops) {
-    if(!mp?.connected)return;
+    if(!mp?.connected||mpRole==='guest'&&!mpWorldReady)return;
     if(mpRole==='host' && !mpWorldReady){
       if(mpEditBuffer.length+ops.length>6000) {
-        toast('Muitas alterações aguardando sincronização. O convidado precisa reconectar.');
-        return;
+        toast('Muitas alterações aguardando sincronização. Reiniciando envio do mundo.');
+        restartWorldSync();return;
       }
       mpEditBuffer.push(...ops);
       return;
@@ -1043,7 +1048,7 @@
         const ok = await g.save();
         if (!ok) toast('Você pode jogar, mas o salvamento está indisponível.');
       }
-      if (g.ready && screen === 'load') resume(false);
+      if (g.ready && screen === 'load' && mpRole!=='guest') resume(false);
     } catch (e) {
       console.error(e);
       g?.stop();
@@ -1203,7 +1208,7 @@
       'XYZ: ' + [g.p.x,g.p.y,g.p.z].map(v=>Math.floor(v)).join(', ') + ' · chunk: ' + g.cx + ',' + g.cz,
       'Bioma: ' + ($('#biome').textContent || '-') + ' · seed: ' + g.meta.seed,
       'Estado do salvamento: ' + g.saveState,
-      'P2P: ' + (mpRole || 'solo') + ' · conexão: ' + (mp?.connected ? 'ativa' : 'inativa'),
+      'P2P: '+(mp?.metrics?('movimento '+mp.metrics.fastSent+' enviados / '+mp.metrics.fastDropped+' descartados · confiáveis '+mp.metrics.reliableSent+' · '):'') + (mpRole || 'solo') + ' · conexão: ' + (mp?.connected ? 'ativa' : 'inativa'),
       'Este relatório foi criado localmente. Nenhum dado é enviado pelo jogo.',
     ].join('\n');
   }
@@ -1871,7 +1876,7 @@
   }
   function signal(s, v) {
     if (s === 'ready') {
-      if (screen === 'load' && g) resume(false);
+      if (screen === 'load' && g && mpRole!=='guest') resume(false);
       if(mpRole === 'host' && mp?.connected && !mpStartSent) sendHostWorld();
       if(mpRole === 'guest' && mp?.connected && g) {
         flushGuestEdits();
@@ -2675,6 +2680,15 @@
     const dt = Math.min(0.1, frameSeconds);
     lastFrame = now;
     if (!g || !g.ready) return;
+    // Keep network poses/heartbeat data flowing while inventory or pause is open.
+    if(mp?.connected&&mpWorldReady&&now-mpLastPose>95){
+      mpLastPose=now;const p=g.p;
+      mp.sendFast({t:'pose',seq:++mpPoseSeq,x:+p.x.toFixed(2),y:+p.y.toFixed(2),z:+p.z.toFixed(2),yaw:+p.yaw.toFixed(2),moving:!g.paused&&g.moveSpeed>.1,crouch:!!g.crouch,sprint:!g.paused&&g.moveSpeed>5,life:Math.round(p.life),held:g.inv[g.selected]?.b||0,swing:!g.paused&&g.attackCool>0});
+    }
+    if(mpRole==='host'&&mpWorldReady&&mp?.connected&&now-mpLastEntity>320){
+      mpLastEntity=now;mp.sendFast({t:'entities',seq:++mpEntitySeq,mobs:g.networkMobState(),drops:g.networkDropState(),time:g.time,day:g.day,raining:g.raining});
+    }
+    if(mpRole==='guest'&&mpWorldReady&&now-mpLastGuestSync>4500){mpLastGuestSync=now;guestInventorySync();saveGuestCheckpoint();}
     if(g.paused) {
       if(screen==='bag'&&bagStation===14&&!document.hidden&&!g.networkGuest) {
         g.tickFurnaces(dt);updateFurnaceProgress();
@@ -2714,16 +2728,6 @@
       g.tick(1 / 60);
       acc -= 1 / 60;
     }
-    if (mp?.connected && now-mpLastPose>95) {
-      mpLastPose=now; const p=g.p;
-      mp.sendFast({t:'pose',seq:++mpPoseSeq,x:+p.x.toFixed(2),y:+p.y.toFixed(2),z:+p.z.toFixed(2),yaw:+p.yaw.toFixed(2),moving:g.moveSpeed>0.1,crouch:!!g.crouch,sprint:g.moveSpeed>5,
-        life:Math.round(p.life),held:g.inv[g.selected]?.b || 0,swing:g.attackCool>0});
-    }
-    if(mpRole==='host' && mpWorldReady && mp?.connected && now-mpLastEntity>320) {
-      mpLastEntity=now;
-      mp.sendFast({t:'entities',seq:++mpEntitySeq,
-        mobs:g.networkMobState(),drops:g.networkDropState()});
-    }
     smoothRemote(dt,now);
     if(mp?.connected && now-mpLastHud>1200) {mpLastHud=now;updateP2PHud();}
     // Host and solo games checkpoint positions, hunger, day/night and all world
@@ -2731,9 +2735,6 @@
     if(!g.temporary && now-mpLastHostCheckpoint>(mpRole==='host' ? 30000 : 45000)) {
       mpLastHostCheckpoint=now;
       g.save().catch(()=>{});
-    }
-    if(mpRole==='guest' && mpWorldReady && now-mpLastGuestSync>4500) {
-      mpLastGuestSync=now;guestInventorySync();saveGuestCheckpoint();
     }
     renderer.draw(g, settings, Math.min(1, acc * 60));
     heldView.update(g, settings, dt, screen === 'play');
