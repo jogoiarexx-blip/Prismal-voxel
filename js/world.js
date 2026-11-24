@@ -1087,6 +1087,41 @@ const Voxel = (() => {
     set(x+1,y+1,z-1,14);
     set(x,y+1,z-1,13);
   }
+  // New village decoration belongs exclusively to generator 7.
+  function villageGarden(h,s,houses=[]) {
+    const x=h.x+4,z=h.z+5,t=land(x,z,s,7);
+    const ground=t.h;
+    for(const [dx,dz] of [[0,0],[1,0],[-1,0],[0,1],[1,1],[-1,1]]){
+      const q=land(x+dx,z+dz,s,7);
+      if(q.river||q.h<=SEA+1||Math.abs(q.h-ground)>1||
+        houses.some(o=>o!==h&&Math.abs(o.x-x-dx)<=3&&Math.abs(o.z-z-dz)<=3))return null;
+    }
+    return {x,y:ground,z};
+  }
+  function decorateVillageHouse(h,set,s,houses) {
+    const {x,y,z}=h;
+    // An accessible approach to the entrance, built in steps of at most one block.
+    const end=land(x,z+6,s,7);
+    if(!end.river&&end.h>SEA+1&&Math.abs(end.h-y)<=4){
+      for(let dz=3;dz<=6;dz++){
+        const t=land(x,z+dz,s,7);
+        if(t.river||t.h<=SEA+1)continue;
+        const level=Math.round(mix(y,end.h,(dz-2)/4));
+        for(let yy=Math.min(t.h,level);yy<=level;yy++)set(x,yy,z+dz,48);
+        for(let yy=level+1;yy<=Math.max(t.h+2,level+2);yy++)set(x,yy,z+dz,0);
+      }
+    }
+    const farm=villageGarden(h,s,houses);
+    if(farm){
+      const {x:fx,y:fy,z:fz}=farm;
+      for(let dz=0;dz<=1;dz++)for(let dx=-1;dx<=1;dx++){
+        set(fx+dx,fy-1,fz+dz,3);
+        set(fx+dx,fy,fz+dz,dx===1?7:dx===0?38:48);
+        set(fx+dx,fy+1,fz+dz,dx===0?40:0);
+        for(let dy=2;dy<=8;dy++)set(fx+dx,fy+dy,fz+dz,0);
+      }
+    }
+  }
   function generate(cx, cz, s, sites = [], generator = 1) {
     const a = new Uint8Array(16 * 16 * H),
       ox = cx * 16,
@@ -1182,9 +1217,15 @@ const Voxel = (() => {
     if(generator>=6) {
       for(let gz=Math.floor((oz-16)/64);gz<=Math.floor((oz+31)/64);gz++)
         for(let gx=Math.floor((ox-16)/64);gx<=Math.floor((ox+31)/64);gx++)
-          for(const house of villageHouses(gx,gz,s,sites))
-            if(house.x+3>=ox && house.x-3<ox+16 && house.z+3>=oz && house.z-3<oz+16)
-              buildVillageHouse(house,set,s);
+          {
+            const houses=villageHouses(gx,gz,s,sites);
+            for(const house of houses)
+              if(house.x+3>=ox && house.x-3<ox+16 && house.z+3>=oz && house.z-3<oz+16)
+                buildVillageHouse(house,set,s);
+            if(generator>=7)for(const house of houses)
+              if(house.x+5>=ox && house.x-3<ox+16 && house.z+6>=oz && house.z-3<oz+16)
+                decorateVillageHouse(house,set,s,houses);
+          }
     }
     for (const site of sites)
       if (site.x + 4 >= ox && site.z + 4 >= oz && site.x - 4 < ox + 16 && site.z - 4 < oz + 16)
@@ -1508,6 +1549,7 @@ const Voxel = (() => {
     land,
     generate,
     villageHouses,
+    villageGarden,
     idx,
     key,
     clip,
