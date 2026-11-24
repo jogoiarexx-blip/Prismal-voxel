@@ -1,3 +1,12 @@
+# Mundo Prisma v0.9.41 — Aldeões (prévia)
+
+- Um aldeão por casa elegível próxima no gerador Fronteiras (até oito residentes simultâneos, dentro do limite total de 24 criaturas). Fazendeiro, ferreiro e construtor com roupas distintas, caminhada local e retorno aos arredores da casa à noite.
+- Aponte e interaja com o aldeão para receber uma dica da profissão. Personagens pacíficos, protegidos contra ataques do jogador; sem comércio nesta versão.
+- Geração local sem duplicação, sincronização P2P pelo anfitrião e fallback visual de software. Sem download de modelos adicionais.
+- Teste: `node tests/villagers-0941.test.js`. Verificação isolada de geração, diálogo, proteção e pacote de rede; visual e multiplayer real ainda pendentes.
+
+---
+
 # Mundo Prisma v0.9.40 — Fronteiras e sobrevivência (prévia)
 
 - Novo gerador opcional 6: selecione **Fronteiras · vilarejos e florestas** ao criar um mundo. Mantém cavernas, riachos, montanhas e expedições do gerador anterior, adicionando grupos de casas com telhas, janelas, bancada, forno e iluminação. A distribuição das árvores varia por região.
