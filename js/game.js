@@ -4,6 +4,10 @@ const Game = (() => {
     BAG = 36,
     farmAnimals = Voxel.farmAnimals;
   const isFarm = (kind) => farmAnimals.includes(kind);
+  const friendly=kind=>kind==='Aldeão'||kind==='Guarda';
+  const hostileKind=kind=>['Zumbi','Raspejante','Vigia de Cascalho'].includes(kind);
+  const villageRegion=(x,z)=>Math.floor(x/64)+','+Math.floor(z/64);
+  const raidNight=(day,time)=>day-(time<.215?1:0);
   const villageJobs=['Fazendeiro','Ferreiro','Construtor'];
   // Each offer is [payment item, quantity, received item, quantity, daily stock].
   // Selling and buying different quantities avoids a circular profit exploit.
@@ -141,6 +145,7 @@ const Game = (() => {
       this.guestPickupPending = new Map();
       this.bag = rec.bag;
       this.goals = rec.goals || {};
+      this.defenseHistory=rec.defenseHistory&&typeof rec.defenseHistory==='object'&&!Array.isArray(rec.defenseHistory)?rec.defenseHistory:{};
       this.marketDay = Number.isSafeInteger(rec.marketDay)?rec.marketDay:0;
       this.marketStock = rec.marketStock && typeof rec.marketStock==='object' && !Array.isArray(rec.marketStock)?rec.marketStock:{};
       this.renderer = renderer;
@@ -715,7 +720,7 @@ const Game = (() => {
       }
     }
     strikeMob(mob, damage, fromX, fromZ) {
-      if (!mob || mob.hp <= 0 || mob.dying || mob.kind==='Aldeão') return false;
+      if (!mob || mob.hp <= 0 || mob.dying || friendly(mob.kind)) return false;
       mob.hp -= Math.max(1, Math.min(5, damage));
       mob.stun = mob.hurt = .36;
       mob.knockback = .34;
@@ -735,6 +740,10 @@ const Game = (() => {
             this.addDrop(mob.x,mob.y+.15,mob.z,b,n);
           }
         } else this.addDrop(mob.x,mob.y+.15,mob.z,mob.kind==='Saltim'?23:mob.kind==='Musgato'?36:11,1);
+        if(mob.raidKey){
+          this.addDrop(mob.x,mob.y+.2,mob.z,178,2);
+          this.notify('Defesa do vilarejo · +2 moedas prisma');
+        }
         this.changed();
       }
       return true;
@@ -760,7 +769,7 @@ const Game = (() => {
       if (!this.networkGuest || !Array.isArray(msg?.mobs) || msg.mobs.length > 24 ||
           !Number.isSafeInteger(msg.seq) || msg.seq <= this.lastNetworkMobSeq) return false;
       const allowed = new Set(['Saltim','Musgato','Luzerrante','Raspejante','Zumbi','Vigia de Cascalho',
-        'Guardião Prisma','Ovelha','Porco','Vaca','Galinha','Aldeão']);
+        'Guardião Prisma','Ovelha','Porco','Vaca','Galinha','Aldeão','Guarda']);
       const old = new Map(this.mobs.map(m => [m.id,m]));
       const out=[];
       for (const row of msg.mobs) {
@@ -780,7 +789,7 @@ const Game = (() => {
           age:Math.max(0,Math.min(180,Number(row.age)||0)),tamed:row.tamed===true,follow:row.follow===true,shorn:row.shorn===true});
         if(m.kind==='Aldeão'){
           m.job=Number.isInteger(row.job)&&row.job>=0&&row.job<3?row.job:0;
-          m.activity=['walk','farm','forge','build','sleep','rest'].includes(row.activity)?row.activity:'walk';
+          m.activity=['walk','farm','forge','build','sleep','rest','shelter'].includes(row.activity)?row.activity:'walk';
         }
         out.push(m);
       }
@@ -835,7 +844,7 @@ const Game = (() => {
       const mob = this.aimMob();
       if (mob) {
         this.progress = 0;
-        if(mob.kind==='Aldeão')return;
+        if(friendly(mob.kind))return;
         if (!this.attackCool) {
           this.attackCool = .45;
           const item = this.inv[this.selected];
@@ -1556,7 +1565,9 @@ const Game = (() => {
       // Feed farm animals with their preferred food, including in peaceful mode.
       // The same right-click/tap works with the existing inventory and touch UI.
       const animal = (!forcePlace || !blocks[t?.b]?.placeable) && this.aimMob();
+      if(animal?.kind==='Guarda'){this.notify('Guarda · Protegendo o vilarejo.');return true;}
       if(animal?.kind==='Aldeão'){
+        if(animal.activity==='shelter'){this.notify('O aldeão está abrigado. Afaste os monstros.');return true;}
         if(animal.activity==='sleep'){this.notify('O aldeão está dormindo. Volte pela manhã.');return true;}
         const job=villageJobs[animal.job]||villageJobs[0];
         this.notify(job+' · '+(villageTips[animal.job]||villageTips[0]));
@@ -1686,7 +1697,7 @@ const Game = (() => {
         d = View.basis(this.p).f;
       return this.mobs.find((m) => {
         if (m.dying || m.hp <= 0) return false;
-        let a = [m.x - eye[0], m.y + (m.kind==='Aldeão'?1.25:m.kind==='Galinha'?.35:.6)*Voxel.farmScale(m) - eye[1], m.z - eye[2]],
+        let a = [m.x - eye[0], m.y + (friendly(m.kind)?1.25:m.kind==='Galinha'?.35:.6)*Voxel.farmScale(m) - eye[1], m.z - eye[2]],
           dist = a.reduce((s, v, i) => s + v * d[i], 0);
         return (
           dist > 0 &&
@@ -1730,7 +1741,7 @@ const Game = (() => {
     villageOffers(id) {
       if(this.networkGuest || this.creative || this.generator<6)return null;
       const m=this.mobs.find(v=>v.id===id&&v.kind==='Aldeão'&&v.hp>0&&!v.dying);
-      if(!m || m.activity==='sleep' || typeof m.homeKey!=='string' || !/^-?\d+,-?\d+$/.test(m.homeKey) ||
+      if(!m || (m.activity==='sleep'||m.activity==='shelter') || typeof m.homeKey!=='string' || !/^-?\d+,-?\d+$/.test(m.homeKey) ||
           Math.hypot(this.p.x-m.x,this.p.y-m.y,this.p.z-m.z)>4)return null;
       const job=Number.isInteger(m.job)&&m.job>=0&&m.job<3?m.job:0;
       const rows=villageTrades[job].map(([pay,n,out,qty,limit],i)=>{
@@ -1791,7 +1802,110 @@ const Game = (() => {
       }
     }
     // Residents only modify the designated generated farm, never arbitrary player plots.
-    villageRoutine(m,dt,night,walk,radius,height,d,dx,dz) {
+    // At most two guards and three invaders, within the existing 24-actor cap.
+    // A persisted night stamp prevents repeated raids after unloading or reloading.
+    defenseTick(night,peaceful,nearLight) {
+      if(this.generator<6||this.networkGuest)return;
+      this.defenseHistory ||= {};
+      const players=[this.p];
+      if(this.networkHost&&this.remotePlayer?.active)players.push(this.remotePlayer);
+      const dist=(x,z)=>Math.min(...players.map(p=>Math.hypot(p.x-x,p.z-z)));
+      const villages=new Map();
+      for(const m of this.mobs){
+        if(m.kind!=='Aldeão'||m.hp<=0||m.dying||dist(m.x,m.z)>27)continue;
+        const [x,z]=String(m.homeKey||'').split(',').map(Number);
+        if(!Number.isInteger(x)||!Number.isInteger(z))continue;
+        const key=villageRegion(x,z);
+        if(!villages.has(key))villages.set(key,m);
+      }
+      const living=m=>m.hp>0&&!m.dying;
+      const guards=this.mobs.filter(m=>m.kind==='Guarda'&&living(m));
+      let raidCount=this.mobs.filter(m=>m.raidKey&&living(m)).length;
+      const epoch=raidNight(this.day,this.time);
+      const findSpot=(m,offsets,minDist,avoidLight)=>{
+        for(const [dx,dz] of offsets){
+          const x=Math.floor(m.homeX)+dx+.5,z=Math.floor(m.homeZ)+dz+.5;
+          const y=this.floorAt(x,z,m.houseY+3,true);
+          if(y===null||!Number.isFinite(y)||Math.abs(y-m.houseY)>4||dist(x,z)<minDist||dist(x,z)>29||
+             players.every(p=>Math.abs(p.y-y)>8))continue;
+          const bx=Math.floor(x),bz=Math.floor(z);
+          const ground=this.get(bx,y-1,bz,true);
+          if(![1,2,3,4,17,19,32,33,48].includes(ground)||this.get(bx,y,bz,true)!==0||this.get(bx,y+1,bz,true)!==0||
+             this.mobs.some(o=>living(o)&&Math.hypot(o.x-x,o.z-z)<1.3)||
+             (avoidLight&&nearLight(x,y,z,6)))continue;
+          return {x,y,z};
+        }
+        return null;
+      };
+      for(const [key,m] of villages){
+        if(!Object.hasOwn(this.defenseHistory,key)){
+          if(Object.keys(this.defenseHistory).length>=512){
+            const oldest=Object.keys(this.defenseHistory).find(k=>(this.defenseHistory[k]?.night??-1)<epoch-2&&(this.defenseHistory[k]?.guardUntil||0)<=this.elapsed);
+            if(!oldest)continue;delete this.defenseHistory[oldest];
+          }
+          this.defenseHistory[key]={night:-1,guardUntil:0};
+        }
+        const rec=this.defenseHistory[key];
+        if(!rec||typeof rec!=='object')continue;
+        if(guards.length<2&&this.mobs.length<24&&!guards.some(o=>o.villageKey===key)&&!(rec.guardUntil>this.elapsed)){
+          const spot=findSpot(m,[[2,1],[-2,1],[0,2],[3,0],[-3,0],[2,2],[-2,2]],3,false);
+          if(spot){
+            const guard={id:this.nextMobId++,kind:'Guarda',...spot,hp:18,villageKey:key,homeX:spot.x,homeZ:spot.z,homeY:spot.y,cool:0,face:0,motion:0,gait:0};
+            this.mobs.push(guard);guards.push(guard);
+          }
+        }
+        if(!night||peaceful||epoch<0||rec.night===epoch||raidCount>=3||this.mobs.length>=24)continue;
+        if(players.every(p=>Math.hypot(p.x-m.x,p.z-m.z)>22||Math.abs(p.y-m.y)>8))continue;
+        let spawned=0;
+        for(let i=0;i<3&&raidCount<3&&this.mobs.length<24;i++){
+          const angle=Voxel.hash(epoch,i,this.seed^Math.floor(m.homeX*31+m.homeZ))*Math.PI*2;
+          const offsets=Array.from({length:8},(_,j)=>[Math.round(Math.cos(angle+j*Math.PI/4)*12),Math.round(Math.sin(angle+j*Math.PI/4)*12)]);
+          const spot=findSpot(m,offsets,8,true);
+          if(!spot)continue;
+          const kind=i%2?'Raspejante':'Zumbi';
+          this.mobs.push({id:this.nextMobId++,kind,...spot,hp:kind==='Zumbi'?8:5,raidKey:key,raidEpoch:epoch,
+            raidX:m.homeX,raidZ:m.homeZ,raidY:m.y,cool:1,face:0,gait:0,motion:0,wind:0});
+          spawned++;raidCount++;
+        }
+        if(spawned){rec.night=epoch;this.changed();this.notify('⚔ Invasão noturna · proteja o vilarejo!');}
+      }
+    }
+    npcCanHit(a,b,range=1.85) {
+      const dx=b.x-a.x,dy=b.y-a.y,dz=b.z-a.z,d=Math.hypot(dx,dy,dz);
+      return d>.001&&d<=range&&Math.abs(dy)<1.3&&!Voxel.ray((x,y,z)=>this.get(x,y,z,true),[a.x,a.y+.8,a.z],[dx/d,dy/d,dz/d],d,true);
+    }
+    npcStrike(attacker,target,damage) {
+      if(!target||target.hp<=0||target.dying||!this.npcCanHit(attacker,target))return false;
+      target.hp=Math.max(0,target.hp-damage);target.hurt=.36;target.stun=.2;
+      attacker.attack=.36;
+      if(target.hp===0){
+        target.dying=.55;target.wind=0;
+        if(target.kind==='Guarda'){
+          const rec=this.defenseHistory?.[target.villageKey];if(rec)rec.guardUntil=this.elapsed+90;
+        }
+        this.changed();
+      }
+      return true;
+    }
+    guardRoutine(m,walk,radius,height,threats) {
+      let enemy=null,best=11;
+      for(const o of threats){
+        if(o.hp<=0||o.dying||Math.abs(o.y-m.y)>2.5||Math.hypot(o.x-m.homeX,o.z-m.homeZ)>17)continue;
+        const d=Math.hypot(o.x-m.x,o.z-m.z);if(d<best){enemy=o;best=d;}
+      }
+      if(enemy){
+        const dx=enemy.x-m.x,dz=enemy.z-m.z;m.face=Math.atan2(dx,-dz);
+        if(best<1.75&&this.npcCanHit(m,enemy)){
+          if(m.cool<=0){this.npcStrike(m,enemy,3);m.cool=1.1;}
+          return false;
+        }
+        return walk(m,dx,dz,1.55,radius,height);
+      }
+      const phase=(Math.floor(this.elapsed/7)+m.id)%4,offsets=[[0,0],[3,0],[0,3],[-3,0]];
+      const [dx,dz]=offsets[phase],vx=m.homeX+dx-m.x,vz=m.homeZ+dz-m.z;
+      return Math.hypot(vx,vz)>.6&&walk(m,vx,vz,.8,radius,height);
+    }
+    villageRoutine(m,dt,night,walk,radius,height,d,dx,dz,threat=false) {
       const [hx,hz]=String(m.homeKey||'').split(',').map(Number);
       if(!Number.isInteger(hx)||!Number.isInteger(hz))return false;
       const h=Number.isFinite(m.houseY)?m.houseY:land(hx,hz,this.seed,this.generator).h+1;
@@ -1831,8 +1945,8 @@ const Game = (() => {
         const goal=points[0]||[x,z];
         return walk(m,goal[0]-m.x,goal[1]-m.z,speed,radius,height);
       };
-      if(night){
-        if(inside){if(Math.hypot(m.x-hx-.5,m.z-hz-.5)>.35)return go(hx+.5,hz+.5);m.activity='sleep';m.motion=0;return false;}
+      if(night||threat){
+        if(inside){if(Math.hypot(m.x-hx-.5,m.z-hz-.5)>.35)return go(hx+.5,hz+.5);m.activity=threat?'shelter':'sleep';m.motion=0;return false;}
         if(Math.hypot(m.x-door[0],m.z-door[1])<1.2)return go(hx+.5,hz+.5);
         if(Math.hypot(m.x-entry[0],m.z-entry[1])<.65)return go(...door);
         return go(...entry);
@@ -1897,7 +2011,8 @@ const Game = (() => {
       if (this.spawnTick <= 0) {
         this.spawnTick = 6;
         this.spawnVillagers();
-        const living = this.mobs.filter(m => m.hp > 0 && !m.dying && m.kind!=='Aldeão');
+        this.defenseTick(night,peaceful,nearLight);
+        const living = this.mobs.filter(m => m.hp > 0 && !m.dying && !friendly(m.kind)&&!m.raidKey);
         const animals = living.filter(m => isFarm(m.kind)).length;
         const otherMobs = living.length - animals;
         if (this.mobs.length < 24 && living.length < 16 && (animals < 8 || otherMobs < 4)) {
@@ -1962,6 +2077,8 @@ const Game = (() => {
         return false;
       };
       let plots;
+      const threats=this.mobs.filter(m=>hostileKind(m.kind)&&m.hp>0&&!m.dying);
+      const guards=this.mobs.filter(m=>m.kind==='Guarda'&&m.hp>0&&!m.dying);
       this.actorSchedule ||= new WeakMap();
       this.aiDecisions=0;
       for (const m of this.mobs) {
@@ -1970,9 +2087,9 @@ const Game = (() => {
         const boss = kind === 'Guardião Prisma';
         const scale=Voxel.farmScale(m);
         const radius = (boss ? .38 : kind === 'Vaca' ? .42 : kind === 'Ovelha' ? .32 :
-          kind === 'Porco' ? .31 : kind === 'Vigia de Cascalho' ? .33 : kind === 'Zumbi' || kind==='Aldeão' ? .29 : .24)*scale;
+          kind === 'Porco' ? .31 : kind === 'Vigia de Cascalho' ? .33 : kind === 'Zumbi' || friendly(kind) ? .29 : .24)*scale;
         const height = (boss ? 1.95 : kind === 'Vaca' ? 1.55 : kind === 'Ovelha' ? 1.27 :
-          kind === 'Porco' ? .93 : kind==='Galinha'?.72:kind === 'Vigia de Cascalho' ? 1.8 : kind==='Zumbi'||kind==='Aldeão'?1.7:1.12)*scale;
+          kind === 'Porco' ? .93 : kind==='Galinha'?.72:kind === 'Vigia de Cascalho' ? 1.8 : kind==='Zumbi'||friendly(kind)?1.7:1.12)*scale;
         m.hurt = Math.max(0, (m.hurt || 0) - dt);
         m.attack = Math.max(0, (m.attack || 0) - dt);
         m.stun = Math.max(0, (m.stun || 0) - dt);
@@ -1988,6 +2105,7 @@ const Game = (() => {
           continue;
         }
         if (m.hp <= 0) { m.dying = .01; continue; }
+        if(m.raidKey&&(!night||peaceful)){m.hp=0;m.dying=.48;m.motion=0;continue;}
         if(kind==='Zumbi' && !night && m.y>=land(m.x,m.z,this.seed,this.generator).h-2) {
           m.hp=0;m.dying=.48;m.motion=0;continue;
         }
@@ -2011,8 +2129,11 @@ const Game = (() => {
           movementDt=decisionDt;
           const safe = nearLight(m.x, m.y, m.z, 4.4);
           const passive = ['Saltim', 'Musgato', 'Luzerrante'].includes(kind);
-          if(kind==='Aldeão'){
-            moved=this.villageRoutine(m,decisionDt,night,walk,radius,height,d,dx,dz);
+          if(kind==='Guarda'){
+            moved=this.guardRoutine(m,walk,radius,height,peaceful?[]:threats);
+          } else if(kind==='Aldeão'){
+            const threat=!peaceful&&threats.some(o=>Math.abs(o.y-m.y)<3&&Math.hypot(o.x-m.x,o.z-m.z)<10);
+            moved=this.villageRoutine(m,decisionDt,night,walk,radius,height,d,dx,dz,threat);
           } else if (isFarm(kind)) {
             m.roamTimer = (m.roamTimer || 0) - decisionDt;
             if (m.roamTimer <= 0) {
@@ -2052,6 +2173,15 @@ const Game = (() => {
             }
             moved = walk(m, vx, vz, speed, radius, height);
           } else if (!peaceful) {
+            let guardTarget=null,guardDistance=Math.min(d,11);
+            if(hostileKind(kind))for(const o of guards){const dist=Math.hypot(o.x-m.x,o.z-m.z);if(o.hp>0&&!o.dying&&Math.abs(o.y-m.y)<2.5&&dist<guardDistance){guardTarget=o;guardDistance=dist;}}
+            if(guardTarget){
+              const vx=guardTarget.x-m.x,vz=guardTarget.z-m.z;m.face=Math.atan2(vx,-vz);m.wind=0;
+              if(guardDistance<1.75&&this.npcCanHit(m,guardTarget)){if(m.cool<=0){this.npcStrike(m,guardTarget,3);m.cool=1.6;}}
+              else moved=walk(m,vx,vz,1.15,radius,height);
+            }else if(m.raidKey&&d>8&&Math.hypot(m.raidX-m.x,m.raidZ-m.z)>1.8){
+              moved=walk(m,m.raidX-m.x,m.raidZ-m.z,1.15,radius,height);
+            }else{
             const stage = boss ? (m.hp > 16 ? 1 : m.hp > 8 ? 2 : 3) : 1;
             const dir = boss || kind === 'Vigia de Cascalho' ? 1 : safe || !night ? -1 : 1;
             if (d < 1.75 && dir > 0 && Math.abs(target.y - m.y) < 1.3) {
@@ -2081,6 +2211,7 @@ const Game = (() => {
               const speed = boss ? 1 + stage * .32 : kind==='Zumbi' ? 1.06 : night ? 1.42 : .95;
               moved = walk(m, dx * dir, dz * dir, speed, radius, height);
             }
+            }
           }
         } else if (m.wind && d >= 1.75) m.wind = 0;
         const targetMotion = moved ? 1 : 0;
@@ -2089,9 +2220,9 @@ const Game = (() => {
       this.mobs = this.mobs.filter(m =>
         !((m.hp <= 0) && m.dying === 0) &&
         (m.kind === 'Guardião Prisma' || (isFarm(m.kind)&&m.tamed) || Math.hypot(m.x - p.x, m.z - p.z) <
-          (m.kind==='Aldeão'?48:isFarm(m.kind) ? 44 : (night ? 47 : 19)) ||
+          (friendly(m.kind)?48:isFarm(m.kind) ? 44 : (night ? 47 : 19)) ||
           (this.networkHost && this.remotePlayer?.active &&
-            Math.hypot(m.x-this.remotePlayer.x,m.z-this.remotePlayer.z)<(m.kind==='Aldeão'?48:isFarm(m.kind)?44:47))));
+            Math.hypot(m.x-this.remotePlayer.x,m.z-this.remotePlayer.z)<(friendly(m.kind)?48:isFarm(m.kind)?44:47))));
     }
     damage(n, why) {
       if (this.creative || this.damageCool > 0) return;
@@ -2209,6 +2340,7 @@ const Game = (() => {
         mobs: this.mobs,
         bag: this.bag,
         goals: this.goals,
+        defenseHistory:this.defenseHistory,
         marketDay:this.marketDay,
         marketStock:this.marketStock,
         sites: this.sites,
@@ -2275,5 +2407,5 @@ const Game = (() => {
       this.renderer.reset();
     }
   }
-  return { fresh, Session, fill, count, slot, actorStep };
+  return { fresh, Session, fill, count, slot, actorStep, raidNight };
 })();
