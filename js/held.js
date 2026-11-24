@@ -8,9 +8,11 @@ const PrismaHeld = (() => {
   function kind(id,blocks){
     if(!id || !blocks[id])return 'empty';
     if(PICK.has(id))return 'pick';
-    if(id===47)return 'sword';
-    if(id===89)return 'axe';
-    if(id===90)return 'shovel';
+    if([47,179,180,181,182].includes(id))return 'sword';
+    if([89,183,184,185,186].includes(id))return 'axe';
+    if([90,187,188,189,190].includes(id))return 'shovel';
+    if(id===191)return 'bow';
+    if([193,195].includes(id))return 'shield';
     if(id===25)return 'torch';
     if(blocks[id].placeable)return 'block';
     return 'item';
