@@ -1958,7 +1958,7 @@
       ? Voxel.farmAnimals.includes(aimedCreature.kind)
         ? (aimedCreature.juvenile?'Filhote de ':'')+aimedCreature.kind+(aimedCreature.tamed?(aimedCreature.follow?' · seguindo':' · domesticado'):'') + (g.inv[g.selected]?.b === Voxel.farmFood[aimedCreature.kind]
           ? ' · Usar para alimentar' : aimedCreature.tamed&&!g.inv[g.selected]?' · Usar: seguir/parar':aimedCreature.kind==='Vaca'?' · Balde para ordenhar':aimedCreature.kind==='Ovelha'?' · Tesoura para tosquiar':' · Animal pacífico')
-        : aimedCreature.kind==='Aldeão' ? 'Aldeão · '+(['Fazendeiro','Ferreiro','Construtor'][aimedCreature.job]||'Fazendeiro')+(aimedCreature.activity==='sleep'?' · Dormindo':' · '+({farm:'Cultivando',forge:'Trabalhando no forno',build:'Trabalhando na bancada',walk:'Caminhando',rest:'Descansando'}[aimedCreature.activity]||'Usar para negociar')) : aimedCreature.kind || 'Raspejante'
+        : aimedCreature.kind==='Guarda' ? 'Guarda · Protetor do vilarejo' : aimedCreature.kind==='Aldeão' ? 'Aldeão · '+(['Fazendeiro','Ferreiro','Construtor'][aimedCreature.job]||'Fazendeiro')+(aimedCreature.activity==='shelter'?' · Abrigado':aimedCreature.activity==='sleep'?' · Dormindo':' · '+({farm:'Cultivando',forge:'Trabalhando no forno',build:'Trabalhando na bancada',walk:'Caminhando',rest:'Descansando'}[aimedCreature.activity]||'Usar para negociar')) : aimedCreature.kind || 'Raspejante'
       : g.hit?.b === 28
         ? 'R · Despertar núcleo'
         : g.hit
