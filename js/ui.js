@@ -49,7 +49,7 @@
     mpStartSent = false, mpRemote = null, mpMessages = [], mpLastPose = 0,
     mpLoading = false, mpGuest = false, mpWorldReady = false,
     mpEditBuffer = [], mpGuestEdits = [], mpLastHud = 0, mpLastSeq = -1, mpPoseSeq = 0,
-    mpLastEntity = 0, mpEntitySeq = 0, mpLastRemoteHit = 0, mpLootSends = new Set(),
+    mpLastEntity = 0, mpEntitySeq = 0, mpLastRemoteHit = 0, mpLootSends = new Set(), mpPickup=null, mpPickupRequest=0,
     mpHostWorldId = null, mpGuestProfile = null, mpGuestRevision = 0, mpGuestSeq = 0, mpLastGuestSync = 0,
     mpHostGuestId = null, mpChestBusy = false, mpGuestCheckpointAt = 0, chatUnlockPending = false, mpLastHostCheckpoint = 0,
     mpResyncAt=0, mpLastGuestInvHash=null, mpInventorySaving=false,
@@ -272,7 +272,7 @@
     mpGuest=false; mpLoading=false; mpMessages=[];
     chestLoaded=false;chestPending=false;chestRevision=-1;remoteChestInventory=null;
     mpWorldReady=false;mpEditBuffer=[];mpGuestEdits=[];mpLastSeq=-1;mpPoseSeq=0;
-    mpLastEntity=0;mpEntitySeq=0;mpLastRemoteHit=0;mpLootSends.clear();
+    mpLastEntity=0;mpEntitySeq=0;mpLastRemoteHit=0;mpLootSends.clear();mpPickup=null;mpPickupRequest=0;
     mpHostWorldId=null;mpGuestProfile=null;mpGuestRevision=0;mpGuestSeq=0;mpHostGuestId=null;mpChestBusy=false;
     mpResyncAt=0;mpLastGuestInvHash=null;mpInventorySaving=false;
     closeQuickChat();$('#mpChatFeed').replaceChildren();
@@ -297,8 +297,12 @@
     const box=$('#mpChatComposer');if(box)box.hidden=true;
     $('#mpChatQuickInput')?.blur();
   }
-  function saveGuestCheckpoint() {
+  function saveGuestCheckpoint(capture=false) {
     if(mpRole!=='guest'||!g?.ready||!mpHostWorldId||!mpGuestProfile)return;
+    if(capture&&mpWorldReady&&!chestPending&&!mpPickup){
+      const key=JSON.stringify(g.inv),old=mpGuestProfile.pendingInv;
+      if(key!==mpLastGuestInvHash&&(!old||JSON.stringify(old.inv)!==key||old.rev!==mpGuestRevision))mpGuestProfile.pendingInv={seq:++mpGuestSeq,rev:mpGuestRevision,inv:structuredClone(g.inv)};
+    }
     mpGuestProfile.rev=mpGuestRevision;mpGuestProfile.tx=chestTx;mpGuestProfile.seq=mpGuestSeq;
     mpGuestProfile.inv=structuredClone(g.inv);mpGuestProfile.p={...g.p};
     mpGuestProfile.saved=Date.now();
@@ -373,7 +377,7 @@
       worldList.map(w=>'<option value="'+esc(w.id)+'">'+esc(w.name)+' · '+mode(w.mode)+'</option>').join('')+'</select></label>'+
       '<div id="mpNewWorldFields" class="mp-new-world">'+
       '<label class="field">Nome do mundo<input id="mpWorldName" value="Aventura em dupla" maxlength="48"></label>'+
-      '<label class="field">Modo<select id="mpWorldMode"><option value="survival">Sobrevivência</option><option value="creative">Criativo (blocos ilimitados)</option></select></label><label class="field">Geração<select id="mpWorldGenerator"><option value="3">Clássico</option><option value="4">Exploração</option><option value="5">Expedição · ruínas e tesouros</option></select></label></div>'+
+      '<label class="field">Modo<select id="mpWorldMode"><option value="survival">Sobrevivência</option><option value="creative">Criativo (blocos ilimitados)</option></select></label><label class="field">Geração<select id="mpWorldGenerator"><option value="3">Clássico</option><option value="4">Exploração</option><option value="5">Expedição · ruínas e tesouros</option><option value="6">Fronteiras · vilarejos e florestas</option><option value="7">Vilarejos vivos · hortas e caminhos</option></select></label></div>'+
       '<button class="primary fullwidth" id="mpMakeInvite">Gerar convite P2P</button>'+
       '<p class="smallnote">Compartilhe o convite apenas com alguém de confiança. Antes de abrir um mundo importante, use Meus mundos → Backup. O Criativo é recomendado para construir em dupla.</p>',true);
     const sel=$('#mpWorldSelect'), fresh=$('#mpNewWorldFields');
@@ -416,7 +420,7 @@
       mp?.close();
       mpStartSent=false;mpWorldReady=false;mpGuestEdits=[];mpEditBuffer=[];
       mpLastSeq=-1;mpPoseSeq=0;mpEntitySeq=0;mpResyncAt=0;
-      mpRemote={active:false};mpRecord=g.snapshot();mpFresh=false;
+      mpRemote={active:false};g.remotePlayer=mpRemote;mpRecord=g.snapshot();mpFresh=false;
       mp=PrismaNet.create({name:username,onMessage:onMultiplayerMessage,onStatus:onMultiplayerStatus});
       const invite=await mp.host();
       panel('mp-offer','Reconectar seu amigo',
@@ -506,12 +510,13 @@
       else if(mpRole==='guest') panel('mp-answer','Sincronizando mundo…',
         '<p class="mp-lead">Conexão P2P estabelecida. Recebendo os blocos do anfitrião…</p>',true,false);
     } else if(s==='reconnecting' || s==='slow') {
+      if(mpRole==='guest'&&g?.ready&&s==='reconnecting'){saveGuestCheckpoint(true);mpPickup=null;mpWorldReady=false;pauseSim();panel('load','Reconectando…','<p>Construção pausada para preservar os dados da sessão.</p>',true,false);}
       toast(s==='slow' ? 'Conexão lenta: verificando o amigo…' : 'P2P instável: tentando recuperar a conexão…');
     } else if(s==='recovered') {
       toast('Conexão recuperada: conferindo mundo e inventários…');
       if(mpRole==='host')restartWorldSync();
       else if(mpRole==='guest' && g?.ready) {
-        saveGuestCheckpoint();mpWorldReady=false;mpLastSeq=-1;
+        saveGuestCheckpoint(true);mpPickup=null;mpWorldReady=false;mpLastSeq=-1;
         pauseSim();
         panel('load','Sincronizando novamente…',
           '<p class="mp-lead">A conexão voltou. Conferindo o mundo e seus itens com o anfitrião antes de liberar a construção.</p>',true,false);
@@ -520,14 +525,14 @@
     } else if(s==='failed') {
       toast('P2P interrompido. É necessário renovar o convite para reconectar.');
       if(mpRole==='guest' && g?.ready) {
-        saveGuestCheckpoint();
+        saveGuestCheckpoint(true);mpPickup=null;mpWorldReady=false;pauseSim();
         panel('mp-lost','Conexão interrompida',
           '<p>O mundo do anfitrião permanece salvo. Peça outro link e entre novamente.</p>'+
           btn('mp-rejoin','Reconectar com novo link','primary fullwidth')+
           btn('mp-leave','Sair da partida','secondary'));
       }
     } else if(s==='disconnected') {
-      saveGuestCheckpoint();
+      saveGuestCheckpoint(true);mpWorldReady=false;
       if(mpRole==='host' && g?.ready)g.save().catch(()=>{});
       $('#mpChatBtn').hidden=true;
       if(mpRemote) mpRemote.active=false;
@@ -552,10 +557,13 @@
         mp.send({t:'chest-error',pos,reason:'Baú indisponível. Aproxime-se e tente novamente.'}).catch(()=>{});
         return;
       }
-      remoteChestInventory=structuredClone(currentGuestProfile().inv);
-      const items=g.chests[pos] ||= Array(18).fill(null);
-      mp.send({t:'chest-state',pos,rev:g.chestRevisions[pos]||0,items,
-        inv:remoteChestInventory,profileRev:currentGuestProfile().rev,tx:chestTx,initial:true}).catch(()=>{});
+      const session=g,connection=mp,id=mpHostGuestId;
+      PrismaCoop.readChest(session,id,pos,msg.seq,Voxel.blocks.length).then(result=>{
+        if(g!==session||mp!==connection||!mp.connected)return;
+        if(!result.state||!validSharedChest(pos))return mp.send({t:'chest-error',pos,reason:'Inventário pendente. Feche e abra o baú novamente.'});
+        session.chests[pos] ||= Array(18).fill(null);remoteChestInventory=structuredClone(result.state.inv);
+        return mp.send(result.state);
+      }).catch(()=>{});
       return;
     } else if(msg.t==='chest-action' && mpRole==='host' && mpWorldReady && g?.ready) {
       const pos=msg.pos;
@@ -638,7 +646,8 @@
       mpGuestSeq=Math.max(mpGuestSeq,committedSeq,recovery.seq);
       if(!recovery.replay) {mpGuestProfile.pendingInv=null;mpLastGuestInvHash=JSON.stringify(msg.inv);}
       else mpLastGuestInvHash=null;
-      mpWorldReady=true;saveGuestCheckpoint();
+      mpPickup=null;mpWorldReady=true;saveGuestCheckpoint();
+      if(screen==='load'||screen==='loot-sync')resume(false);
       if(recovery.replay) {guestInventorySync(true);toast('Recuperando itens pendentes após a reconexão…');}
       else if(recovery.conflicted)toast('Há itens não confirmados no backup local. O anfitrião mantém o inventário oficial.');
       else toast('Inventário sincronizado com o anfitrião.');
@@ -666,7 +675,7 @@
     }
     if(msg.t==='world' && mpRole==='guest') {
       const src=msg.rec;
-      if(!src || src.schema!==1 || ![1,2,3,4,5].includes(src.generator) || typeof src.seed!=='string' ||
+      if(!src || src.schema!==1 || ![1,2,3,4,5,6,7].includes(src.generator) || typeof src.seed!=='string' ||
         typeof src.name!=='string' || !src.edits || typeof src.edits!=='object')return toast('Dados do mundo incompatíveis.');
       const rec=structuredClone(src);
       const existing=g && mpHostWorldId===src.id ? {p:{...g.p},inv:structuredClone(g.inv)} : null;
@@ -681,20 +690,20 @@
       rec.name=String(src.name).slice(0,48);
       rec.p=existing?.p || mpGuestProfile.p || {...rec.p,x:rec.p.x+1.8,z:rec.p.z+1.8};
       rec.inv=existing?.inv || (validInventory(mpGuestProfile.inv,36)?mpGuestProfile.inv:Game.fresh('Visitante',rec.seed,rec.mode,rec.difficulty).inv);
-      rec.mobs=[];rec.selected=0;
+      rec.mobs=[];rec.drops=[];rec.bag=null;rec.selected=0;rec.wornArmor=null;
       mpGuestEdits=[];
       mpWorldReady=false;
       launch(rec,false,true);
     } else if(msg.t==='pose' && g && mpRemote) {
       const {x,y,z,yaw,moving}=msg;
       const seq=Number.isSafeInteger(msg.seq)?msg.seq:null;
-      if([x,y,z,yaw].every(Number.isFinite) && [x,y,z].every(v=>Math.abs(v)<100000) &&
+      if([x,y,z,yaw].every(Number.isFinite) && Math.abs(x)<100000&&Math.abs(z)<100000&&y>=0&&y<Voxel.H &&
           (seq===null || seq>mpLastSeq)) {
         if(seq!==null)mpLastSeq=seq;
         Object.assign(mpRemote,{targetX:x,targetY:y,targetZ:z,targetYaw:yaw,
           moving:!!moving,crouch:!!msg.crouch,sprint:!!msg.sprint,swing:!!msg.swing,
           life:Number.isFinite(msg.life)?Math.max(0,Math.min(100,msg.life)):100,
-          held:Number.isInteger(msg.held)?msg.held:0,
+          held:Number.isInteger(msg.held)&&msg.held>=0&&msg.held<Voxel.blocks.length?msg.held:0,
           lastPacket:performance.now(),active:true});
         if(!Number.isFinite(mpRemote.x))Object.assign(mpRemote,{x,y,z,yaw});
       }
@@ -717,7 +726,7 @@
         (![15,83,84].includes(g.get(v[0],v[1],v[2],true)) || [15,83,84].includes(v[3])))))return;
       g.applyRemoteBatch(msg.ops);
     } else if (msg.t==='entities' && mpRole==='guest' && g?.ready) {
-      g.applyNetworkEntities(msg);
+      if(mpWorldReady&&g.applyNetworkEntities(msg)&&Number.isFinite(msg.time)&&msg.time>=0&&msg.time<1&&Number.isSafeInteger(msg.day)&&msg.day>=1){g.time=msg.time;g.day=msg.day;g.raining=msg.raining===true;}
     } else if (msg.t==='mob-hit' && mpRole==='host' && mpWorldReady && g?.ready && mpRemote?.active) {
       const id=msg.id;
       const now=performance.now();
@@ -729,7 +738,7 @@
       const len=Math.hypot(...v);
       if(len>.01 && Voxel.ray((x,y,z)=>g.get(x,y,z,true),eye,v.map(n=>n/len),len,true))return;
       mpLastRemoteHit=now;
-      const damage=msg.weapon===47?5:Voxel.durability[msg.weapon]?2:1;
+      const damage=Voxel.weaponDamage(msg.weapon===mpRemote.held?msg.weapon:0);
       g.strikeMob(mob,damage,mpRemote.x,mpRemote.z);
     } else if (msg.t==='mob-feed' && mpRole==='host' && mpWorldReady && g?.ready && mpRemote?.active) {
       const mob=g.mobs.find(m=>m.id===msg.id && m.hp>0 && !m.dying);
@@ -746,18 +755,30 @@
       g.notify(msg.kind+' alimentado(a)');g.changed();
     } else if (msg.t==='mob-damage' && mpRole==='guest' && g?.ready &&
                Number.isFinite(msg.n) && msg.n>0 && msg.n<=24 && typeof msg.why==='string') {
-      g.damage(msg.n,msg.why.slice(0,32));
-    } else if (msg.t==='pickup' && mpRole==='host' && mpWorldReady && g?.ready && mpRemote?.active) {
-      const d=g.drops.find(d=>d.id===msg.id && d.n>0);
-      if(!d || mpLootSends.has(d.id) || !Number.isInteger(msg.cap) || msg.cap<1 || msg.cap>64 ||
-         Math.hypot(d.x-mpRemote.x,d.z-mpRemote.z)>2.6 || Math.abs(d.y-mpRemote.y)>2.6)return;
-      const n=Math.min(d.n,msg.cap);
-      mpLootSends.add(d.id);
-      mp.send({t:'loot-grant',id:d.id,b:d.b,n,dur:d.dur}).then(()=>{
-        d.n-=n;g.drops=g.drops.filter(v=>v.n>0);g.changed();
-      }).catch(()=>{}).finally(()=>mpLootSends.delete(d.id));
-    } else if(msg.t==='loot-grant' && mpRole==='guest' && g?.ready) {
-      g.receiveNetworkLoot(msg);
+      if(mpPickup){mpPickup.damage ||= [];if(mpPickup.damage.length<8)mpPickup.damage.push([msg.n,msg.why.slice(0,32)]);}
+      else if(mpWorldReady)g.damage(msg.n,msg.why.slice(0,32));
+    } else if (msg.t==='pickup' && mpRole==='host' && mpWorldReady && g?.ready) {
+      if(msg.id!==mpHostGuestId)return;
+      const session=g,connection=mp,id=mpHostGuestId;
+      PrismaCoop.pickup(session,id,msg,Game.fill,()=>g===session&&mp===connection&&mpWorldReady?mpRemote:null,Voxel.blocks.length)
+        .then(result=>{if(result.state&&mp===connection&&g===session&&mp.connected)return mp.send(result.state);})
+        .catch(e=>console.warn('Coleta P2P não confirmada',e));
+    } else if(msg.t==='loot-state' && mpRole==='guest' && g?.ready && mpPickup && msg.id===mpGuestProfile?.id && msg.request===mpPickup.request) {
+      if(!validInventory(msg.inv,36)||!Number.isSafeInteger(msg.rev)||msg.rev<mpGuestRevision||!Number.isSafeInteger(msg.seq))return;
+      const damage=mpPickup.damage||[];
+      const pending=mpGuestProfile.pendingInv;
+      if(pending&&pending.seq>msg.seq){
+        // The inventory update failed: keep local progress, never apply a stale bag.
+        mpPickup=null;for(const [n,why] of damage)g.damage(n,why);saveGuestCheckpoint(true);toast('Coleta adiada: inventário ainda não confirmado.');if(screen==='loot-sync')resume(false);return;
+      }
+      g.inv=structuredClone(msg.inv);mpGuestRevision=msg.rev;mpGuestSeq=Math.max(mpGuestSeq,msg.seq);
+      mpGuestProfile.pendingInv=null;mpLastGuestInvHash=JSON.stringify(g.inv);
+      g.guestPickupPending.delete(mpPickup.drop);if(msg.status==='committed')g.drops=g.drops.filter(d=>d.id!==msg.drop);
+      mpPickup=null;for(const [n,why] of damage)g.damage(n,why);saveGuestCheckpoint(true);
+      if(msg.status==='committed')toast('+'+msg.amount+' '+name(msg.b));
+      else if(msg.status==='failed')toast('Não foi possível salvar a coleta. O item permanece no mundo.');
+      else if(msg.status==='full')toast('Mochila cheia');
+      if(screen==='loot-sync')resume(false);
     } else if(msg.t==='chat' && typeof msg.text==='string') {
       const body=msg.text.slice(0,280);
       mpMessages.push({from:mp.remoteName,text:body});mpMessages=mpMessages.slice(-40);
@@ -768,7 +789,10 @@
     if(!g||!mp?.connected||mpStartSent)return;
     mpStartSent=true;mpWorldReady=false;mpEditBuffer=[];
     try {
-      const ok = await mp.send({t:'world',rec:g.snapshot()});
+      const rec=g.snapshot();
+      // Do not send private host inventory, other guest profiles or death backpack.
+      delete rec.guestProfiles;delete rec.wornArmor;rec.inv=Array(36).fill(null);rec.bag=null;rec.drops=[];rec.mobs=[];
+      const ok = await mp.send({t:'world',rec});
       if (!ok) throw Error('Canal de dados encerrado antes da transmissão do mundo.');
     } catch(e) {
       mpStartSent=false;
@@ -778,11 +802,11 @@
   // Host buffers world changes until the guest confirms its chunks are ready.
   // The baseline is sent first; later block edits are replayed in channel order.
   function queueWorldEdit(ops) {
-    if(!mp?.connected)return;
+    if(!mp?.connected||mpRole==='guest'&&!mpWorldReady)return;
     if(mpRole==='host' && !mpWorldReady){
       if(mpEditBuffer.length+ops.length>6000) {
-        toast('Muitas alterações aguardando sincronização. O convidado precisa reconectar.');
-        return;
+        toast('Muitas alterações aguardando sincronização. Reiniciando envio do mundo.');
+        restartWorldSync();return;
       }
       mpEditBuffer.push(...ops);
       return;
@@ -866,11 +890,12 @@
             '<small>Construa livremente, sem limite de blocos, e voe para explorar.</small></span>' +
             '<span class="mode-check" aria-hidden="true">✓</span></button>' +
         '</div>' +
-        '<label class="field"><span class="field-heading">✦ Geração do terreno</span><select id="worldGenerator"><option value="3">Clássico · terreno atual</option><option value="4">Exploração · cavernas profundas e riachos</option><option value="5">Expedição · ruínas, cabana e cripta</option></select><small>A mesma semente reproduz o mapa quando a geração é igual.</small></label>' +
+        '<label class="field"><span class="field-heading">✦ Geração do terreno</span><select id="worldGenerator"><option value="3">Clássico · terreno atual</option><option value="4">Exploração · cavernas profundas e riachos</option><option value="5">Expedição · ruínas, cabana e cripta</option><option value="6">Fronteiras · vilarejos e florestas</option><option value="7">Vilarejos vivos · hortas e caminhos</option></select><small>A mesma semente reproduz o mapa quando a geração é igual.</small></label>' +
         '<label class="field rhythm-field" id="difficultyField"><span class="field-heading"><span class="field-badge" aria-hidden="true">◷</span> Ritmo da partida</span>' +
           '<select id="difficulty"><option value="normal">Normal · ciclo de 24 minutos</option>' +
           '<option value="short">Ciclo rápido · 4 minutos</option>' +
           '<option value="peaceful">Pacífico · sem criaturas hostis</option></select></label>' +
+        '<label id="keepInventoryField" class="checkline"><input id="keepInventory" type="checkbox"> Modo casual · manter inventário ao morrer</label>' +
         '<details class="new-help"><summary><span>⚙</span><span><b>Informações do mundo</b>' +
           '<small>Como funcionam sementes, modos e construções.</small></span><span class="new-chevron">⌄</span></summary>' +
           '<p>Cada semente gera um mapa reproduzível. No modo Criativo você pode erguer casas bloco a bloco, sem modelos obrigatórios. A qualidade gráfica e os controles ficam em <b>Opções</b> no menu principal.</p></details>' +
@@ -888,7 +913,7 @@
       const title = $('#worldName').value.trim() || 'Meu mundo',
         seed =
           $('#worldSeed').value.trim() || 'PR-' + Math.random().toString(36).slice(2, 9).toUpperCase();
-      let rec = Game.fresh(title, seed, edition, $('#difficulty').value, Number($('#worldGenerator').value));
+      let rec = Game.fresh(title, seed, edition, $('#difficulty').value, Number($('#worldGenerator').value),$('#keepInventory').checked);
       await launch(rec, true);
     };
   }
@@ -952,7 +977,7 @@
     } catch(e) {console.error(e); toast('Falha ao exportar mundo.');}
   }
   function validateBackup(rec) {
-    if (!rec || rec.schema !== 1 || ![1,2,3,4,5].includes(rec.generator) ||
+    if (!rec || rec.schema !== 1 || ![1,2,3,4,5,6,7].includes(rec.generator) ||
         typeof rec.seed !== 'string' || rec.seed.length > 150 ||
         typeof rec.name !== 'string' || !rec.name.trim() ||
         !['survival','creative'].includes(rec.mode) ||
@@ -1042,7 +1067,7 @@
         const ok = await g.save();
         if (!ok) toast('Você pode jogar, mas o salvamento está indisponível.');
       }
-      if (g.ready && screen === 'load') resume(false);
+      if (g.ready && screen === 'load' && mpRole!=='guest') resume(false);
     } catch (e) {
       console.error(e);
       g?.stop();
@@ -1060,7 +1085,7 @@
     }
   }
   function resume(lock = true) {
-    if (!g || !g.ready) return;
+    if (!g || !g.ready || mpRole==='guest'&&(!mpWorldReady||mpPickup)) return;
     screen = 'play';
     overlay.hidden = true;
     home.hidden = true;
@@ -1159,7 +1184,7 @@
       options.push(navigationCard('ruin:'+i, '◇ '+label,
         (g.seals[i]?'Selo coletado':'Selo pendente')+' · '+Math.round(Math.hypot(g.p.x-s.x,g.p.z-s.z))+' m',true,active==='ruin:'+i));
     }
-    if(g.generator===5)for(const site of g.sites||[]){
+    if(g.generator>=5)for(const site of g.sites||[]){
       const p=Voxel.treasurePoint(site);if(!p)continue;
       const k='treasure:'+site.id;
       const items=g.chests[[p.x,p.y,p.z].join(',')];
@@ -1179,6 +1204,7 @@
       '<p class="smallnote">Atalhos: <kbd>H</kbd> abrir navegador · <kbd>N</kbd> alternar Casa/Objetivo. Toque na barra da bússola no celular.</p>'+
       btn('resume','Voltar ao jogo','primary'),true);
   }
+  const version = document.querySelector('.version')?.textContent.match(/\d+\.\d+\.\d+/)?.[0]||'desconhecida';
   function diagnosticText() {
     if (!g) return 'Nenhuma partida aberta';
     const perf = perfFrames.snapshot();
@@ -1188,19 +1214,20 @@
     const chestCount = Object.keys(g.chests || {}).length;
     const qualityNames = ['Baixa','Média','Alta'];
     return [
-      'MUNDO PRISMA · DIAGNÓSTICO LOCAL v0.9.33',
+      'MUNDO PRISMA · DIAGNÓSTICO LOCAL v'+version,
       'Gerado: ' + new Date().toISOString(),
       'Motor: ' + renderer.type + ' · qualidade: ' + (qualityNames[settings.quality] || settings.quality),
       'FPS médio: ' + perf.averageFPS + ' · FPS 1% low: ' + perf.low1FPS,
       'Quadro médio: ' + perf.avgMs + ' ms · p95: ' + perf.p95Ms + ' ms · amostras: ' + perf.samples,
       'Resolução dinâmica: ' + Math.round((renderer.dynamicScale || 1) * 100) + '%',
       'Draw calls: ' + renderer.calls + ' · triângulos: ' + renderer.tris,
+      'Entidades: '+g.mobs.length+' criaturas · '+g.drops.length+' drops · '+(renderer.visibleEntities||0)+' visíveis · '+(g.aiDecisions||0)+' decisões no último tick',
       'Chunks: ' + g.chunks.size + ' · jobs pendentes: ' + g.pending.size + ' · worker ocupado: ' + !!g.busy,
       'Persistência: ' + editedRegions.length + ' regiões alteradas · ' + editedBlocks + ' blocos editados · ' + chestCount + ' baús',
       'XYZ: ' + [g.p.x,g.p.y,g.p.z].map(v=>Math.floor(v)).join(', ') + ' · chunk: ' + g.cx + ',' + g.cz,
       'Bioma: ' + ($('#biome').textContent || '-') + ' · seed: ' + g.meta.seed,
       'Estado do salvamento: ' + g.saveState,
-      'P2P: ' + (mpRole || 'solo') + ' · conexão: ' + (mp?.connected ? 'ativa' : 'inativa'),
+      'P2P: '+(mp?.metrics?('movimento '+mp.metrics.fastSent+' enviados / '+mp.metrics.fastDropped+' descartados · confiáveis '+mp.metrics.reliableSent+' · '):'') + (mpRole || 'solo') + ' · conexão: ' + (mp?.connected ? 'ativa' : 'inativa'),
       'Este relatório foi criado localmente. Nenhum dado é enviado pelo jogo.',
     ].join('\n');
   }
@@ -1262,6 +1289,7 @@
   }
   async function quit() {
     if (!g) return;
+    if(mpRole==='guest'){saveGuestCheckpoint(true);guestInventorySync();}
     const ok = await g.save();
     if (!ok) {
       toast('Falha ao salvar. A partida continua aberta.');
@@ -1293,7 +1321,9 @@
         '<label class="checkline"><input id="leftHanded" type="checkbox"> Inverter lados dos controles</label>' +
         '<label class="checkline"><input id="haptics" type="checkbox"> Vibrar ao quebrar e colocar blocos</label>' +
         '<label class="checkline"><input id="thirdPerson" type="checkbox"> Câmera em terceira pessoa (V)</label>' +
-        slider('volume', 'Volume', 0, 100, 1, Math.round(settings.volume * 100), '%') +
+        slider('volume', 'Volume geral', 0, 100, 1, Math.round(settings.volume * 100), '%') +
+        slider('effectsVolume', 'Efeitos e passos', 0, 100, 1, Math.round((settings.effectsVolume??1)*100), '%') +
+        slider('interfaceVolume', 'Sons da interface', 0, 100, 1, Math.round((settings.interfaceVolume??1)*100), '%') +
         '<label class="checkline"><input id="noFlash" type="checkbox"> Desativar flash de dano</label><label class="checkline"><input id="audioCheck" type="checkbox"> Ativar som</label><label class="checkline"><input id="motion" type="checkbox"> Animar vegetação e atmosfera</label><label class="checkline"><input id="invert" type="checkbox"> Inverter eixo vertical do mouse</label><div class="btns">' +
         btn('back', 'Concluir', 'primary') +
         '</div>',
@@ -1324,11 +1354,11 @@
         if (prop === 'sound') Sound.play('ui', settings);
       };
     }
-    for (const id of ['fov', 'sensitivity', 'touchSensitivity', 'touchSize', 'hudScale', 'volume', 'recuo']) {
+    for (const id of ['fov', 'sensitivity', 'touchSensitivity', 'touchSize', 'hudScale', 'volume', 'effectsVolume', 'interfaceVolume', 'recuo']) {
       let n = $('#' + id);
       n.oninput = () => {
         let v = Number(n.value);
-        settings[id] = id === 'volume' ? v / 100 : v;
+        settings[id] = ['volume','effectsVolume','interfaceVolume'].includes(id) ? v / 100 : v;
         n.previousElementSibling.querySelector('output').textContent = v + n.dataset.unit;
         savePrefs();
       };
@@ -1421,7 +1451,7 @@
         '</ul><p>O primeiro selo libera a pedra rúnica. Com os três, use a bancada para combinar cristal, cobre e vidro em um Farol Prisma. Coloque-o para acender uma aurora sobre sua base.</p></div>';
     } else
       body =
-        '<p>Mundo Prisma é um sandbox voxel de exploração, sobrevivência e construção. Explore os Campos de Âmbar, a Floresta de Névoa e as Dunas de Vidro. Nas dunas, procure os obeliscos com cristais no topo.</p><p class="muted">Versão jogável 0.9.29 · Solo e multiplayer experimental<br>Arte, sprites, tipografia de título e efeitos sonoros criados para Mundo Prisma. Seu progresso é salvo neste navegador.</p>';
+        '<p>Mundo Prisma é um sandbox voxel de exploração, sobrevivência e construção. Explore os Campos de Âmbar, a Floresta de Névoa e as Dunas de Vidro. Nas dunas, procure os obeliscos com cristais no topo.</p><p class="muted">Versão jogável '+version+' · Solo e multiplayer experimental<br>Arte, sprites, tipografia de título e efeitos sonoros criados para Mundo Prisma. Seu progresso é salvo neste navegador.</p>';
     panel(
       'guide',
       'Guia de campo',
@@ -1434,11 +1464,13 @@
   function back() {
     switch (screen) {
       case 'load':
+      case 'loot-sync':
         return;
       case 'options':
         return cfgBack === 'pause' ? pauseMenu() : homeMenu();
       case 'guide':
         return origin === 'pause' ? pauseMenu() : origin === 'play' ? resume() : homeMenu();
+      case 'trade':
       case 'bag':
       case 'build':
       case 'chest':
@@ -1463,7 +1495,7 @@
   }
   function slotButton(t, i, prefix, active = false, hot = false) {
     const title = t
-      ? name(t.b) + (Voxel.durability[t.b] ? ' · ' + t.dur + '/' + Voxel.durability[t.b] + ' usos' : '')
+      ? name(t.b) + (Voxel.durability[t.b] ? ' · ' + t.dur + '/' + Voxel.durability[t.b] + ' usos' : '') + (Voxel.armor[t.b] ? ' · proteção '+Math.round(Voxel.armor[t.b]*100)+'% equipada ou na barra rápida' : '')
       : 'Espaço vazio';
     return (
       '<button class="slot' +
@@ -1497,9 +1529,9 @@
     ['survival', 'Sobrevivência', '✦'],
   ];
   function recipeCategory(id) {
-    if ([22, 42, 43, 44, 45, 47, 89, 90, 146].includes(id)) return 'tools';
-    if ([12, 13, 14, 15, 24, 25, 30, 31, 67, 144,171,172,173].includes(id)) return 'utility';
-    if (Voxel.farmNutrition[id] || [38,41,46,123,142,143].includes(id)) return 'survival';
+    if (Voxel.equipment[id]||[22,42,43,44,45,146,192].includes(id)) return 'tools';
+    if ([12, 13, 14, 15, 24, 25, 30, 31, 67, 144,171,172,173,178].includes(id)) return 'utility';
+    if (Voxel.farmNutrition[id] || Voxel.armor[id] || [38,41,46,123,142,143].includes(id)) return 'survival';
     if ([77, 78, 79, 83, 84, 85, 87, 88].includes(id)) return 'decor';
     return 'build';
   }
@@ -1695,6 +1727,7 @@
           grid(0, 9, true) +
           '<div class="inventory-headline"><div class="sectionhead bag-main-title">Inventário</div><small>3 × 9 (27 espaços)</small></div>' +
           grid(9, 45, false) +
+          (!g.networkGuest&&!g.creative?'<div class="quickcraft-box"><div class="sectionhead">Armadura equipada</div><p>'+ (g.wornArmor?esc(name(g.wornArmor.b))+' · '+g.wornArmor.dur+' usos':'Nenhuma')+'</p>'+ (g.wornArmor?btn('armor-off','Retirar armadura','secondary'):'')+g.inv.map((t,i)=>t&&Voxel.armor[t.b]?btn('armor-on:'+i,'Equipar '+esc(name(t.b)),'secondary'):'').join('')+'</div>':'') +
           '<div class="bag-help-strip">' +
             '<span>◉ Clique em um item e depois no destino para mover.</span>' +
             '<span>◉ Clique direito em um espaço vazio para dividir a pilha.</span>' +
@@ -1741,7 +1774,7 @@
       if(mpRole==='guest' && mp?.connected) {
         chestLoaded=false;chestPending=true;chestRevision=-1;
         guestInventorySync();
-        mp.send({t:'chest-open',pos:chestPos,id:mpGuestProfile?.id}).catch(()=>{
+        mp.send({t:'chest-open',pos:chestPos,id:mpGuestProfile?.id,seq:mpGuestProfile?.pendingInv?.seq||0}).catch(()=>{
           chestPending=false;toast('Não foi possível abrir o baú do anfitrião.');
         });
       }
@@ -1846,9 +1879,25 @@
       };
     });
   }
+  let marketResident=null;
+  function villageMarket(id) {
+    const market=g?.villageOffers(id);
+    if(!market){toast('Aldeão indisponível. Aproxime-se novamente.');if(screen==='trade')resume();return;}
+    marketResident=id;
+    const rows=market.rows.map((o,i)=>{
+      const available=o.left>0&&Game.count(g.inv,o.pay)>=o.n;
+      return '<button class="recipe" data-act="vtrade:'+i+'" '+(available?'':'disabled')+'>'+
+        '<span class="recipe-icon">'+img(o.pay)+'</span><span><b>'+esc(name(o.pay))+' ×'+o.n+
+        ' → '+esc(name(o.out))+' ×'+o.qty+'</b><small>'+o.left+' trocas restantes hoje</small></span>'+
+        '<span class="recipe-icon">'+img(o.out)+'</span></button>';
+    }).join('');
+    panel('trade','Mercado · '+esc(market.job),
+      '<p>'+esc(market.tip)+'</p><p><b>Moedas prisma: '+Game.count(g.inv,178)+'</b> · Estoque renovado a cada dia.</p>'+
+      '<div class="recipes">'+rows+'</div>'+btn('resume','Voltar ao mundo','secondary fullwidth'),true);
+  }
   function signal(s, v) {
     if (s === 'ready') {
-      if (screen === 'load' && g) resume(false);
+      if (screen === 'load' && g && mpRole!=='guest') resume(false);
       if(mpRole === 'host' && mp?.connected && !mpStartSent) sendHostWorld();
       if(mpRole === 'guest' && mp?.connected && g) {
         flushGuestEdits();
@@ -1865,9 +1914,17 @@
     } else if(s==='p2pDamage' && mpRole==='host' && mpWorldReady && mp?.connected) {
       mp.send({t:'mob-damage',n:v.n,why:v.why}).catch(()=>{});
     } else if(s==='p2pPickup' && mpRole==='guest' && mp?.connected) {
-      mp.send({t:'pickup',id:v.id,cap:v.cap}).catch(()=>{});
+      if(mpPickup||!mpWorldReady||screen!=='play')return;
+      guestInventorySync();
+      mpPickup={request:++mpPickupRequest,drop:v.id,at:performance.now()};
+      const request=mpPickup;
+      panel('loot-sync','Coletando item…','<p>Confirmando a coleta com o anfitrião.</p>',false,false);
+      mp.send({t:'pickup',id:mpGuestProfile.id,drop:v.id,request:request.request,
+        rev:mpGuestRevision,seq:mpGuestProfile.pendingInv?.seq||0}).catch(()=>{if(mpPickup===request)request.at=0;});
     } else if (s === 'hud') {
       if (screen === 'play') hud();
+    } else if (s === 'villageTrade') {
+      villageMarket(v);
     } else if (s === 'station') {
       if([14,136].includes(v.b))g.furnaceTarget=v.p.slice();
       [15, 83, 84].includes(v.b) ? chest(v) : inventory(true, v.b===136?14:v.b);
@@ -1904,11 +1961,12 @@
       'h' +
       String(minutes % 60).padStart(2, '0');
     const stat = (c, ic, n) => '<span class="stat ' + c + '">' + icon(ic) + Math.ceil(n) + '</span>';
-    $('#vitals').innerHTML = g.creative
+    const vitalsHtml = g.creative
       ? ''
       : stat('health', 'heart', g.p.life) +
         stat('food', 'food', g.p.food) +
         (g.submerged || g.p.air < 95 ? stat('air', 'air', g.p.air) : '');
+    const vitals=$('#vitals');if(vitals._old!==vitalsHtml){vitals.innerHTML=vitalsHtml;vitals._old=vitalsHtml;}
     const jumpButton = $('#touch [data-touch="jump"]');
     $('#touchJumpLabel').textContent = g.swimming ? 'Nadar' : 'Pular';
     const active = g.inv[g.selected];
@@ -1920,6 +1978,8 @@
         (Voxel.durability[active.b] ? ' · ' + active.dur + '/' + Voxel.durability[active.b] : '')
       : 'Mão livre';
     if (rotation) $('#itemname').textContent += rotation;
+    if(active?.b===191)$('#itemname').textContent+=' · '+Game.count(g.inv,192)+' flechas';
+    if(Voxel.equipment[active?.b]?.kind==='shield')$('#itemname').textContent+=g.shieldTime>0?' · Protegendo':g.shieldCool>0?' · Recuperando':' · Usar para erguer';
     let html = g.inv
       .slice(0, 9)
       .map((t, i) => slotButton(t, i, 'hot', i === g.selected, true))
@@ -1933,7 +1993,7 @@
       ? Voxel.farmAnimals.includes(aimedCreature.kind)
         ? (aimedCreature.juvenile?'Filhote de ':'')+aimedCreature.kind+(aimedCreature.tamed?(aimedCreature.follow?' · seguindo':' · domesticado'):'') + (g.inv[g.selected]?.b === Voxel.farmFood[aimedCreature.kind]
           ? ' · Usar para alimentar' : aimedCreature.tamed&&!g.inv[g.selected]?' · Usar: seguir/parar':aimedCreature.kind==='Vaca'?' · Balde para ordenhar':aimedCreature.kind==='Ovelha'?' · Tesoura para tosquiar':' · Animal pacífico')
-        : aimedCreature.kind || 'Raspejante'
+        : aimedCreature.kind==='Guarda' ? 'Guarda · Protetor do vilarejo' : aimedCreature.kind==='Aldeão' ? 'Aldeão · '+(['Fazendeiro','Ferreiro','Construtor'][aimedCreature.job]||'Fazendeiro')+(aimedCreature.activity==='shelter'?' · Abrigado':aimedCreature.activity==='sleep'?' · Dormindo':' · '+({farm:'Cultivando',forge:'Trabalhando no forno',build:'Trabalhando na bancada',walk:'Caminhando',rest:'Descansando'}[aimedCreature.activity]||'Usar para negociar')) : aimedCreature.kind || 'Raspejante'
       : g.hit?.b === 28
         ? 'R · Despertar núcleo'
         : g.hit
@@ -1994,15 +2054,17 @@
         Math.floor(g.bag.y) +
         ', ' +
         Math.floor(g.bag.z);
-    $('#quest').innerHTML = '<small>' + (g.creative ? 'CRIATIVO' : 'GUIA DE CAMPO') + '</small>' + task;
+    const quest=$('#quest'),questHtml='<small>'+(g.creative?'CRIATIVO':'GUIA DE CAMPO')+'</small>'+task;
+    if(quest._old!==questHtml){quest.innerHTML=questHtml;quest._old=questHtml;}
     $('#debug').hidden = !debug;
-    if (debug)
+    if (debug){
+      const stats=perfFrames.snapshot();
       $('#debug').textContent =
-        'PRISMA 0.9.33 · ' +
+        'PRISMA '+version+' · ' +
         renderer.type +
         '\n' +
-        perfFrames.snapshot().averageFPS +
-        ' FPS médio · 1% low ' + perfFrames.snapshot().low1FPS + ' · p95 ' + perfFrames.snapshot().p95Ms + ' ms\n' +
+        stats.averageFPS +
+        ' FPS médio · 1% low ' + stats.low1FPS + ' · p95 ' + stats.p95Ms + ' ms\n' +
         renderer.calls +
         ' chamadas · ' +
         renderer.tris +
@@ -2022,6 +2084,7 @@
         g.pending.size +
         '\nSalvamento · ' +
         g.saveState;
+    }
   }
   document.addEventListener('click', (e) => {
     const node = e.target.closest('[data-act],[data-mode]');
@@ -2034,6 +2097,7 @@
         b.setAttribute('aria-pressed', on);
       });
       $('#difficultyField').hidden = edition === 'creative';
+      if($('#keepInventoryField'))$('#keepInventoryField').hidden=edition==='creative';
       return;
     }
     const [a, i] = node.dataset.act.split(':');
@@ -2170,12 +2234,19 @@
       case 'chest':
         transfer(a, +i, e.shiftKey);
         break;
+      case 'vtrade':
+        if(screen==='trade'&&g){if(!g.tradeVillage(marketResident,Number(i)))toast('Troca indisponível ou mochila cheia.');villageMarket(marketResident);}
+        break;
       case 'craft':
         if (g.craft(+i, bagStation)) inventory(true, bagStation);
         break;
       case 'furnacecollect':
         if(g.collectFurnace())inventory(true,14);
         break;
+      case 'armor-on':
+        if(g.equipArmor(+i))inventory(true,bagStation);else toast('Armadura indisponível.');break;
+      case 'armor-off':
+        if(g.unequipArmor())inventory(true,bagStation);else toast('Mochila cheia.');break;
       case 'crafttab':
         bagRecipeTab = i;
         inventory(false, bagStation);
@@ -2617,7 +2688,7 @@
     return ok;
   }
   document.addEventListener('visibilitychange', () => {
-    if(document.hidden) { emergencyCheckpoint(); saveGuestCheckpoint(); if(g?.ready && mpRole!=='guest')g.save(); }
+    if(document.hidden) { emergencyCheckpoint(); saveGuestCheckpoint(true); if(g?.ready && mpRole!=='guest')g.save(); }
     if (document.hidden && g && screen === 'play') pauseMenu();
   });
   window.addEventListener('blur', () => {
@@ -2625,7 +2696,7 @@
   });
   window.addEventListener('pagehide', () => {
     emergencyCheckpoint();
-    saveGuestCheckpoint();
+    saveGuestCheckpoint(true);
     if(mpRole==='host' && g?.ready)g.save();
     else if (g) g.save();
     mp?.close();
@@ -2636,6 +2707,20 @@
     const dt = Math.min(0.1, frameSeconds);
     lastFrame = now;
     if (!g || !g.ready) return;
+    if(mpPickup&&now-mpPickup.at>8000){
+      saveGuestCheckpoint(true);mpPickup=null;mpWorldReady=false;
+      panel('load','Conferindo coleta…','<p>Reconectando o inventário para evitar perda ou duplicação de itens.</p>',true,false);
+      mp?.send({t:'resync-request'}).catch(()=>toast('Solicite um novo convite se a conexão não voltar.'));
+    }
+    // Keep network poses/heartbeat data flowing while inventory or pause is open.
+    if(mp?.connected&&mpWorldReady&&now-mpLastPose>95){
+      mpLastPose=now;const p=g.p;
+      mp.sendFast({t:'pose',seq:++mpPoseSeq,x:+p.x.toFixed(2),y:+p.y.toFixed(2),z:+p.z.toFixed(2),yaw:+p.yaw.toFixed(2),moving:!g.paused&&g.moveSpeed>.1,crouch:!!g.crouch,sprint:!g.paused&&g.moveSpeed>5,life:Math.round(p.life),held:g.inv[g.selected]?.b||0,swing:!g.paused&&g.attackCool>0});
+    }
+    if(mpRole==='host'&&mpWorldReady&&mp?.connected&&now-mpLastEntity>320){
+      mpLastEntity=now;mp.sendFast({t:'entities',seq:++mpEntitySeq,mobs:g.networkMobState(),drops:g.networkDropState(),time:g.time,day:g.day,raining:g.raining});
+    }
+    if(mpRole==='guest'&&mpWorldReady&&!mpPickup&&!chestPending&&screen!=='chest'&&now-mpLastGuestSync>4500){mpLastGuestSync=now;guestInventorySync();saveGuestCheckpoint();}
     if(g.paused) {
       if(screen==='bag'&&bagStation===14&&!document.hidden&&!g.networkGuest) {
         g.tickFurnaces(dt);updateFurnaceProgress();
@@ -2657,6 +2742,10 @@
       const current=renderer.dynamicScale || 1;
       renderer.dynamicScale=fps<27 ? Math.max(.72,current-.08) :
         fps>48 ? Math.min(1,current+.04) : current;
+      // Reduce streamed radius only after resolution has reached its floor.
+      // Hysteresis prevents unloading/reloading chunks during brief spikes.
+      if(fps<23 && current<=.73)g.adaptiveRadiusReduction=1;
+      else if(fps>52 && current>=.96)g.adaptiveRadiusReduction=0;
     }
     if (mouseActive && (edgeX || edgeY) && !document.pointerLockElement)
       g.look(edgeX * 820 * dt, edgeY * 590 * dt);
@@ -2671,16 +2760,6 @@
       g.tick(1 / 60);
       acc -= 1 / 60;
     }
-    if (mp?.connected && now-mpLastPose>95) {
-      mpLastPose=now; const p=g.p;
-      mp.sendFast({t:'pose',seq:++mpPoseSeq,x:+p.x.toFixed(2),y:+p.y.toFixed(2),z:+p.z.toFixed(2),yaw:+p.yaw.toFixed(2),moving:g.moveSpeed>0.1,crouch:!!g.crouch,sprint:g.moveSpeed>5,
-        life:Math.round(p.life),held:g.inv[g.selected]?.b || 0,swing:g.attackCool>0});
-    }
-    if(mpRole==='host' && mpWorldReady && mp?.connected && now-mpLastEntity>320) {
-      mpLastEntity=now;
-      mp.sendFast({t:'entities',seq:++mpEntitySeq,
-        mobs:g.networkMobState(),drops:g.networkDropState()});
-    }
     smoothRemote(dt,now);
     if(mp?.connected && now-mpLastHud>1200) {mpLastHud=now;updateP2PHud();}
     // Host and solo games checkpoint positions, hunger, day/night and all world
@@ -2688,9 +2767,6 @@
     if(!g.temporary && now-mpLastHostCheckpoint>(mpRole==='host' ? 30000 : 45000)) {
       mpLastHostCheckpoint=now;
       g.save().catch(()=>{});
-    }
-    if(mpRole==='guest' && mpWorldReady && now-mpLastGuestSync>4500) {
-      mpLastGuestSync=now;guestInventorySync();saveGuestCheckpoint();
     }
     renderer.draw(g, settings, Math.min(1, acc * 60));
     heldView.update(g, settings, dt, screen === 'play');

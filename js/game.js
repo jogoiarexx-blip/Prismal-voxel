@@ -4,6 +4,19 @@ const Game = (() => {
     BAG = 36,
     farmAnimals = Voxel.farmAnimals;
   const isFarm = (kind) => farmAnimals.includes(kind);
+  const friendly=kind=>kind==='Aldeão'||kind==='Guarda';
+  const hostileKind=kind=>['Zumbi','Raspejante','Vigia de Cascalho'].includes(kind);
+  const villageRegion=(x,z)=>Math.floor(x/64)+','+Math.floor(z/64);
+  const raidNight=(day,time)=>day-(time<.215?1:0);
+  const villageJobs=['Fazendeiro','Ferreiro','Construtor'];
+  // Each offer is [payment item, quantity, received item, quantity, daily stock].
+  // Selling and buying different quantities avoids a circular profit exploit.
+  const villageTrades=[
+    [[40,8,178,3,5],[23,6,178,2,5],[178,2,41,2,5],[178,1,37,3,4]],
+    [[9,8,178,3,5],[34,4,178,4,4],[178,5,35,2,4],[178,9,44,1,2]],
+    [[5,8,178,3,5],[3,16,178,3,5],[178,2,8,8,6],[178,4,65,6,4]]
+  ];
+  const villageTips=['Plante sementes em um canteiro perto da água.','Use o forno para transformar minério em barras.','A bancada permite fabricar telhas, portas e ferramentas.'];
   const slot = (b, n = 1) => ({ b, n, ...(Voxel.durability[b] ? { dur: Voxel.durability[b] } : {}) }),
     empty = () => Array(BAG).fill(null);
   const solid = (id) => id < 0 || !!blocks[id]?.solid;
@@ -37,15 +50,23 @@ const Game = (() => {
   function count(bag, b) {
     return bag.reduce((a, t) => a + (t?.b === b ? t.n : 0), 0);
   }
-  function fresh(name, seed, mode, difficulty, generator = 3) {
-    generator = [4,5].includes(generator) ? generator : 3;
+  // Nearby movement/attacks retain 60 Hz. Far decisions run at 15 or 10 Hz.
+  // All accumulated time is consumed exactly once; no gameplay timer slowdown.
+  function actorStep(state,dt,d,urgent=false) {
+    const interval=urgent||d<=12?0:d<=22?1/15:.1;
+    state.pending=(state.pending||0)+dt;
+    if(interval&&state.pending+1e-8<interval)return 0;
+    const step=state.pending;state.pending=0;return step;
+  }
+  function fresh(name, seed, mode, difficulty, generator = 3, keepInventory = false) {
+    generator = [4,5,6,7].includes(generator) ? generator : 3;
     let h = land(0, 3, Voxel.seedHash(seed), generator).h;
     let inv = empty();
     if (mode === 'creative') [8, 49, 53, 57, 55, 16, 83, 85, 87].forEach((v, i) => (inv[i] = slot(v, 64)));
     else {
       inv[0] = slot(23, 3);
     }
-    const sites = generator===5 ? Voxel.planRuins(Voxel.seedHash(seed),{}, {x:.5,z:3.5},5) : null;
+    const sites = generator>=5 ? Voxel.planRuins(Voxel.seedHash(seed),{}, {x:.5,z:3.5},generator) : null;
     return {
       schema: 1,
       generator,
@@ -55,6 +76,7 @@ const Game = (() => {
       seed,
       mode,
       difficulty,
+      keepInventory:keepInventory===true,
       saved: Date.now(),
       p: { x: 0.5, y: h + 1.02, z: 3.5, yaw: 0.59, pitch: -0.025, life: 100, food: 100, air: 100 },
       inv,
@@ -78,8 +100,9 @@ const Game = (() => {
         seed: rec.seed,
         mode: rec.mode,
         difficulty: rec.difficulty,
+        keepInventory:rec.keepInventory===true,
       };
-      if (![1, 2, 3, 4, 5].includes(rec.generator) || rec.schema !== 1)
+      if (![1, 2, 3, 4, 5, 6, 7].includes(rec.generator) || rec.schema !== 1)
         throw Error('Versão de mundo incompatível');
       this.generator = rec.generator;
       this.fragments = [];
@@ -114,14 +137,18 @@ const Game = (() => {
       this.nextMobId = Math.max(1, ...this.mobs.map(m => Number.isSafeInteger(m.id) ? m.id + 1 : 1));
       this.mobs.forEach(m => { if (!Number.isSafeInteger(m.id) || m.id <= 0) m.id = this.nextMobId++; });
       this.drops = rec.drops || [];
-      this.nextDropId = Math.max(1, ...this.drops.map(d => Number.isSafeInteger(d.id) ? d.id + 1 : 1));
+      this.nextDropId = Math.max(1, Number.isSafeInteger(rec.nextDropId)?rec.nextDropId:1, ...this.drops.map(d => Number.isSafeInteger(d.id) ? d.id + 1 : 1));
       this.drops.forEach(d => { if (!Number.isSafeInteger(d.id) || d.id <= 0) d.id = this.nextDropId++; });
       this.networkGuest = false;
       this.networkHost = false;
       this.lastNetworkMobSeq = -1;
       this.guestPickupPending = new Map();
       this.bag = rec.bag;
+      this.wornArmor=rec.wornArmor&&Voxel.armor[rec.wornArmor.b]&&rec.wornArmor.n===1&&Number.isFinite(rec.wornArmor.dur)&&rec.wornArmor.dur>0?{b:rec.wornArmor.b,n:1,dur:Math.min(Voxel.durability[rec.wornArmor.b],Math.floor(rec.wornArmor.dur))}:null;
       this.goals = rec.goals || {};
+      this.defenseHistory=rec.defenseHistory&&typeof rec.defenseHistory==='object'&&!Array.isArray(rec.defenseHistory)?rec.defenseHistory:{};
+      this.marketDay = Number.isSafeInteger(rec.marketDay)?rec.marketDay:0;
+      this.marketStock = rec.marketStock && typeof rec.marketStock==='object' && !Array.isArray(rec.marketStock)?rec.marketStock:{};
       this.renderer = renderer;
       this.settings = settings;
       this.notify = notify;
@@ -129,6 +156,8 @@ const Game = (() => {
       this.chunks = new Map();
       this.revs = new Map();
       this.lit = new Map();
+      this.lightCache=new Map();
+      this.actorSchedule=new WeakMap();
       this.keys = new Set();
       this.touchMove = { forward: 0, side: 0 };
       this.moveSpeed = 0;
@@ -183,7 +212,8 @@ const Game = (() => {
     stream(force = false) {
       const cx = Math.floor(this.p.x / 16),
         cz = Math.floor(this.p.z / 16),
-        r = (typeof document !== 'undefined' && document.body?.classList.contains('touchgame') ? [2,3,4] : [3,4,5])[this.settings.quality];
+        mobile = typeof document !== 'undefined' && document.body?.classList.contains('touchgame'),
+        r = Math.max(2,(mobile ? [2,3,4] : [3,4,5])[this.settings.quality]-(mobile?this.adaptiveRadiusReduction||0:0));
       if (!force && this.cx === cx && this.cz === cz && this.radius === r) return;
       this.cx = cx;
       this.cz = cz;
@@ -197,6 +227,7 @@ const Game = (() => {
         if (Math.abs(x - cx) > r + 1 || Math.abs(z - cz) > r + 1) {
           this.chunks.delete(k);
           this.lit.delete(k);
+          this.lightCache?.clear();
           this.renderer.remove(k);
         }
       }
@@ -273,8 +304,11 @@ const Game = (() => {
           arr.push(position);
         }
       this.lit.set(k, arr);
+      this.lightCache?.clear();
     }
     lights(block = null) {
+      const cached=this.lightCache?.get(block),p=this.p;
+      if(cached&&this.elapsed<cached.until&&Math.hypot(p.x-cached.x,p.y-cached.y,p.z-cached.z)<.4)return cached.result;
       let found = [];
       for (let arr of this.lit.values())
         for (let v of arr) {
@@ -282,10 +316,9 @@ const Game = (() => {
           const d = (v[0] - this.p.x) ** 2 + (v[1] - this.p.y) ** 2 + (v[2] - this.p.z) ** 2;
           if (d < 42 ** 2) found.push([d, v]);
         }
-      return found
-        .sort((a, b) => a[0] - b[0])
-        .slice(0, 8)
-        .map((i) => i[1]);
+      const result=found.sort((a,b)=>a[0]-b[0]).slice(0,8).map(i=>i[1]);
+      this.lightCache?.set(block,{x:p.x,y:p.y,z:p.z,until:this.elapsed+.15,result});
+      return result;
     }
     get(x, y, z, barrier = false) {
       if (y < 0) return 3;
@@ -607,7 +640,8 @@ const Game = (() => {
       if ((forward || side) && (this.grounded || this.swimming)) {
         this.stepTick -= dt;
         if (this.stepTick <= 0) {
-          Sound.play(this.swimming ? 'swim' : 'step', this.settings);
+          const ground=this.get(Math.floor(p.x),Math.floor(p.y-.06),Math.floor(p.z));
+          Sound.play(this.swimming ? 'swim' : Sound.footstep(ground), this.settings);
           this.stepTick = this.swimming ? 2.1 / 2.9 : sprint ? 0.34 : 0.48;
         }
       }
@@ -634,6 +668,8 @@ const Game = (() => {
       }
       this.damageCool = Math.max(0, this.damageCool - dt);
       this.attackCool = Math.max(0, (this.attackCool || 0) - dt);
+      this.shieldTime=Math.max(0,(this.shieldTime||0)-dt);
+      this.shieldCool=Math.max(0,(this.shieldCool||0)-dt);
       this.previousEye = this.eye();
       this.physics(dt);
       this.stream();
@@ -655,7 +691,7 @@ const Game = (() => {
       if (this.holding) this.mine(dt);
       if (Math.floor(this.elapsed) !== Math.floor(this.elapsed - dt)) {
         const period = Math.floor(this.elapsed / 85);
-        this.raining = Voxel.hash(period, 0, this.seed ^ 612) > 0.53;
+        if(!this.networkGuest)this.raining = Voxel.hash(period, 0, this.seed ^ 612) > 0.53;
         this.exposed = this.raining && !this.submerged;
         if (this.exposed)
           for (let y = Math.ceil(this.eye()[1]); y < Voxel.H; y++) {
@@ -687,8 +723,8 @@ const Game = (() => {
       }
     }
     strikeMob(mob, damage, fromX, fromZ) {
-      if (!mob || mob.hp <= 0 || mob.dying) return false;
-      mob.hp -= Math.max(1, Math.min(5, damage));
+      if (!mob || mob.hp <= 0 || mob.dying || friendly(mob.kind)) return false;
+      mob.hp -= Math.max(1, Math.min(8, damage));
       mob.stun = mob.hurt = .36;
       mob.knockback = .34;
       if (isFarm(mob.kind)) { mob.flee = 4.5; mob.graze = 0; }
@@ -707,6 +743,10 @@ const Game = (() => {
             this.addDrop(mob.x,mob.y+.15,mob.z,b,n);
           }
         } else this.addDrop(mob.x,mob.y+.15,mob.z,mob.kind==='Saltim'?23:mob.kind==='Musgato'?36:11,1);
+        if(mob.raidKey){
+          this.addDrop(mob.x,mob.y+.2,mob.z,178,2);
+          this.notify('Defesa do vilarejo · +2 moedas prisma');
+        }
         this.changed();
       }
       return true;
@@ -714,7 +754,7 @@ const Game = (() => {
     // Host produces the authoritative creature state; guests only interpolate it.
     networkMobState() {
       return this.mobs.slice(0,24).map(m => ({
-        id:m.id, kind:m.kind,
+        id:m.id, kind:m.kind, ...(m.kind==='Aldeão'?{job:m.job,activity:m.activity||'walk'}:{}),
         x:+m.x.toFixed(2), y:+m.y.toFixed(2), z:+m.z.toFixed(2),
         hp:Math.max(0,m.hp), face:+(m.face || 0).toFixed(2),
         motion:+(m.motion || 0).toFixed(2), gait:+(m.gait || 0).toFixed(2),
@@ -725,14 +765,14 @@ const Game = (() => {
       }));
     }
     networkDropState() {
-      return this.drops.slice(0,32).map(d => ({id:d.id, x:+d.x.toFixed(2),
+      return this.drops.filter(d=>d.n>0&&!this.lootReservations?.has(d.id)).slice(0,32).map(d => ({id:d.id, x:+d.x.toFixed(2),
         y:+d.y.toFixed(2), z:+d.z.toFixed(2), b:d.b, n:d.n, dur:d.dur}));
     }
     applyNetworkEntities(msg) {
       if (!this.networkGuest || !Array.isArray(msg?.mobs) || msg.mobs.length > 24 ||
           !Number.isSafeInteger(msg.seq) || msg.seq <= this.lastNetworkMobSeq) return false;
       const allowed = new Set(['Saltim','Musgato','Luzerrante','Raspejante','Zumbi','Vigia de Cascalho',
-        'Guardião Prisma','Ovelha','Porco','Vaca','Galinha']);
+        'Guardião Prisma','Ovelha','Porco','Vaca','Galinha','Aldeão','Guarda']);
       const old = new Map(this.mobs.map(m => [m.id,m]));
       const out=[];
       for (const row of msg.mobs) {
@@ -750,6 +790,10 @@ const Game = (() => {
           dying:Math.max(0,Math.min(.55,row.dying)),
           wind:Number.isFinite(row.wind)?row.wind:0, juvenile:row.juvenile===true,
           age:Math.max(0,Math.min(180,Number(row.age)||0)),tamed:row.tamed===true,follow:row.follow===true,shorn:row.shorn===true});
+        if(m.kind==='Aldeão'){
+          m.job=Number.isInteger(row.job)&&row.job>=0&&row.job<3?row.job:0;
+          m.activity=['walk','farm','forge','build','sleep','rest','shelter'].includes(row.activity)?row.activity:'walk';
+        }
         out.push(m);
       }
       this.mobs=out;
@@ -782,8 +826,10 @@ const Game = (() => {
         if (!capacity)continue;
         this.guestPickupPending.set(d.id,now+1.3);
         this.signal('p2pPickup',{id:d.id,cap:Math.min(64,capacity)});
+        break;
       }
     }
+    // Legacy direct grants are no longer accepted by the P2P protocol.
     receiveNetworkLoot(item) {
       if (!this.networkGuest || !Number.isInteger(item?.b) ||
           item.b<=0 || item.b>=Voxel.blocks.length || !Number.isInteger(item.n) ||
@@ -800,9 +846,11 @@ const Game = (() => {
       this.holding = false;
     }
     mine(dt) {
+      if(this.inv[this.selected]?.b===191){this.progress=0;if(!this.attackCool)this.fireBow();return;}
       const mob = this.aimMob();
       if (mob) {
         this.progress = 0;
+        if(friendly(mob.kind))return;
         if (!this.attackCool) {
           this.attackCool = .45;
           const item = this.inv[this.selected];
@@ -810,9 +858,10 @@ const Game = (() => {
             this.signal('p2pHitMob', {id:mob.id, weapon:item?.b || 0});
             this.signal('hitEnemy');
           } else {
-            const damage = item?.b === 47 ? 5 : Voxel.durability[item?.b] ? 2 : 1;
-            this.strikeMob(mob, damage, this.p.x, this.p.z);
-            if (item?.b === 47 && --item.dur <= 0) this.inv[this.selected] = null;
+            const damage=Voxel.weaponDamage(item?.b);
+            if(this.strikeMob(mob,damage,this.p.x,this.p.z)&&!this.creative&&Voxel.equipment[item?.b]?.kind==='sword'){
+              if(--item.dur<=0)this.inv[this.selected]=null;this.changed();
+            }
           }
         }
         return;
@@ -848,7 +897,8 @@ const Game = (() => {
       const speed = { 22: 3.2, 42: 4, 43: 5, 44: 6, 45: 8 }[tool?.b] || 1;
       const wood = [5, 8, 12, 15, 27, 46, 49, 50, 51, 52, 53, 55, 57, 58, 59, 60, 61, 62, 63, 64, 68, 77, 78, 79, 83, 84, 85, 86, 91].includes(hit.b) || Voxel.bedFoot(hit.b) || Voxel.bedHead(hit.b) || Voxel.farmGate(hit.b) || [171,172,174].includes(hit.b);
       const soil = [1, 2, 4, 17, 19, 38, 39, 40].includes(hit.b);
-      const toolSpeed = tool?.b === 89 && wood ? 5.4 : tool?.b === 90 && soil ? 4 : rock ? speed : 1;
+      const spec=Voxel.equipment[tool?.b];
+      const toolSpeed = spec?.kind==='axe'&&wood?spec.power:spec?.kind==='shovel'&&soil?spec.power:rock?speed:1;
       if (hit.b === 34 && !this.creative && speed < 4) {
         if (this.progress === 0) this.notify('O ferro exige picareta de pedra ou superior');
         this.progress = -1;
@@ -924,7 +974,7 @@ const Game = (() => {
         if([1,17].includes(b) && Voxel.hash(x,z,this.seed^902)>.82)this.addDrop(x+.5,y+.2,z+.5,152+Math.floor(Voxel.hash(x,z,this.seed^903)*3),1);
         if ([1, 17, 39, 40].includes(b)) this.addDrop(x + 0.5, y + 0.2, z + 0.5, 37, b === 40 ? 2 : 1);
         if (b === 5 || b === 27) this.goals.wood = true;
-        if (((speed > 1 && rock) || (tool?.b === 89 && wood) || (tool?.b === 90 && soil)) && --tool.dur <= 0) {
+        if (toolSpeed>1 && --tool.dur <= 0) {
           this.inv[this.selected] = null;
           this.notify('Sua ferramenta se desgastou.');
         }
@@ -963,9 +1013,12 @@ const Game = (() => {
       if(this.saplingTimer<1)return;
       this.saplingTimer-=1;
       // A maximum of a handful of loaded saplings are checked each second.
-      let seen=0;
-      for(const [position,info] of Object.entries(this.saplings)) {
-        if(++seen>32)break;
+      const entries=Object.entries(this.saplings),total=entries.length;
+      const start=(this.saplingCursor||0)%Math.max(1,total);
+      const amount=Math.min(32,total);
+      this.saplingCursor=(start+amount)%Math.max(1,total);
+      for(let i=0;i<amount;i++) {
+        const [position,info]=entries[(start+i)%total];
         const [x,y,z]=position.split(',').map(Number);
         const id=this.get(x,y,z,true);
         if(id!==134&&id!==135) { if(id!==-1)delete this.saplings[position];continue; }
@@ -1019,11 +1072,19 @@ const Game = (() => {
       return true;
     }
     addDrop(x, y, z, b, n, dur) {
-      this.drops.push({ id:this.nextDropId++, x, y, z, b, n, dur });
+      // Never merge network-addressable drops, or tools with durability.
+      if(!this.networkHost&&!this.networkGuest&&!Voxel.durability[b]&&dur==null){
+        for(const d of this.drops){
+          if(d.b!==b||d.dur!=null||d.n>=64||Math.abs(d.y-y)>.7||Math.hypot(d.x-x,d.z-z)>.85)continue;
+          const amount=Math.min(n,64-d.n);d.n+=amount;n-=amount;if(!n)return;
+        }
+      }
+      while(n>0){const amount=Math.min(n,Voxel.durability[b]?1:64);this.drops.push({id:this.nextDropId++,x,y,z,b,n:amount,dur});n-=amount;}
     }
     loot(dt) {
       const p = this.p;
       for (const d of this.drops) {
+        if(this.lootReservations?.has(d.id))continue;
         if (!this.chunks.has(key(Math.floor(d.x) >> 4, Math.floor(d.z) >> 4))) continue;
         if (!solid(this.get(Math.floor(d.x), Math.floor(d.y - 0.03), Math.floor(d.z)))) d.y -= 3 * dt;
         else d.y = Math.floor(d.y - 0.03) + 1.03;
@@ -1037,15 +1098,19 @@ const Game = (() => {
           }
         }
       }
-      this.drops = this.drops.filter((d) => d.n > 0);
+      this.drops = this.drops.filter(d=>d.n>0||this.lootReservations?.has(d.id));
       if (
         this.bag &&
         Math.hypot(this.bag.x - p.x, this.bag.z - p.z) < 1.8 &&
         Math.abs(this.bag.y - p.y) < 2
       ) {
-        for (let t of this.bag.inv) {
-          if (t) t.n = fill(this.inv, t.b, t.n, t.dur);
+        let recovered=false;
+        for(let i=0;i<this.bag.inv.length;i++){
+          const t=this.bag.inv[i];if(!t)continue;
+          const left=fill(this.inv,t.b,t.n,t.dur);
+          if(left<t.n){recovered=true;if(left)t.n=left;else this.bag.inv[i]=null;}
         }
+        if(recovered)this.changed();
         if (!this.bag.inv.some((t) => t?.n)) {
           this.bag = null;
           this.notify('Mochila recuperada');
@@ -1503,12 +1568,53 @@ const Game = (() => {
         this.notify('Nasceu um filhote de '+a.kind.toLowerCase()+'!');this.changed();break;
       }
     }
+    equipArmor(index) {
+      if(this.networkGuest||!Number.isInteger(index)||index<0||index>=36)return false;
+      const t=this.inv[index];if(!t||!Voxel.armor[t.b]||t.n!==1||!(t.dur>0))return false;
+      this.inv[index]=this.wornArmor||null;this.wornArmor=t;this.changed();return true;
+    }
+    unequipArmor(){
+      if(this.networkGuest||!this.wornArmor)return false;
+      const bag=this.inv.map(t=>t&&{...t}),t=this.wornArmor;
+      if(fill(bag,t.b,1,t.dur))return false;
+      this.inv=bag;this.wornArmor=null;this.changed();return true;
+    }
+    fireBow(){
+      if(this.networkGuest){this.attackCool=1;this.notify('Arco disponível para o anfitrião ou solo.');return false;}
+      const t=this.inv[this.selected];if(t?.b!==191||this.attackCool)return false;
+      this.attackCool=.85;
+      if(!this.creative&&count(this.inv,192)<1){this.notify('Sem flechas');return false;}
+      const target=this.aimMob(18);
+      if(!this.creative){cost(this.inv,192,1);if(--t.dur<=0)this.inv[this.selected]=null;this.changed();}
+      Sound.play('mine',this.settings);
+      if(target&&!friendly(target.kind))this.strikeMob(target,4,this.p.x,this.p.z);
+      else this.signal('hitEnemy');
+      return true;
+    }
+    raiseShield(){
+      const t=this.inv[this.selected];
+      if(Voxel.equipment[t?.b]?.kind!=='shield'||this.shieldCool)return false;
+      this.shieldTime=1.6;this.shieldCool=3;this.shieldItem=t;this.notify('Escudo erguido');return true;
+    }
     use(forcePlace = false) {
       const t = this.inv[this.selected],
         h = this.hit;
+      if(Voxel.equipment[t?.b]?.kind==='shield'){this.raiseShield();return true;}
+      if(t?.b===191){this.fireBow();return true;}
       // Feed farm animals with their preferred food, including in peaceful mode.
       // The same right-click/tap works with the existing inventory and touch UI.
-      const animal = !forcePlace && this.aimMob();
+      const animal = (!forcePlace || !blocks[t?.b]?.placeable) && this.aimMob();
+      if(animal?.kind==='Guarda'){this.notify('Guarda · Protegendo o vilarejo.');return true;}
+      if(animal?.kind==='Aldeão'){
+        if(animal.activity==='shelter'){this.notify('O aldeão está abrigado. Afaste os monstros.');return true;}
+        if(animal.activity==='sleep'){this.notify('O aldeão está dormindo. Volte pela manhã.');return true;}
+        const job=villageJobs[animal.job]||villageJobs[0];
+        this.notify(job+' · '+(villageTips[animal.job]||villageTips[0]));
+        if(this.networkGuest)this.notify('Comércio disponível para o anfitrião nesta versão.');
+        else if(!this.creative)this.signal?.('villageTrade',animal.id);
+        else this.notify('Comércio disponível no modo Sobrevivência.');
+        return true;
+      }
       if(animal && this.farmProduct(animal,t))return true;
       if(animal&&isFarm(animal.kind)&&animal.tamed&&!t){
         if(this.networkGuest){this.notify('Peça ao anfitrião para comandar o animal.');return true;}
@@ -1625,20 +1731,17 @@ const Game = (() => {
       this.signal('hud');
       return true;
     }
-    aimMob() {
-      let eye = this.eye(),
-        d = View.basis(this.p).f;
-      return this.mobs.find((m) => {
-        if (m.dying || m.hp <= 0) return false;
-        let a = [m.x - eye[0], m.y + (m.kind==='Galinha'?.35:.6)*Voxel.farmScale(m) - eye[1], m.z - eye[2]],
-          dist = a.reduce((s, v, i) => s + v * d[i], 0);
-        return (
-          dist > 0 &&
-          dist < 3.7 &&
-          dist < (this.hit?.dist ?? 99) + 0.25 &&
-          a.reduce((s, v, i) => s + (v - d[i] * dist) ** 2, 0) < (m.kind === 'Vaca' ? .64 : .48)
-        );
-      });
+    aimMob(range=3.7) {
+      const eye=this.eye(),d=View.basis(this.p).f;
+      const wall=range>3.7?Voxel.ray((x,y,z)=>{const b=this.get(x,y,z,true);return b<0?3:b;},eye,d,range,true):this.hit;
+      let best=null,nearest=Math.min(range,(wall?.dist??range)+.05);
+      for(const m of this.mobs){
+        if(m.dying||m.hp<=0)continue;
+        const a=[m.x-eye[0],m.y+(friendly(m.kind)?1.25:m.kind==='Galinha'?.35:.6)*Voxel.farmScale(m)-eye[1],m.z-eye[2]];
+        const dist=a.reduce((s,v,i)=>s+v*d[i],0);
+        if(dist>0&&dist<nearest&&a.reduce((s,v,i)=>s+(v-d[i]*dist)**2,0)<(m.kind==='Vaca'?.64:.48)){best=m;nearest=dist;}
+      }
+      return best;
     }
     // Small voxel actor collider. Respect non-cube block shapes and unloaded chunks;
     // never permit movement through a closed door, fence, wall or the player.
@@ -1669,6 +1772,269 @@ const Game = (() => {
       m.y = floor;
       return true;
     }
+    // Only the host/solo session creates residents, once per nearby house.
+    // Far residents are unloaded and recreated from the same deterministic home.
+    villageOffers(id) {
+      if(this.networkGuest || this.creative || this.generator<6)return null;
+      const m=this.mobs.find(v=>v.id===id&&v.kind==='Aldeão'&&v.hp>0&&!v.dying);
+      if(!m || (m.activity==='sleep'||m.activity==='shelter') || typeof m.homeKey!=='string' || !/^-?\d+,-?\d+$/.test(m.homeKey) ||
+          Math.hypot(this.p.x-m.x,this.p.y-m.y,this.p.z-m.z)>4)return null;
+      const job=Number.isInteger(m.job)&&m.job>=0&&m.job<3?m.job:0;
+      const rows=villageTrades[job].map(([pay,n,out,qty,limit],i)=>{
+        const key=m.homeKey+':'+i;
+        const raw=this.marketDay===this.day?this.marketStock?.[key]:0;
+        const used=Number.isInteger(raw)?Math.max(0,Math.min(limit,raw)):0;
+        return {pay,n,out,qty,left:limit-used,key};
+      });
+      return {job:villageJobs[job],tip:villageTips[job],rows};
+    }
+    tradeVillage(id,index) {
+      if(!Number.isInteger(index))return false;
+      const offer=this.villageOffers(id)?.rows[index];
+      if(!offer||offer.left<=0||count(this.inv,offer.pay)<offer.n)return false;
+      // Stage the entire transaction on a copy; no payment is lost on full bags.
+      const bag=this.inv.map(t=>t&&{...t});
+      cost(bag,offer.pay,offer.n);
+      if(fill(bag,offer.out,offer.qty))return false;
+      if(this.marketDay!==this.day){this.marketDay=this.day;this.marketStock={};}
+      if(!Object.hasOwn(this.marketStock,offer.key)&&Object.keys(this.marketStock).length>=4096)return false;
+      const prev=this.marketStock[offer.key];
+      this.marketStock[offer.key]=(Number.isInteger(prev)?Math.max(0,prev):0)+1;
+      this.inv=bag;
+      this.changed();
+      this.notify('Troca concluída · '+blocks[offer.out].name+' ×'+offer.qty);
+      return true;
+    }
+    spawnVillagers() {
+      if(this.generator<6 || this.networkGuest)return;
+      const players=[this.p];
+      if(this.networkHost&&this.remotePlayer?.active)players.push(this.remotePlayer);
+      const occupied=new Set(this.mobs.filter(m=>m.kind==='Aldeão').map(m=>m.homeKey));
+      let count=this.mobs.filter(m=>m.kind==='Aldeão').length;
+      const candidates=new Map();
+      for(const p of players)
+        for(let gz=Math.floor((p.z-35)/64);gz<=Math.floor((p.z+35)/64);gz++)
+          for(let gx=Math.floor((p.x-35)/64);gx<=Math.floor((p.x+35)/64);gx++)
+            for(const h of Voxel.villageHouses(gx,gz,this.seed,this.sites)){
+              const k=h.x+','+h.z;
+              const dist=Math.min(...players.map(p=>Math.hypot(p.x-h.x,p.z-h.z)));
+              if(dist<32&&!occupied.has(k))candidates.set(k,{h,dist});
+            }
+      for(const [k,{h}] of [...candidates].sort((a,b)=>a[1].dist-b[1].dist)){
+        if(count>=8||this.mobs.length>=24)break;
+        // Spawn outside the entrance, never in walls, water or on rooftops.
+        for(const [dx,dz] of [[0,4],[1,4],[-1,4],[4,0],[-4,0],[0,-4]]){
+          const x=h.x+dx+.5,z=h.z+dz+.5,y=this.floorAt(x,z,h.y+1,true);
+          if(y===null||Math.abs(y-h.y)>4||players.every(p=>Math.abs(p.y-y)>18))continue;
+          const bx=Math.floor(x),bz=Math.floor(z);
+          if(this.get(bx,y,bz,true)!==0||this.get(bx,y+1,bz,true)!==0||
+             this.mobs.some(m=>Math.hypot(m.x-x,m.z-z)<1.1)||
+             players.some(p=>Math.hypot(p.x-x,p.z-z)<1.5))continue;
+          const job=Math.floor(Voxel.hash(h.x,h.z,this.seed^911)*3);
+          this.mobs.push({id:this.nextMobId++,kind:'Aldeão',job,x,y,z,hp:12,homeKey:k,
+            homeX:x,homeZ:z,houseY:h.y,face:0,motion:0,gait:0,roamTimer:0,cool:0});
+          count++;occupied.add(k);break;
+        }
+      }
+    }
+    // Residents only modify the designated generated farm, never arbitrary player plots.
+    // At most two guards and three invaders, within the existing 24-actor cap.
+    // A persisted night stamp prevents repeated raids after unloading or reloading.
+    defenseTick(night,peaceful,nearLight) {
+      if(this.generator<6||this.networkGuest)return;
+      this.defenseHistory ||= {};
+      const players=[this.p];
+      if(this.networkHost&&this.remotePlayer?.active)players.push(this.remotePlayer);
+      const dist=(x,z)=>Math.min(...players.map(p=>Math.hypot(p.x-x,p.z-z)));
+      const villages=new Map();
+      for(const m of this.mobs){
+        if(m.kind!=='Aldeão'||m.hp<=0||m.dying||dist(m.x,m.z)>27)continue;
+        const [x,z]=String(m.homeKey||'').split(',').map(Number);
+        if(!Number.isInteger(x)||!Number.isInteger(z))continue;
+        const key=villageRegion(x,z);
+        if(!villages.has(key))villages.set(key,m);
+      }
+      const living=m=>m.hp>0&&!m.dying;
+      const guards=this.mobs.filter(m=>m.kind==='Guarda'&&living(m));
+      let raidCount=this.mobs.filter(m=>m.raidKey&&living(m)).length;
+      const epoch=raidNight(this.day,this.time);
+      const findSpot=(m,offsets,minDist,avoidLight)=>{
+        for(const [dx,dz] of offsets){
+          const x=Math.floor(m.homeX)+dx+.5,z=Math.floor(m.homeZ)+dz+.5;
+          const y=this.floorAt(x,z,m.houseY+3,true);
+          if(y===null||!Number.isFinite(y)||Math.abs(y-m.houseY)>4||dist(x,z)<minDist||dist(x,z)>29||
+             players.every(p=>Math.abs(p.y-y)>8))continue;
+          const bx=Math.floor(x),bz=Math.floor(z);
+          const ground=this.get(bx,y-1,bz,true);
+          if(![1,2,3,4,17,19,32,33,48].includes(ground)||this.get(bx,y,bz,true)!==0||this.get(bx,y+1,bz,true)!==0||
+             this.mobs.some(o=>living(o)&&Math.hypot(o.x-x,o.z-z)<1.3)||
+             (avoidLight&&nearLight(x,y,z,6)))continue;
+          return {x,y,z};
+        }
+        return null;
+      };
+      for(const [key,m] of villages){
+        if(!Object.hasOwn(this.defenseHistory,key)){
+          if(Object.keys(this.defenseHistory).length>=512){
+            const oldest=Object.keys(this.defenseHistory).find(k=>(this.defenseHistory[k]?.night??-1)<epoch-2&&(this.defenseHistory[k]?.guardUntil||0)<=this.elapsed);
+            if(!oldest)continue;delete this.defenseHistory[oldest];
+          }
+          this.defenseHistory[key]={night:-1,guardUntil:0};
+        }
+        const rec=this.defenseHistory[key];
+        if(!rec||typeof rec!=='object')continue;
+        if(guards.length<2&&this.mobs.length<24&&!guards.some(o=>o.villageKey===key)&&!(rec.guardUntil>this.elapsed)){
+          const spot=findSpot(m,[[2,1],[-2,1],[0,2],[3,0],[-3,0],[2,2],[-2,2]],3,false);
+          if(spot){
+            const guard={id:this.nextMobId++,kind:'Guarda',...spot,hp:18,villageKey:key,homeX:spot.x,homeZ:spot.z,homeY:spot.y,cool:0,face:0,motion:0,gait:0};
+            this.mobs.push(guard);guards.push(guard);
+          }
+        }
+        if(!night||peaceful||epoch<0||rec.night===epoch||raidCount>=3||this.mobs.length>=24)continue;
+        if(players.every(p=>Math.hypot(p.x-m.x,p.z-m.z)>22||Math.abs(p.y-m.y)>8))continue;
+        let spawned=0;
+        for(let i=0;i<3&&raidCount<3&&this.mobs.length<24;i++){
+          const angle=Voxel.hash(epoch,i,this.seed^Math.floor(m.homeX*31+m.homeZ))*Math.PI*2;
+          const offsets=Array.from({length:8},(_,j)=>[Math.round(Math.cos(angle+j*Math.PI/4)*12),Math.round(Math.sin(angle+j*Math.PI/4)*12)]);
+          const spot=findSpot(m,offsets,8,true);
+          if(!spot)continue;
+          const kind=i%2?'Raspejante':'Zumbi';
+          this.mobs.push({id:this.nextMobId++,kind,...spot,hp:kind==='Zumbi'?8:5,raidKey:key,raidEpoch:epoch,
+            raidX:m.homeX,raidZ:m.homeZ,raidY:m.y,cool:1,face:0,gait:0,motion:0,wind:0});
+          spawned++;raidCount++;
+        }
+        if(spawned){rec.night=epoch;this.changed();this.notify('⚔ Invasão noturna · proteja o vilarejo!');}
+      }
+    }
+    npcCanHit(a,b,range=1.85) {
+      const dx=b.x-a.x,dy=b.y-a.y,dz=b.z-a.z,d=Math.hypot(dx,dy,dz);
+      return d>.001&&d<=range&&Math.abs(dy)<1.3&&!Voxel.ray((x,y,z)=>this.get(x,y,z,true),[a.x,a.y+.8,a.z],[dx/d,dy/d,dz/d],d,true);
+    }
+    npcStrike(attacker,target,damage) {
+      if(!target||target.hp<=0||target.dying||!this.npcCanHit(attacker,target))return false;
+      target.hp=Math.max(0,target.hp-damage);target.hurt=.36;target.stun=.2;
+      attacker.attack=.36;
+      if(target.hp===0){
+        target.dying=.55;target.wind=0;
+        if(target.kind==='Guarda'){
+          const rec=this.defenseHistory?.[target.villageKey];if(rec)rec.guardUntil=this.elapsed+90;
+        }
+        this.changed();
+      }
+      return true;
+    }
+    guardRoutine(m,walk,radius,height,threats) {
+      let enemy=null,best=11;
+      for(const o of threats){
+        if(o.hp<=0||o.dying||Math.abs(o.y-m.y)>2.5||Math.hypot(o.x-m.homeX,o.z-m.homeZ)>17)continue;
+        const d=Math.hypot(o.x-m.x,o.z-m.z);if(d<best){enemy=o;best=d;}
+      }
+      if(enemy){
+        const dx=enemy.x-m.x,dz=enemy.z-m.z;m.face=Math.atan2(dx,-dz);
+        if(best<1.75&&this.npcCanHit(m,enemy)){
+          if(m.cool<=0){this.npcStrike(m,enemy,3);m.cool=1.1;}
+          return false;
+        }
+        return walk(m,dx,dz,1.55,radius,height);
+      }
+      const phase=(Math.floor(this.elapsed/7)+m.id)%4,offsets=[[0,0],[3,0],[0,3],[-3,0]];
+      const [dx,dz]=offsets[phase],vx=m.homeX+dx-m.x,vz=m.homeZ+dz-m.z;
+      return Math.hypot(vx,vz)>.6&&walk(m,vx,vz,.8,radius,height);
+    }
+    villageRoutine(m,dt,night,walk,radius,height,d,dx,dz,threat=false) {
+      const [hx,hz]=String(m.homeKey||'').split(',').map(Number);
+      if(!Number.isInteger(hx)||!Number.isInteger(hz))return false;
+      const h=Number.isFinite(m.houseY)?m.houseY:land(hx,hz,this.seed,this.generator).h+1;
+      const inside=Math.abs(m.x-hx-.5)<1.45&&Math.abs(m.z-hz-.5)<1.45&&Math.abs(m.y-h-1)<.5;
+      const door=[hx+.5,hz+2.5], entry=[hx+.5,hz+3.5];
+      const go=(x,z,speed=.82)=>{
+        m.activity='walk';
+        if(!Number.isFinite(x)||!Number.isFinite(z)||Math.hypot(x-m.x,z-m.z)<=.15)return false;
+        const target=Math.floor(x)+','+Math.floor(z);
+        // Bounded local grid search, at most once per two seconds per resident.
+        // Cache only waypoints; movement still uses the real actor collider.
+        const nav=m.villageNav;
+        if(!nav||nav.target!==target||this.elapsed>nav.until){
+          const sx=Math.floor(m.x),sz=Math.floor(m.z),tx=Math.floor(x),tz=Math.floor(z);
+          const start={x:sx,z:sz,y:m.y,prev:null};
+          const queue=[start],seen=new Set([sx+','+sz]);
+          let best=start,bestDist=Math.abs(sx-tx)+Math.abs(sz-tz);
+          for(let i=0;i<queue.length&&i<180;i++){
+            const a=queue[i],dist=Math.abs(a.x-tx)+Math.abs(a.z-tz);
+            if(dist<bestDist){best=a;bestDist=dist;}
+            if(!dist)break;
+            for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){
+              const xx=a.x+dx,zz=a.z+dz,k=xx+','+zz;
+              if(seen.has(k)||Math.abs(xx-hx)>9||Math.abs(zz-hz)>10)continue;
+              const yy=this.floorAt(xx+.5,zz+.5,a.y+1.1,true);
+              if(yy===null||yy>a.y+1.01||yy<a.y-1.15)continue;
+              if(this.get(xx,yy,zz,true)!==0||this.get(xx,yy+1,zz,true)!==0)continue;
+              seen.add(k);queue.push({x:xx,z:zz,y:yy,prev:a});
+            }
+          }
+          const points=[];
+          for(let a=best;a.prev;a=a.prev)points.unshift([a.x+.5,a.z+.5]);
+          m.villageNav={target,points,until:this.elapsed+2};
+        }
+        const points=m.villageNav.points;
+        while(points.length&&Math.hypot(points[0][0]-m.x,points[0][1]-m.z)<.17)points.shift();
+        const goal=points[0]||[x,z];
+        return walk(m,goal[0]-m.x,goal[1]-m.z,speed,radius,height);
+      };
+      if(night||threat){
+        if(inside){if(Math.hypot(m.x-hx-.5,m.z-hz-.5)>.35)return go(hx+.5,hz+.5);m.activity=threat?'shelter':'sleep';m.motion=0;return false;}
+        if(Math.hypot(m.x-door[0],m.z-door[1])<1.2)return go(hx+.5,hz+.5);
+        if(Math.hypot(m.x-entry[0],m.z-entry[1])<.65)return go(...door);
+        return go(...entry);
+      }
+      if(d<2.1){m.activity='rest';m.face=Math.atan2(dx,-dz);return false;}
+      const job=Number.isInteger(m.job)?m.job:0;
+      if(job===0&&this.generator>=7){
+        // Recompute the same garden plan after loading an old resident.
+        if(m.garden===undefined){
+          const houses=Voxel.villageHouses(Math.floor(hx/64),Math.floor(hz/64),this.seed,this.sites);
+          const home=houses.find(v=>v.x===hx&&v.z===hz);
+          m.garden=home?Voxel.villageGarden(home,this.seed,houses):null;
+        }
+        const farm=m.garden;
+        if(farm){
+          if(m.z<hz+3.25&&Math.abs(m.x-hx-.5)<2.5)return go(...entry);
+          const x=farm.x-.5,z=farm.z+.5;
+          if(Math.hypot(m.x-x,m.z-z)>.8)return go(x,z);
+          m.activity='farm';m.face=Math.atan2(farm.x+.5-m.x,-(farm.z+.5-m.z));
+          m.workTimer=(m.workTimer||0)+dt;
+          if(m.workTimer>=8){
+            m.workTimer=0;
+            const b=this.get(farm.x,farm.y+1,farm.z,true);
+            if(this.get(farm.x+1,farm.y,farm.z,true)===7&&this.get(farm.x,farm.y,farm.z,true)===38){
+              if(b===40){this.set(farm.x,farm.y+1,farm.z,39);this.plots[[farm.x,farm.y+1,farm.z].join(',')]=0;this.changed();}
+              else if(b===0){this.set(farm.x,farm.y+1,farm.z,39);this.plots[[farm.x,farm.y+1,farm.z].join(',')]=0;this.changed();}
+            }
+          }
+          return false;
+        }
+      }
+      if(job===1||job===2){
+        if(!inside){
+          if(Math.hypot(m.x-door[0],m.z-door[1])<1.2)return go(hx+.5,hz+.5);
+          if(Math.hypot(m.x-entry[0],m.z-entry[1])<.65)return go(...door);
+          return go(...entry);
+        }
+        const stationX=hx+(job===1?1:-1),stationZ=hz-1;
+        if((job===1?[14,136]:[12]).includes(this.get(stationX,h+1,stationZ,true))){
+          m.activity=job===1?'forge':'build';
+          m.face=Math.atan2(stationX+.5-m.x,-(stationZ+.5-m.z));return false;
+        }
+        m.activity='rest';return false;
+      }
+      if(m.z<hz+3.25&&Math.abs(m.x-hx-.5)<2.5)return go(...entry);
+      m.roamTimer=(m.roamTimer||0)-dt;
+      if(m.roamTimer<=0){
+        const time=Math.floor(this.elapsed/4),a=Voxel.hash(m.id,time,this.seed^73)*Math.PI*2;
+        m.roamTimer=5;m.roamX=m.homeX+Math.cos(a)*3;m.roamZ=m.homeZ+Math.sin(a)*3;
+      }
+      return go(m.roamX,m.roamZ,.63);
+    }
     ai(dt) {
       const peaceful = this.creative || this.meta.difficulty === 'peaceful';
       const p = this.p,
@@ -1680,10 +2046,12 @@ const Game = (() => {
       this.spawnTick -= dt;
       if (this.spawnTick <= 0) {
         this.spawnTick = 6;
-        const living = this.mobs.filter(m => m.hp > 0 && !m.dying);
+        this.spawnVillagers();
+        this.defenseTick(night,peaceful,nearLight);
+        const living = this.mobs.filter(m => m.hp > 0 && !m.dying && !friendly(m.kind)&&!m.raidKey);
         const animals = living.filter(m => isFarm(m.kind)).length;
         const otherMobs = living.length - animals;
-        if (living.length < 16 && (animals < 8 || otherMobs < 4)) {
+        if (this.mobs.length < 24 && living.length < 16 && (animals < 8 || otherMobs < 4)) {
           // Short, deterministic local sampling. Grassy areas spawn livestock,
           // even when the difficulty is Pacífico. No new meshes or assets loaded.
           const tick = ++this.animalSeed;
@@ -1710,7 +2078,7 @@ const Game = (() => {
               (animal || !nearLight(x, y, z, 8)) &&
               this.get(Math.floor(x), Math.floor(y), Math.floor(z)) === 0 &&
               this.get(Math.floor(x), Math.floor(y) + 1, Math.floor(z)) === 0 &&
-              !living.some(m => Math.hypot(m.x - x, m.z - z) < (animal ? 2.1 : 1.1))) {
+              !this.mobs.some(m => m.hp>0 && !m.dying && Math.hypot(m.x - x, m.z - z) < (animal ? 2.1 : 1.1))) {
             this.mobs.push({
               id:this.nextMobId++, kind, x, y, z,
               hp: Voxel.farmHealth[kind] || (kind === 'Vigia de Cascalho' ? 9 : kind==='Zumbi'?8:4),
@@ -1722,10 +2090,11 @@ const Game = (() => {
       }
       // Shared single-target navigation with cheap wall slide / sidestep. No pathfinder,
       // extra workers, navmesh or per-creature meshes are required.
+      let movementDt=dt;
       const walk = (m, vx, vz, speed, radius, height) => {
         const len = Math.hypot(vx, vz);
         if (len < .001 || speed <= 0) return false;
-        const dx = vx / len * dt * speed, dz = vz / len * dt * speed;
+        const dx = vx / len * movementDt * speed, dz = vz / len * movementDt * speed;
         const sx = m.x, sz = m.z;
         if (!this.mobMove(m, sx + dx, sz + dz, radius, height)) {
           if (!this.mobMove(m, sx + dx, sz, radius, height) &&
@@ -1743,15 +2112,20 @@ const Game = (() => {
         }
         return false;
       };
-      const plots = Object.keys(this.plots);
+      let plots;
+      const threats=this.mobs.filter(m=>hostileKind(m.kind)&&m.hp>0&&!m.dying);
+      const guards=this.mobs.filter(m=>m.kind==='Guarda'&&m.hp>0&&!m.dying);
+      this.actorSchedule ||= new WeakMap();
+      this.aiDecisions=0;
       for (const m of this.mobs) {
+        movementDt=dt;
         const kind = m.kind || 'Raspejante';
         const boss = kind === 'Guardião Prisma';
         const scale=Voxel.farmScale(m);
         const radius = (boss ? .38 : kind === 'Vaca' ? .42 : kind === 'Ovelha' ? .32 :
-          kind === 'Porco' ? .31 : kind === 'Vigia de Cascalho' ? .33 : kind === 'Zumbi' ? .29 : .24)*scale;
+          kind === 'Porco' ? .31 : kind === 'Vigia de Cascalho' ? .33 : kind === 'Zumbi' || friendly(kind) ? .29 : .24)*scale;
         const height = (boss ? 1.95 : kind === 'Vaca' ? 1.55 : kind === 'Ovelha' ? 1.27 :
-          kind === 'Porco' ? .93 : kind==='Galinha'?.72:kind === 'Vigia de Cascalho' ? 1.8 : kind==='Zumbi'?1.7:1.12)*scale;
+          kind === 'Porco' ? .93 : kind==='Galinha'?.72:kind === 'Vigia de Cascalho' ? 1.8 : kind==='Zumbi'||friendly(kind)?1.7:1.12)*scale;
         m.hurt = Math.max(0, (m.hurt || 0) - dt);
         m.attack = Math.max(0, (m.attack || 0) - dt);
         m.stun = Math.max(0, (m.stun || 0) - dt);
@@ -1767,6 +2141,7 @@ const Game = (() => {
           continue;
         }
         if (m.hp <= 0) { m.dying = .01; continue; }
+        if(m.raidKey&&(!night||peaceful)){m.hp=0;m.dying=.48;m.motion=0;continue;}
         if(kind==='Zumbi' && !night && m.y>=land(m.x,m.z,this.seed,this.generator).h-2) {
           m.hp=0;m.dying=.48;m.motion=0;continue;
         }
@@ -1780,11 +2155,23 @@ const Game = (() => {
           m.knockback = Math.max(0, m.knockback - dt);
         }
         let moved = false;
-        if (!m.stun && d > .001 && d < 30) {
+        let schedule=this.actorSchedule.get(m);
+        if(!schedule){schedule={pending:0};this.actorSchedule.set(m,schedule);}
+        if(m.stun||d>=30||d<=.001)schedule.pending=0;
+        const decisionDt=!m.stun&&d>.001&&d<30?actorStep(schedule,dt,d,!!m.wind||m.knockback>0):0;
+        if(!decisionDt&&!m.stun&&d>.001&&d<30)continue;
+        if (decisionDt) {
+          this.aiDecisions++;
+          movementDt=decisionDt;
           const safe = nearLight(m.x, m.y, m.z, 4.4);
           const passive = ['Saltim', 'Musgato', 'Luzerrante'].includes(kind);
-          if (isFarm(kind)) {
-            m.roamTimer = (m.roamTimer || 0) - dt;
+          if(kind==='Guarda'){
+            moved=this.guardRoutine(m,walk,radius,height,peaceful?[]:threats);
+          } else if(kind==='Aldeão'){
+            const threat=!peaceful&&threats.some(o=>Math.abs(o.y-m.y)<3&&Math.hypot(o.x-m.x,o.z-m.z)<10);
+            moved=this.villageRoutine(m,decisionDt,night,walk,radius,height,d,dx,dz,threat);
+          } else if (isFarm(kind)) {
+            m.roamTimer = (m.roamTimer || 0) - decisionDt;
             if (m.roamTimer <= 0) {
               m.roamTimer = 2.5 + Voxel.hash(Math.floor(m.x * 3), Math.floor(m.z * 3), this.seed ^ Math.floor(this.elapsed / 3)) * 4;
               m.roamAngle = Voxel.hash(Math.floor(m.x * 7), Math.floor(m.z * 7), this.seed ^ (Math.floor(this.elapsed) + 33)) * Math.PI * 2;
@@ -1802,7 +2189,7 @@ const Game = (() => {
             } else if (m.graze > 0 || d < 1.9 || (m.tamed&&m.follow)) speed = 0;
             moved = walk(m, vx, vz, speed, radius, height);
           } else if (passive) {
-            m.roamTimer = (m.roamTimer || 0) - dt;
+            m.roamTimer = (m.roamTimer || 0) - decisionDt;
             if (m.roamTimer <= 0) {
               m.roamTimer = 2 + Voxel.hash(Math.floor(m.x * 5), Math.floor(m.z * 5), this.seed ^ Math.floor(this.elapsed)) * 4;
               m.roamAngle = Voxel.hash(Math.floor(m.x * 3), Math.floor(m.z * 3), this.seed ^ 771) * Math.PI * 2;
@@ -1814,7 +2201,7 @@ const Game = (() => {
               vx = this.destination.x - m.x;
               vz = this.destination.z - m.z;
               speed = .8;
-            } else if (kind === 'Musgato' && plots.length) {
+            } else if (kind === 'Musgato' && (plots ||= Object.keys(this.plots)).length) {
               const [tx, , tz] = plots[0].split(',').map(Number);
               if (Math.hypot(tx - m.x, tz - m.z) > 1.25) {
                 vx = tx - m.x; vz = tz - m.z; speed = .68;
@@ -1822,6 +2209,15 @@ const Game = (() => {
             }
             moved = walk(m, vx, vz, speed, radius, height);
           } else if (!peaceful) {
+            let guardTarget=null,guardDistance=Math.min(d,11);
+            if(hostileKind(kind))for(const o of guards){const dist=Math.hypot(o.x-m.x,o.z-m.z);if(o.hp>0&&!o.dying&&Math.abs(o.y-m.y)<2.5&&dist<guardDistance){guardTarget=o;guardDistance=dist;}}
+            if(guardTarget){
+              const vx=guardTarget.x-m.x,vz=guardTarget.z-m.z;m.face=Math.atan2(vx,-vz);m.wind=0;
+              if(guardDistance<1.75&&this.npcCanHit(m,guardTarget)){if(m.cool<=0){this.npcStrike(m,guardTarget,3);m.cool=1.6;}}
+              else moved=walk(m,vx,vz,1.15,radius,height);
+            }else if(m.raidKey&&d>8&&Math.hypot(m.raidX-m.x,m.raidZ-m.z)>1.8){
+              moved=walk(m,m.raidX-m.x,m.raidZ-m.z,1.15,radius,height);
+            }else{
             const stage = boss ? (m.hp > 16 ? 1 : m.hp > 8 ? 2 : 3) : 1;
             const dir = boss || kind === 'Vigia de Cascalho' ? 1 : safe || !night ? -1 : 1;
             if (d < 1.75 && dir > 0 && Math.abs(target.y - m.y) < 1.3) {
@@ -1851,21 +2247,50 @@ const Game = (() => {
               const speed = boss ? 1 + stage * .32 : kind==='Zumbi' ? 1.06 : night ? 1.42 : .95;
               moved = walk(m, dx * dir, dz * dir, speed, radius, height);
             }
+            }
           }
         } else if (m.wind && d >= 1.75) m.wind = 0;
         const targetMotion = moved ? 1 : 0;
-        m.motion = (m.motion || 0) + (targetMotion - (m.motion || 0)) * Math.min(1, dt * 12);
+        m.motion = (m.motion || 0) + (targetMotion - (m.motion || 0)) * Math.min(1, (decisionDt||dt) * 12);
       }
       this.mobs = this.mobs.filter(m =>
         !((m.hp <= 0) && m.dying === 0) &&
         (m.kind === 'Guardião Prisma' || (isFarm(m.kind)&&m.tamed) || Math.hypot(m.x - p.x, m.z - p.z) <
-          (isFarm(m.kind) ? 44 : (night ? 47 : 19)) ||
+          (friendly(m.kind)?48:isFarm(m.kind) ? 44 : (night ? 47 : 19)) ||
           (this.networkHost && this.remotePlayer?.active &&
-            Math.hypot(m.x-this.remotePlayer.x,m.z-this.remotePlayer.z)<(isFarm(m.kind)?44:47))));
+            Math.hypot(m.x-this.remotePlayer.x,m.z-this.remotePlayer.z)<(friendly(m.kind)?48:isFarm(m.kind)?44:47))));
     }
     damage(n, why) {
       if (this.creative || this.damageCool > 0) return;
       this.damageCool = 1.2;
+      // Armor is active while carried in the hotbar. Only the strongest
+      // piece protects; no stacking or protection against hunger/drowning/falls.
+      if (!['Queda','Sem fôlego','Fome'].includes(why)) {
+        const shield=this.inv[this.selected];
+        if(this.shieldTime>0&&shield===this.shieldItem&&Voxel.equipment[shield?.b]?.kind==='shield'){
+          n=Math.max(1,Math.round(n*(shield.b===195?.35:.50)));
+          if(!this.creative&&--shield.dur<=0){this.inv[this.selected]=null;this.shieldTime=0;}
+          this.changed();
+        }
+        let best=-1;
+        for(let i=0;i<9;i++){
+          const t=this.inv[i];
+          if(t && Voxel.armor[t.b] && t.dur>0 &&
+            (best<0 || Voxel.armor[t.b]>Voxel.armor[this.inv[best].b]))best=i;
+        }
+        const worn=this.wornArmor;
+        if(worn&&Voxel.armor[worn.b]&&worn.dur>0&&(best<0||Voxel.armor[worn.b]>=Voxel.armor[this.inv[best].b])){
+          n=Math.max(1,Math.round(n*(1-Voxel.armor[worn.b])));
+          if(--worn.dur<=0){this.wornArmor=null;this.notify('Sua armadura se desgastou.');}
+          this.changed();
+        }else if(best>=0){
+          const t=this.inv[best];
+          n=Math.max(1,Math.round(n*(1-Voxel.armor[t.b])));
+          if(--t.dur<=0){this.inv[best]=null;this.notify('Sua armadura se desgastou.');}
+          this.changed();
+          this.signal('hud');
+        }
+      }
       this.p.life = Math.max(0, this.p.life - n);
       Sound.play('hurt', this.settings);
       this.signal('hurt');
@@ -1873,14 +2298,15 @@ const Game = (() => {
     }
     respawn(why) {
       let p = this.p;
-      if (!this.creative && this.meta.difficulty !== 'peaceful') {
+      if (!this.creative && this.meta.difficulty !== 'peaceful' && !this.meta.keepInventory) {
         if (this.bag)
           for (let t of this.bag.inv)
             if (t?.n) this.addDrop(this.bag.x, this.bag.y, this.bag.z, t.b, t.n, t.dur);
-        this.bag = { x: p.x, y: p.y, z: p.z, inv: this.inv };
-        this.inv = empty();
+        this.bag = { x:p.x,y:p.y,z:p.z,inv:this.wornArmor?[...this.inv,this.wornArmor]:this.inv };
+        this.wornArmor=null;this.inv = empty();
+        this.shieldTime=0;this.shieldItem=null;
       }
-      const h = land(0, 3, this.seed).h;
+      const h = land(0, 3, this.seed,this.generator).h;
       p.x = 0.5;
       p.z = 3.5;
       p.y = h + 1.02;
@@ -1925,7 +2351,7 @@ const Game = (() => {
       this.damageCool = 5;
       this.previousEye = null;
       this.stream(true);
-      this.notify('Você renasceu' + (why ? ' · ' + why : ''));
+      this.notify('Você renasceu' + (why ? ' · ' + why : '')+(this.meta.keepInventory?' · Inventário preservado':''));
       this.changed();
       this.save();
     }
@@ -1947,6 +2373,7 @@ const Game = (() => {
         saved: Date.now(),
         p: this.p,
         inv: this.inv,
+        wornArmor:this.wornArmor||null,
         selected: this.selected,
         time: this.time,
         day: this.day,
@@ -1958,10 +2385,14 @@ const Game = (() => {
         chestRevisions: this.chestRevisions,
         guestProfiles: this.guestProfiles,
         saplings: this.saplings,
-        drops: this.drops,
+        drops: this.drops.filter(d=>d.n>0),
+        nextDropId:this.nextDropId,
         mobs: this.mobs,
         bag: this.bag,
         goals: this.goals,
+        defenseHistory:this.defenseHistory,
+        marketDay:this.marketDay,
+        marketStock:this.marketStock,
         sites: this.sites,
         plots: this.plots,
         bed: this.bed,
@@ -2026,5 +2457,5 @@ const Game = (() => {
       this.renderer.reset();
     }
   }
-  return { fresh, Session, fill, count, slot };
+  return { fresh, Session, fill, count, slot, actorStep, raidNight };
 })();

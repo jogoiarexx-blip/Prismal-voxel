@@ -177,6 +177,26 @@ const Voxel = (() => {
     ['Bebedouro', '879c98', .9], // 173
     ['Ninho com ovo', 'c3a55f', .45], // 174
     ['Bebedouro com água', '879c98', .9], // 175
+    ['Armadura de cobre', 'c88b56', 0], // 176
+    ['Armadura de ferro', 'cbd4d8', 0], // 177
+    ['Moeda prisma', 'efc66a', 0], // 178
+    ['Espada de madeira', 'b88e57', 0], // 179
+    ['Espada de pedra', '93918b', 0], // 180
+    ['Espada de cobre', 'd69b66', 0], // 181
+    ['Espada prisma', 'aa80d0', 0], // 182
+    ['Machado de madeira', 'b88e57', 0], // 183
+    ['Machado de pedra', '93918b', 0], // 184
+    ['Machado de cobre', 'd69b66', 0], // 185
+    ['Machado prisma', 'aa80d0', 0], // 186
+    ['Pá de madeira', 'b88e57', 0], // 187
+    ['Pá de cobre', 'd69b66', 0], // 188
+    ['Pá de ferro', 'bdc4c2', 0], // 189
+    ['Pá prisma', 'aa80d0', 0], // 190
+    ['Arco', '98663b', 0], // 191
+    ['Flecha', 'c2baa4', 0], // 192
+    ['Escudo de madeira', '98663b', 0], // 193
+    ['Armadura prisma', 'aa80d0', 0], // 194
+    ['Escudo de ferro', 'bdc4c2', 0], // 195
   ];
   const blocks = data.map(([name, hex, hard], id) => ({
     id,
@@ -664,7 +684,7 @@ const Voxel = (() => {
       3,
     ],
   );
-  const durability = { 22: 48, 42: 80, 43: 120, 44: 180, 45: 260, 47: 100, 89: 160, 90: 80, 146: 80 };
+  const durability = { 22: 48, 42: 80, 43: 120, 44: 180, 45: 260, 47: 100, 89: 160, 90: 80, 146: 80, 176: 65, 177: 110, 179:30,180:55,181:80,182:200,183:40,184:75,185:115,186:240,187:35,188:115,189:165,190:235,191:100,193:80,194:190,195:150 };
   recipes.push(
     [
       38,
@@ -787,6 +807,14 @@ const Voxel = (() => {
     recipes.push([cooked,1,[[raw,1],[9,1]],14]);
   recipes.push([164,1,[[153,1],[9,1]],14],[165,1,[[154,1],[9,1]],14],[166,1,[[152,1],[153,1],[154,1],[9,1]],14]);
   recipes.push([167,1,[[8,4],[21,2]],12],[171,1,[[8,2],[40,2]],12],[172,1,[[8,5]],12],[173,1,[[3,5]],12]);
+  // Equipment is appended to preserve every existing block and recipe ID.
+  recipes.push([176,1,[[24,8],[21,2]],12],[177,1,[[35,8],[21,2]],12]);
+  const armor = {176:.20,177:.35,194:.50};
+  const equipment = Object.freeze({"47":{"kind":"sword","power":5},"89":{"kind":"axe","power":5.4},"90":{"kind":"shovel","power":4},"179":{"kind":"sword","power":2},"180":{"kind":"sword","power":3},"181":{"kind":"sword","power":4},"182":{"kind":"sword","power":8},"183":{"kind":"axe","power":2.5},"184":{"kind":"axe","power":3.5},"185":{"kind":"axe","power":4.5},"186":{"kind":"axe","power":7},"187":{"kind":"shovel","power":2.4},"188":{"kind":"shovel","power":5},"189":{"kind":"shovel","power":6},"190":{"kind":"shovel","power":8},"191":{"kind":"bow","power":4},"193":{"kind":"shield","power":0},"195":{"kind":"shield","power":0}});
+  const weaponDamage = id=>equipment[id]?.kind==='sword'?equipment[id].power:durability[id]&&!armor[id]&&!['bow','shield'].includes(equipment[id]?.kind)?2:1;
+  recipes.push([179,1,[[8,2],[21,1]],12],[180,1,[[3,2],[21,1]],12],[181,1,[[24,2],[21,1]],12],[182,1,[[11,2],[21,1]],12],[183,1,[[8,3],[21,2]],12],[184,1,[[3,3],[21,2]],12],[185,1,[[24,3],[21,2]],12],[186,1,[[11,3],[21,2]],12],[187,1,[[8,1],[21,2]],12],[188,1,[[24,1],[21,2]],12],[189,1,[[35,1],[21,2]],12],[190,1,[[11,1],[21,2]],12],
+    [191,1,[[21,3],[123,2]],12],[192,4,[[21,1],[3,1],[143,1]],12],
+    [193,1,[[8,6],[21,2]],12],[194,1,[[11,8],[35,4]],12],[195,1,[[35,6],[8,2]],12]);
   // A recipe belongs to exactly one station: 0 (backpack), 12 (workbench),
   // or 14 (furnace). Keep recipe indexes stable for saves and UI events.
   const recipeStation = (recipe) => recipe?.[3] || 0;
@@ -814,7 +842,7 @@ const Voxel = (() => {
         const x = Math.round(Math.sin(arc) * radius),
           z = -Math.round(Math.cos(arc) * radius),
           h = land(x, z, seed, generator).h;
-        if ((generator === 5 && h > H - 12) || (generator >= 4 && land(x,z,seed,generator).river) || h < SEA + 2 || (player && Math.hypot(player.x - x, player.z - z) < 12)) continue;
+        if ((generator >= 5 && h > H - 12) || (generator >= 4 && land(x,z,seed,generator).river) || h < SEA + 2 || (player && Math.hypot(player.x - x, player.z - z) < 12)) continue;
         let free = true;
         for (let dz = -4; dz <= 4 && free; dz++)
           for (let dx = -4; dx <= 4 && free; dx++) {
@@ -1037,6 +1065,83 @@ const Voxel = (() => {
   }
   const idx = (x, y, z) => (y * 16 + z) * 16 + x;
   const key = (x, z) => x + ',' + z;
+  // A village is a pure function of seed and global coordinates. Every chunk
+  // evaluates the same candidates, so roofs never depend on loading order.
+  function villageHouses(gx,gz,s,sites=[]) {
+    const vx=gx*64+24+Math.floor(hash(gx,gz,s^191)*16);
+    const vz=gz*64+24+Math.floor(hash(gx,gz,s^193)*16);
+    if(Math.hypot(vx,vz-3)<46 || sites.some(p=>Math.hypot(p.x-vx,p.z-vz)<24)) return [];
+    const houses=[];
+    for(const [dx,dz] of [[-6,-5],[6,-5],[0,6]]) {
+      const x=vx+dx,z=vz+dz, center=land(x,z,s,6);
+      if(center.h<=SEA+2 || center.h>H-14 || center.region || center.dunes) continue;
+      let valid=true, minH=Infinity,maxH=-Infinity;
+      for(let i=-3;i<=3;i++) for(let j=-3;j<=3;j++){
+        const t=land(x+i,z+j,s,6);
+        if(t.river || t.h<=SEA+1 || t.h<=(t.waterY??SEA)) valid=false;
+        minH=Math.min(minH,t.h);maxH=Math.max(maxH,t.h);
+      }
+      if(valid && maxH-minH<=3) houses.push({x,z,y:maxH+1});
+    }
+    return houses.length>=2?houses:[];
+  }
+  function buildVillageHouse({x,z,y},set,s) {
+    for(let dz=-3;dz<=3;dz++) for(let dx=-3;dx<=3;dx++){
+      // Remove intersecting tree branches, then build a stone foundation.
+      for(let dy=0;dy<=12;dy++)set(x+dx,y+dy,z+dz,0);
+      if(Math.abs(dx)<=2&&Math.abs(dz)<=2){
+        for(let dy=-4;dy<0;dy++)set(x+dx,y+dy,z+dz,48);
+        set(x+dx,y,z+dz,8);
+        for(let dy=1;dy<=3;dy++){
+          const edge=Math.abs(dx)===2||Math.abs(dz)===2;
+          if(!edge)continue;
+          const entrance=dx===0&&dz===2&&dy<=2;
+          const window=dy===2&&((Math.abs(dx)===2&&dz===0)||(dz===-2&&dx===0));
+          if(!entrance)set(x+dx,y+dy,z+dz,window?16:(Math.abs(dx)===2&&Math.abs(dz)===2?5:8));
+        }
+      }
+      if(Math.abs(dx)<=3&&Math.abs(dz)<=3)
+        set(x+dx,y+4+(3-Math.abs(dx)),z+dz,65);
+      if(Math.abs(dz)===2&&Math.abs(dx)<=2)
+        for(let dy=4;dy<4+(3-Math.abs(dx));dy++)set(x+dx,y+dy,z+dz,8);
+    }
+    set(x-1,y+1,z-1,12);
+    set(x+1,y+1,z-1,14);
+    set(x,y+1,z-1,13);
+  }
+  // New village decoration belongs exclusively to generator 7.
+  function villageGarden(h,s,houses=[]) {
+    const x=h.x+4,z=h.z+5,t=land(x,z,s,7),ground=h.y;
+    if(Math.abs(t.h-ground)>4)return null;
+    for(let dx=-1;dx<=5;dx++)for(let dz=3;dz<=6;dz++){
+      const q=land(h.x+dx,h.z+dz,s,7);
+      if(q.river||q.h<=SEA+1||Math.abs(q.h-ground)>4||
+        houses.some(o=>o!==h&&Math.abs(o.x-h.x-dx)<=3&&Math.abs(o.z-h.z-dz)<=3))return null;
+    }
+    return {x,y:ground,z};
+  }
+  function decorateVillageHouse(h,set,s,houses) {
+    const {x,y,z}=h;
+    const farm=villageGarden(h,s,houses);
+    // Level, bounded terrace joins the house entrance to the garden.
+    // Fill only shallow foundations; no water or nearby structures are replaced.
+    const xmax=farm?5:1;
+    for(let dz=3;dz<=6;dz++)for(let dx=-1;dx<=xmax;dx++){
+      const t=land(x+dx,z+dz,s,7);
+      if(t.river||t.h<=SEA+1||Math.abs(t.h-y)>4)continue;
+      for(let yy=Math.min(t.h,y-1);yy<=y;yy++)set(x+dx,yy,z+dz,48);
+      for(let yy=y+1;yy<=Math.max(t.h+8,y+8);yy++)set(x+dx,yy,z+dz,0);
+    }
+    if(farm){
+      const {x:fx,y:fy,z:fz}=farm;
+      for(let dz=0;dz<=1;dz++)for(let dx=-1;dx<=1;dx++){
+        set(fx+dx,fy-1,fz+dz,3);
+        set(fx+dx,fy,fz+dz,dx===1?7:dx===0?38:48);
+        set(fx+dx,fy+1,fz+dz,dx===0?40:0);
+        for(let dy=2;dy<=8;dy++)set(fx+dx,fy+dy,fz+dz,0);
+      }
+    }
+  }
   function generate(cx, cz, s, sites = [], generator = 1) {
     const a = new Uint8Array(16 * 16 * H),
       ox = cx * 16,
@@ -1123,12 +1228,28 @@ const Voxel = (() => {
           }
           continue;
         }
-        if (hash(gx, gz, s ^ 53) < (mist ? 0.63 : 0.31)) tree(tx, tz);
+        const density=generator>=6
+          ? mix(.12,.89,smooth(clip((noise(tx*.017,tz*.017,s^524)-.2)/.6,0,1)))
+          : (mist ? .63 : .31);
+        if (hash(gx, gz, s ^ 53) < density) tree(tx, tz);
       }
     tree(2, 0, true);
+    if(generator>=6) {
+      for(let gz=Math.floor((oz-16)/64);gz<=Math.floor((oz+31)/64);gz++)
+        for(let gx=Math.floor((ox-16)/64);gx<=Math.floor((ox+31)/64);gx++)
+          {
+            const houses=villageHouses(gx,gz,s,sites);
+            for(const house of houses)
+              if(house.x+3>=ox && house.x-3<ox+16 && house.z+3>=oz && house.z-3<oz+16)
+                buildVillageHouse(house,set,s);
+            if(generator>=7)for(const house of houses)
+              if(house.x+5>=ox && house.x-3<ox+16 && house.z+6>=oz && house.z-3<oz+16)
+                decorateVillageHouse(house,set,s,houses);
+          }
+    }
     for (const site of sites)
       if (site.x + 4 >= ox && site.z + 4 >= oz && site.x - 4 < ox + 16 && site.z - 4 < oz + 16)
-        { buildRuin(site, set); if(generator===5)decorateExpedition(site,set); }
+        { buildRuin(site, set); if(generator>=5)decorateExpedition(site,set); }
     return { a, top };
   }
   const directions = [
@@ -1417,6 +1538,7 @@ const Voxel = (() => {
     recipeStation,
     recipesAtStation,
     durability,
+    armor,equipment,weaponDamage,
     farmAnimals,
     farmFood,
     cropForItem, cropInfo,
@@ -1446,6 +1568,8 @@ const Voxel = (() => {
     hash,
     land,
     generate,
+    villageHouses,
+    villageGarden,
     idx,
     key,
     clip,

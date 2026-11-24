@@ -10,6 +10,10 @@ const View = (() => {
       d = Math.cos(p.pitch);
     return { r: [c, 0, s], u: [-s * t, d, c * t], f: [s * d, t, -c * d] };
   };
+  function entityVisible(entity,eye,forward,range) {
+    const x=entity.x-eye[0],y=entity.y-eye[1],z=entity.z-eye[2];
+    return x*x+y*y+z*z<=range*range&&(x*x+y*y+z*z<36||x*forward[0]+y*forward[1]+z*forward[2]>-3);
+  }
   function camera(g, settings, alpha = 1) {
     const axes = basis(g.p),
       now = g.eye(),
@@ -219,6 +223,21 @@ const View = (() => {
     if(m==139.){pat=0.;col*=1.4;}
  }
 
+ // Pixel relief for earth, rock and grass, faded at distance to avoid shimmer.
+ if(quality>0. && deep<34. && (m==1.||m==2.||m==3.||m==17.||m==48.)){
+   float nearDetail=1.-smoothstep(18.,34.,deep);
+   vec2 grainUV=uv*16.;
+   vec2 gp=floor(grainUV);
+   float grain=rnd(gp+vec2(13.,29.));
+   float bevel=step(.68,grain)*step(fract(grainUV.y),.22);
+   if(m==3.||m==48.){
+     float split=abs(fract(uv.x*3.+floor(uv.y*4.)*.47)-.5);
+     float crack=1.-smoothstep(.015,.065,split);
+     col*=1.-nearDetail*.14*crack;
+   }
+   if(m==2.||m==1.||m==17.)col=mix(col,col*vec3(1.12,1.04,.85),nearDetail*.28*grain);
+   col+=nearDetail*(.04*(grain-.5)+.035*bevel);
+ }
  col+=pat;
  vec3 normal=f==0.?vec3(1.,0.,0.):f==1.?vec3(-1.,0.,0.):f==2.?vec3(0.,1.,0.):f==3.?vec3(0.,-1.,0.):f==4.?vec3(0.,0.,1.):vec3(0.,0.,-1.);
  float solarAngle=(day-.25)*6.283185;
@@ -227,7 +246,10 @@ const View = (() => {
  float shade=f==2.?1.0:(f==3.?.62:.80);
  // Roof shading is baked into the same AO attribute as terrain shade.
  vec3 lighting=mix(vec3(.23,.29,.46),vec3(.79,.83,.80),light)*shade*amb;
- lighting+=vec3(.34,.26,.16)*direct*amb;
+ // Sun warmth changes over the day; ambient occlusion remains baked.
+ float dusk=1.-smoothstep(.12,.62,max(0.,solarDir.y));
+ lighting+=mix(vec3(.30,.31,.28),vec3(.46,.23,.10),dusk)*direct*amb;
+ if(quality>0.)lighting*=mix(.88,1.,smoothstep(.32,.95,amb));
  float torch=0.;
  for(int i=0;i<8;i++){
    if(float(i)<numLamps){
@@ -526,7 +548,11 @@ const View = (() => {
       if(g.remotePlayer?.active) explorerAvatar(g.remotePlayer,true);
       // Each creature has its own lightweight voxel anatomy and patterned palette.
       // No GLB models, image atlases or additional draw calls are necessary.
+      const entityRange=Math.max(30,(g.radius||3)*16+12);
+      this.visibleEntities=0;
       for (const mob of g.mobs) {
+        if(!entityVisible(mob,eye,f,entityRange))continue;
+        this.visibleEntities++;
         const x=mob.x, y=mob.y, z=mob.z;
         if (![x,y,z,mob.face||0].every(Number.isFinite)) continue;
         const kind=mob.kind || 'Raspejante';
@@ -543,7 +569,7 @@ const View = (() => {
         const dead=mob.hp<=0 ? Math.max(.10,Math.min(1,(mob.dying||0)/.55)) : 1;
         const s=Math.min(1.2,Math.max(.08,(kind==='Guardião Prisma' ? 1.06 : kind==='Vaca' ? 1.14 :
           kind==='Ovelha' ? .97 : kind==='Porco' ? .91 :
-          kind==='Vigia de Cascalho' ? 1.02 : kind==='Zumbi' ? 1.02 : kind==='Saltim' ? .72 : kind==='Galinha'?.64:.82)*dead*Voxel.farmScale(mob)));
+          kind==='Vigia de Cascalho' ? 1.02 : kind==='Zumbi' || kind==='Aldeão' || kind==='Guarda' ? 1.02 : kind==='Saltim' ? .72 : kind==='Galinha'?.64:.82)*dead*Voxel.farmScale(mob)));
         const start=ent.length;
         // One shared vertex buffer, no extra draw calls or additional texture atlases.
         // Clamped, positive cuboids prevent warped/stretched enemies even after
@@ -562,7 +588,46 @@ const View = (() => {
         const eyes=(height,depth,material=110,spacing=.18,size=.09)=>{
           for (const side of [-1,1]) piece(side*spacing-size/2,height,-depth,size,size,size*.6,material);
         };
-        if (kind === 'Ovelha') {
+        if(kind==='Guarda'){
+          const swing=(mob.attack||0)*.7;
+          piece(-.30,.57,-.22,.60,.69,.44,109);
+          piece(-.22,1.29,-.23,.44,.39,.46,106);
+          piece(-.26,1.61,-.27,.52,.16,.54,35);
+          piece(-.26,1.43,-.27,.10,.19,.08,109);piece(.16,1.43,-.27,.10,.19,.08,109);
+          eyes(1.48,.25,112,.12,.08);
+          for(const side of [-1,1]){piece(side*.15-.11,.12,-.13+side*step*.14,.22,.46,.28,109);piece(side*.15-.12,.01,-.23+side*step*.14,.24,.14,.36,112);}
+          piece(-.42,.68,-.20,.18,.48,.30,109);piece(.24,.68+swing,-.25-swing,.18,.48,.30,109);
+          piece(.31,.86+swing,-.39-swing,.08,.60,.08,35);piece(.19,.88+swing,-.43-swing,.32,.08,.15,113);
+          piece(-.47,.65,-.45,.34,.48,.10,68);piece(-.37,.81,-.51,.14,.14,.06,35);
+        }else if(kind==='Aldeão'){
+          const coat=[17,109,68][mob.job]||17;
+          if(mob.activity==='sleep'){
+            piece(-.25,.07,-.65,.50,.32,.86,coat);
+            piece(-.22,.10,-.98,.44,.35,.37,106);
+            piece(-.21,.06,.19,.42,.22,.51,27);
+            piece(-.23,.04,.65,.46,.19,.18,112);
+          }else{
+          const work=['farm','forge','build'].includes(mob.activity)?Math.sin(t*6)*.13:0;
+          piece(-.29,.57,-.20,.58,.72,.40,coat);
+          piece(-.23,1.28,-.23,.46,.41,.46,106);
+          piece(-.10,1.37,-.32,.20,.13,.11,105);
+          piece(-.25,1.64,-.25,.50,.12,.50,mob.job===0?113:27);
+          piece(-.17,1.48,-.26,.10,.06,.04,112);
+          piece(.07,1.48,-.26,.10,.06,.04,112);
+          piece(-.23,.70,-.36,.46,.18,.16,coat);
+          piece(-.13,.70,-.39,.26,.12,.07,106);
+          for(const side of [-1,1]){
+            piece(side*.35-.085,.68+side*work,-.18-work,.17,.50,.29,coat);
+            piece(side*.15-.11,.12,-.12+side*step*.14,.22,.46,.27,27);
+            piece(side*.15-.12,.01,-.23+side*step*.14,.24,.14,.36,112);
+          }
+          piece(-.27,.59,-.22,.54,.10,.44,12);
+          if(mob.activity==='farm'||mob.activity==='forge'||mob.activity==='build'){
+            piece(.29,.65+work,-.43,.08,.37,.08,21);
+            piece(.18,.92+work,-.49,.30,.12,.15,mob.activity==='farm'?3:35);
+          }
+          }
+        } else if (kind === 'Ovelha') {
           // White fluffy body, grey face and four articulated black hooves.
           const wool=(mob.shorn||(mob.woolReady||0)>g.elapsed)?116:115;
           piece(-.42,.39,-.37,.84,.71,.78,wool);
@@ -729,12 +794,14 @@ const View = (() => {
           ent[i+2]=z+px*sin+pz*cos;
         }
       }
-      for (const p of g.fragments) box(ent, p.x, p.y, p.z, 0.1, 0.1, 0.1, p.b);
+      for (const p of g.fragments) if(entityVisible(p,eye,f,24))box(ent,p.x,p.y,p.z,.1,.1,.1,p.b);
       for (let d of g.drops) {
+        if(!entityVisible(d,eye,f,entityRange))continue;
+        this.visibleEntities++;
         const y = d.y + 0.16 + Math.sin(g.elapsed * 3 + d.x) * 0.06;
         box(ent, d.x - 0.13, y, d.z - 0.13, 0.26, 0.26, 0.26, d.b);
       }
-      if (g.bag) {
+      if (g.bag&&entityVisible(g.bag,eye,f,entityRange)) {
         const b = g.bag;
         box(ent, b.x - 0.35, b.y + 0.05, b.z - 0.3, 0.7, 0.65, 0.6, 15);
       }
@@ -1027,7 +1094,11 @@ const View = (() => {
             );
           }
       }
+      const entityRange=Math.max(30,(g.radius||3)*16+12);
+      this.visibleEntities=0;
       for (const m of g.mobs) {
+        if(!entityVisible(m,o,f,entityRange))continue;
+        this.visibleEntities++;
         // The low-end software renderer also keeps recognizable silhouettes.
         const kind=m.kind||'Raspejante', boss=kind==='Guardião Prisma';
         const col=({Saltim:'#d6a56a',Musgato:'#5a946b',Luzerrante:'#50efd4',
@@ -1040,6 +1111,18 @@ const View = (() => {
         const scale=(boss?1.5:kind==='Vaca'?1.2:kind==='Ovelha'?1.08:
           kind==='Vigia de Cascalho'?1.15:kind==='Galinha'?.6:.85)*die*Voxel.farmScale(m);
         const color=m.hurt>0?'#efb169':col;
+        if(kind==='Guarda'){
+          drawSprite(m.x,m.y+.89,m.z,.75,'#687580');drawSprite(m.x,m.y+1.49,m.z,.45,'#d3d8da');drawSprite(m.x+.36,m.y+1.02,m.z,.23,'#e7c780');drawSprite(m.x-.35,m.y+.85,m.z,.35,'#70503a');continue;
+        }
+        if(kind==='Aldeão'){
+          const coat=['#608971','#667178','#70503a'][m.job]||'#608971';
+          if(m.activity==='sleep'){drawSprite(m.x,m.y+.20,m.z,.74,coat);drawSprite(m.x,m.y+.24,m.z-.46,.34,'#f1d69e');continue;}
+          drawSprite(m.x,m.y+.85,m.z,.75,coat);
+          drawSprite(m.x,m.y+1.49,m.z,.48,'#f1d69e');
+          drawSprite(m.x,m.y+1.74,m.z,.38,'#845d37');
+          for(const side of [-1,1])drawSprite(m.x+side*.14,m.y+.28,m.z+side*Math.sin(m.gait||0)*.08,.27,'#70503a');
+          continue;
+        }
         if(kind==='Galinha'){
           drawSprite(m.x,m.y+.40*scale,m.z,.85*scale,color);
           drawSprite(m.x,m.y+.84*scale,m.z-.2,.42*scale,col);
@@ -1074,9 +1157,9 @@ const View = (() => {
         }
         if(boss) drawSprite(m.x,m.y+1.59,m.z,.34,'#b49fe7');
       }
-      for (const p of g.fragments) drawSprite(p.x, p.y, p.z, 0.11, '#' + Voxel.blocks[p.b].hex);
-      for (const d of g.drops) drawSprite(d.x, d.y + 0.25, d.z, 0.28, '#' + Voxel.blocks[d.b].hex);
-      if (g.bag) drawSprite(g.bag.x, g.bag.y + 0.4, g.bag.z, 0.65, '#b58e5d');
+      for (const p of g.fragments) if(entityVisible(p,o,f,24))drawSprite(p.x,p.y,p.z,.11,'#'+Voxel.blocks[p.b].hex);
+      for (const d of g.drops) if(entityVisible(d,o,f,entityRange)){this.visibleEntities++;drawSprite(d.x,d.y+.25,d.z,.28,'#'+Voxel.blocks[d.b].hex);}
+      if (g.bag&&entityVisible(g.bag,o,f,entityRange)) drawSprite(g.bag.x, g.bag.y + 0.4, g.bag.z, 0.65, '#b58e5d');
     }
   }
   function create(c) {
@@ -1094,5 +1177,5 @@ const View = (() => {
     c.style.imageRendering = 'pixelated';
     return new CPURender(c);
   }
-  return { create, basis, camera };
+  return { create, basis, camera, entityVisible };
 })();

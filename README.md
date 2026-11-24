@@ -1,3 +1,97 @@
+# Mundo Prisma v0.9.49 — Coleta cooperativa transacional (prévia)
+
+- O anfitrião valida distância, revisão e sequência do inventário, calcula capacidade com a mesma função de empilhamento do modo solo e persiste o inventário do visitante junto à redução do item no chão antes de confirmar. A reserva impede coleta simultânea pelo anfitrião durante a gravação. Falha de gravação restaura quantidade e inventário na memória.
+- Visitante aguarda confirmação sem alterar inventário; após tempo limite solicita sincronização. Solicitação repetida com revisão antiga não concede novamente o item. Quantidades parciais permanecem no mundo; durabilidade preservada; contador de IDs de drops persistido. Protocolo 3 exige novo convite e versão igual nos dois dispositivos.
+- Teste isolado `node tests/p2p-loot-0949.test.js`: coleta, repetição, reconstrução de perfil, falha de gravação simulada, mochila cheia, coleta parcial, distância, versão, concorrência local e durabilidade. Não é teste real de IndexedDB, navegador ou rede.
+- Ainda existem limites: mineração e construção do visitante e snapshots de inventário ainda não são integralmente autoritativos; a coleta pode interromper brevemente o visitante; não é uma proteção geral contra trapaças ou duplicações em todos os sistemas. Próxima prioridade: mineração e construção transacionais, seguidas de combate, comércio e fornos compartilhados.
+
+---
+
+# Mundo Prisma v0.9.48 — P2P protocolo 2 (prévia)
+
+- WebRTC com canal confiável ordenado para mundo, inventário e comandos, e canal não ordenado sem retransmissões para posições e entidades. Filas limitadas, fragmentos de 8 mil caracteres e contadores de tráfego no diagnóstico. Convites antigos incompatíveis: atualizar ambos os dispositivos e gerar novo convite.
+- Posições e estados continuam sendo enviados em menus; visitante espera confirmação de inventário para iniciar, pausa durante desconexão e recupera alterações locais pendentes. Relógio e chuva reconciliados pelo estado do anfitrião. Corrigida referência do jogador remoto ao recriar a sala.
+- Abertura de baús serializada após confirmação da sequência de inventário; bloqueia respostas antigas. Snapshot de entrada não inclui inventário, armadura, mochila de morte ou perfis privados do anfitrião.
+- Teste `node tests/p2p-0948.test.js`: transporte simulado, protocolo, fragmentos, congestionamento e corrida de inventário/baú. Sem validação de WebRTC em redes reais. Continua limitado a dois jogadores, STUN e troca manual de convite/resposta; sem TURN ou servidor de sinalização. Coleta de drops ainda não é transação durável, e arco/comércio/forno compartilhado seguem limitados. Não declarar proteção total contra duplicação.
+
+---
+
+# Mundo Prisma v0.9.47 — Equipamentos avançados (prévia)
+
+- 17 novos IDs (179–195), 17 receitas de bancada, 87 receitas no total. Espadas de madeira/pedra/cobre/prisma, machados de madeira/pedra/cobre/prisma, pás de madeira/cobre/ferro/prisma, arco, flecha, escudos de madeira/ferro e armadura prisma. IDs anteriores preservados.
+- Arco com alcance de 18 blocos, dano 4, intervalo de 0,85 s; consome flecha e durabilidade, inclusive se errar. Disparo por raycast, sem projétil físico; bloqueado por paredes e chunks não carregados. Solo/anfitrião nesta versão.
+- Escudos: use com item selecionado para proteção temporária de 1,6 s, recarga 3 s; redução nominal de 50% (madeira) ou 65% (ferro), excluindo fome, queda e afogamento. Não exige direção frontal nesta versão.
+- Armadura Prisma reduz nominalmente 50% de dano de combate. Espaço exclusivo para uma armadura completa no inventário solo/anfitrião; compatibilidade com armaduras antigas na hotbar (somente a mais forte protege). Equipar, retirar, desgaste e perda/recuperação na morte. Não há peças individuais nem equipamento dedicado para visitantes ainda.
+- Ícones SVG e modelos na mão procedurais, sem downloads externos. Teste `node tests/equipment-0947.test.js`; verificação isolada de munição, alcance/obstáculos, escudo, inventário e receitas. Validação visual, FPS e P2P real pendentes. Geradores e schema mantidos. Próxima etapa: cavernas, minérios e água.
+
+---
+
+# Mundo Prisma v0.9.46 — Defesa dos vilarejos (prévia)
+
+- Guardas voxel com capacete, espada e escudo, patrulha local, combate contra monstros com alcance e linha de visão. Até dois guardas e três invasores simultâneos dentro do limite total existente de 24 atores. Guardas derrotados têm intervalo de 90 segundos antes de reaparecer.
+- Invasões noturnas próximas de aldeões dos geradores 6 e 7; somente um ataque por região e noite, com registro persistente. Sem invasões no criativo/pacífico, nem surgimento próximo do jogador ou das luzes registradas. Invasores remanescentes desaparecem ao amanhecer.
+- Aldeões procuram abrigo quando percebem ameaças próximas; comércio indisponível enquanto abrigados. Cada invasor derrotado pelo jogador deixa duas moedas prisma; mortes causadas pelos guardas não geram moedas. Não há dano a construções.
+- Reutiliza modelos procedurais, IA adaptativa, colisões e pacote P2P existente. Nenhum asset externo ou mudança na geração de terreno. Testes isolados de spawn em 10 regiões geradas, combate, recompensas, limites e persistência. Executar `node tests/village-defense-0946.test.js`. Validação visual, FPS e P2P real pendentes; não garante que todo terreno alterado pelo jogador tenha caminho transitável.
+
+---
+
+# Mundo Prisma v0.9.45 — Otimização das mecânicas (prévia)
+
+- IA: 60 decisões/s até 12 blocos, 15 entre 12 e 22, 10 entre 22 e 30; acumula o tempo de decisão e mantém temporizadores e física do jogador no passo anterior. Ataques próximos não são desacelerados.
+- Culling de criaturas, partículas e drops nos dois renderizadores; itens continuam no mundo. Pilhas próximas compatíveis se agrupam até 64 no solo, preservando quantidade e durabilidade. Sem agrupar drops P2P.
+- Cache breve de luzes próximas, invalidado ao atualizar iluminação ou descarregar chunks; HUD evita reescrever vitais e tarefa sem mudanças, F3 calcula estatísticas uma vez. F3, guia e diagnóstico leem versão da tela inicial; cache offline atualizado.
+- Corrigida recuperação parcial de mochila, inclusive marcação de alterações para salvamento; varredura rotativa de mudas evita deixar as posteriores permanentemente sem processamento.
+- Verificados 14 arquivos JS e seis conjuntos de regressão em ambiente isolado, incluindo 100 drops agrupados em duas pilhas e 60/15/10 decisões por segundo. Teste: `node tests/performance-0945.test.js`. Números de decisões e pilhas não equivalem a ganhos de FPS; falta benchmark real. Geradores 1–7 e schema mantidos. Próximos: guardas, invasões e testes mobile; meshing por seção e persistência regional seguem pendentes.
+
+---
+
+# Mundo Prisma v0.9.44 — Vilarejos vivos (prévia)
+
+- Gerador opcional 7, Vilarejos vivos: terraços e hortas irrigadas em locais adequados. Geradores 1–6 mantidos; mundos anteriores não ganham novas estruturas automaticamente.
+- Aldeões com rotinas de dia/noite, trabalho agrícola nos canteiros gerados, ida ao forno ou bancada e animação de trabalho. A colheita é replantada; ainda não abastece o estoque comercial. Ferreiros e construtores animam o trabalho, sem fabricação autônoma de itens.
+- À noite, tentam entrar na casa e deitar no centro do piso; comércio suspenso durante o sono. Não atravessam obstáculos por teleporte. Busca local limitada de caminhos, sincronização de atividade P2P e atualização do cache offline.
+- Teste `node tests/village-routine-0944.test.js`: 12 casas com ciclo completo e estações; 72 chunks legados idênticos e 55 hortas elegíveis em três sementes. Validação WebGL, desempenho mobile e P2P real continuam pendentes. Caminhos bloqueados por jogadores podem impedir a rotina.
+
+---
+
+# Mundo Prisma v0.9.43 — Revisão do GDD (prévia)
+
+- [Auditoria atualizada do GDD e plano para v1.0](docs/STATUS_GDD_VS_JOGO_v0.9.43.md).
+- Modo casual opcional para novos mundos solo: preservar mochila ao morrer, sem desativar inimigos. Padrão dos mundos antigos preservado.
+- Passos por superfície, volume de efeitos e interface separado; cache offline atualizado para a versão atual.
+- Teste: `node tests/gdd-0943.test.js`. Validação isolada de regras; falta teste em navegador/aparelho real.
+
+---
+
+# Mundo Prisma v0.9.42 — Mercado dos aldeões (prévia)
+
+- Moeda prisma (item 178), ícone próprio e 12 ofertas entre fazendeiro, ferreiro e construtor. Venda recursos e compre alimentos, sementes, metal, ferramentas e material de construção.
+- Aponte para um aldeão e use/interaja para abrir o mercado. Estoque individual por casa/oferta, renovado por dia do jogo e persistido no salvamento.
+- Trocas verificam proximidade, quantidade, estoque e capacidade da mochila. Pagamento e entrega são aplicados juntos, sem consumo parcial quando a mochila está cheia.
+- Comércio disponível em Sobrevivência solo e para o anfitrião P2P; visitantes ainda não negociam. O modo criativo não usa a economia.
+- Teste: `node tests/village-market-0942.test.js`. Sintaxe e lógica isoladas verificadas; interface visual e multiplayer real pendentes.
+
+---
+
+# Mundo Prisma v0.9.41 — Aldeões (prévia)
+
+- Um aldeão por casa elegível próxima no gerador Fronteiras (até oito residentes simultâneos, dentro do limite total de 24 criaturas). Fazendeiro, ferreiro e construtor com roupas distintas, caminhada local e retorno aos arredores da casa à noite.
+- Aponte e interaja com o aldeão para receber uma dica da profissão. Personagens pacíficos, protegidos contra ataques do jogador; sem comércio nesta versão.
+- Geração local sem duplicação, sincronização P2P pelo anfitrião e fallback visual de software. Sem download de modelos adicionais.
+- Teste: `node tests/villagers-0941.test.js`. Verificação isolada de geração, diálogo, proteção e pacote de rede; visual e multiplayer real ainda pendentes.
+
+---
+
+# Mundo Prisma v0.9.40 — Fronteiras e sobrevivência (prévia)
+
+- Novo gerador opcional 6: selecione **Fronteiras · vilarejos e florestas** ao criar um mundo. Mantém cavernas, riachos, montanhas e expedições do gerador anterior, adicionando grupos de casas com telhas, janelas, bancada, forno e iluminação. A distribuição das árvores varia por região.
+- Novas armaduras de cobre e ferro (20% e 35% de redução nominal de dano de combate, respectivamente, com arredondamento e mínimo de 1 ponto). Fabrique na bancada usando 8 barras do metal e 2 hastes; mantenha a armadura na barra rápida. Somente a mais forte protege. Não impede fome, afogamento ou queda; desgaste por ataque.
+- Shader de relevo procedural próximo, com desvanecimento à distância, luz solar mais quente ao entardecer e oclusão ambiente reforçada. Sem texturas externas adicionais.
+- Mobile: redução temporária de um anel de chunks após FPS baixo persistir com resolução dinâmica mínima; recuperação gradual. Não altera preferências salvas.
+- Testes: `node tests/voxel-0940.test.js`. Verificação isolada: 45 chunks das gerações 1–5 idênticos à main anterior; 61 casas em três sementes (39 cruzando fronteiras de chunks); sintaxe JS e proteção de armadura verificadas. Ainda falta validação WebGL em navegador, benchmark em celular real e sessão P2P real. O gerador 6 requer esta versão em ambos os aparelhos.
+
+---
+
 # Mundo Prisma v0.9.23 — Oficina artesanal e acabamento dos blocos
 
 - Escadas de madeira e pedra com degraus, bordas e juntas; IDs e orientações mantidos.

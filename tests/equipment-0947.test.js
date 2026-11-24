@@ -1,0 +1,22 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const V=require('../js/world.js');
+const G=new Function('Voxel','Sound','View',fs.readFileSync(path.join(__dirname,'../js/game.js'),'utf8')+'\nreturn Game;')(V,{play(){}},{basis:()=>({f:[0,0,1]})});
+const S=G.Session.prototype;
+const make=()=>({inv:Array(36).fill(null),selected:0,changed(){},notify(){},signal(){},settings:{},p:{x:0,y:70,z:0,life:100},damageCool:0,creative:false,meta:{difficulty:'normal'},seed:42,generator:7,edits:{},bag:null,stream(){},save(){},mobs:[]});
+const m=make();m.inv[5]=G.slot(194);assert.ok(S.equipArmor.call(m,5));assert.equal(m.inv[5],null);assert.equal(m.wornArmor.b,194);
+S.damage.call(m,20,'Zumbi');assert.equal(m.p.life,90);assert.equal(m.wornArmor.dur,189);
+assert.ok(S.unequipArmor.call(m));assert.equal(G.count(m.inv,194),1);
+const i=m.inv.findIndex(t=>t?.b===194);assert.ok(S.equipArmor.call(m,i));m.inv.fill(G.slot(3,64));assert.equal(S.unequipArmor.call(m),false);assert.equal(m.wornArmor.dur,189);
+S.respawn.call(m,'Queda');assert.equal(m.wornArmor,null);assert.equal(G.count(m.bag.inv,194),1);assert.equal(G.count(m.inv,194),0);
+const shield=make();shield.inv[0]=G.slot(195);assert.ok(S.raiseShield.call(shield));S.damage.call(shield,20,'Zumbi');assert.equal(shield.p.life,93);assert.equal(shield.inv[0].dur,149);
+shield.damageCool=0;S.damage.call(shield,10,'Queda');assert.equal(shield.p.life,83);assert.equal(shield.inv[0].dur,149);
+const bow=make();bow.inv[0]=G.slot(191);bow.inv[1]=G.slot(192,2);bow.eye=()=>[0,71,0];bow.get=()=>0;bow.aimMob=S.aimMob;bow.mobs=[{kind:'Zumbi',hp:8,x:0,y:70.4,z:12},{kind:'Zumbi',hp:8,x:0,y:70.4,z:6}];let hit;
+bow.strikeMob=(target,dmg)=>{hit=target;assert.equal(dmg,4);return true;};
+assert.ok(S.fireBow.call(bow));assert.equal(hit,bow.mobs[1]);assert.equal(G.count(bow.inv,192),1);assert.equal(bow.inv[0].dur,99);
+bow.attackCool=0;bow.get=(x,y,z)=>z===3?3:0;assert.equal(S.aimMob.call(bow,18),null);
+bow.get=(x,y,z)=>z===3?-1:0;assert.equal(S.aimMob.call(bow,18),null);
+assert.ok(S.fireBow.call(bow));assert.equal(G.count(bow.inv,192),0);bow.attackCool=0;assert.equal(S.fireBow.call(bow),false);assert.equal(bow.inv[0].dur,98);
+assert.equal(V.weaponDamage(182),8);assert.equal(V.weaponDamage(47),5);assert.equal(V.recipes.length,87);
+for(let id=179;id<=195;id++){assert.equal(V.blocks[id].placeable,false);assert.ok(V.recipes.some(r=>r[0]===id));}
+console.log('OK: armadura equipada e morte, escudo, munição, mira, obstáculos e receitas');
