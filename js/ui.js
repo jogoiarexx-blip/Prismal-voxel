@@ -729,7 +729,7 @@
       const len=Math.hypot(...v);
       if(len>.01 && Voxel.ray((x,y,z)=>g.get(x,y,z,true),eye,v.map(n=>n/len),len,true))return;
       mpLastRemoteHit=now;
-      const damage=msg.weapon===47?5:Voxel.durability[msg.weapon]?2:1;
+      const damage=msg.weapon===47?5:Voxel.durability[msg.weapon]&&!Voxel.armor[msg.weapon]?2:1;
       g.strikeMob(mob,damage,mpRemote.x,mpRemote.z);
     } else if (msg.t==='mob-feed' && mpRole==='host' && mpWorldReady && g?.ready && mpRemote?.active) {
       const mob=g.mobs.find(m=>m.id===msg.id && m.hp>0 && !m.dying);
@@ -1463,7 +1463,7 @@
   }
   function slotButton(t, i, prefix, active = false, hot = false) {
     const title = t
-      ? name(t.b) + (Voxel.durability[t.b] ? ' · ' + t.dur + '/' + Voxel.durability[t.b] + ' usos' : '')
+      ? name(t.b) + (Voxel.durability[t.b] ? ' · ' + t.dur + '/' + Voxel.durability[t.b] + ' usos' : '') + (Voxel.armor[t.b] ? ' · proteção '+Math.round(Voxel.armor[t.b]*100)+'% na barra rápida' : '')
       : 'Espaço vazio';
     return (
       '<button class="slot' +
@@ -1499,7 +1499,7 @@
   function recipeCategory(id) {
     if ([22, 42, 43, 44, 45, 47, 89, 90, 146].includes(id)) return 'tools';
     if ([12, 13, 14, 15, 24, 25, 30, 31, 67, 144,171,172,173].includes(id)) return 'utility';
-    if (Voxel.farmNutrition[id] || [38,41,46,123,142,143].includes(id)) return 'survival';
+    if (Voxel.farmNutrition[id] || [38,41,46,123,142,143,176,177].includes(id)) return 'survival';
     if ([77, 78, 79, 83, 84, 85, 87, 88].includes(id)) return 'decor';
     return 'build';
   }
