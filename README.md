@@ -1,3 +1,12 @@
+# Mundo Prisma v0.9.46 — Defesa dos vilarejos (prévia)
+
+- Guardas voxel com capacete, espada e escudo, patrulha local, combate contra monstros com alcance e linha de visão. Até dois guardas e três invasores simultâneos dentro do limite total existente de 24 atores. Guardas derrotados têm intervalo de 90 segundos antes de reaparecer.
+- Invasões noturnas próximas de aldeões dos geradores 6 e 7; somente um ataque por região e noite, com registro persistente. Sem invasões no criativo/pacífico, nem surgimento próximo do jogador ou das luzes registradas. Invasores remanescentes desaparecem ao amanhecer.
+- Aldeões procuram abrigo quando percebem ameaças próximas; comércio indisponível enquanto abrigados. Cada invasor derrotado pelo jogador deixa duas moedas prisma; mortes causadas pelos guardas não geram moedas. Não há dano a construções.
+- Reutiliza modelos procedurais, IA adaptativa, colisões e pacote P2P existente. Nenhum asset externo ou mudança na geração de terreno. Testes isolados de spawn em 10 regiões geradas, combate, recompensas, limites e persistência. Executar `node tests/village-defense-0946.test.js`. Validação visual, FPS e P2P real pendentes; não garante que todo terreno alterado pelo jogador tenha caminho transitável.
+
+---
+
 # Mundo Prisma v0.9.45 — Otimização das mecânicas (prévia)
 
 - IA: 60 decisões/s até 12 blocos, 15 entre 12 e 22, 10 entre 22 e 30; acumula o tempo de decisão e mantém temporizadores e física do jogador no passo anterior. Ataques próximos não são desacelerados.
