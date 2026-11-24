@@ -1006,18 +1006,23 @@ const Voxel = (() => {
           top = Math.max(top, Number(i) >> 8);
         }
       }
-      const ht = new Int16Array(256);
+      const ht = new Int16Array(256), roof = new Int16Array(256);
       for (let z = 0; z < 16; z++)
         for (let x = 0; x < 16; x++) {
+          const column = z * 16 + x;
           for (let y = top; y > 0; y--) {
-            let b = a[idx(x, y, z)];
-            if (b && blocks[b]?.solid && !transparent(b)) {
-              ht[z * 16 + x] = y;
+            const b = a[idx(x, y, z)];
+            if (!b || !blocks[b]?.solid || transparent(b)) continue;
+            if (!ht[column]) ht[column] = y;
+            // Furniture and door panels must not turn a whole column into a roof.
+            // Full blocks and full-width slabs provide approximate skylight cover.
+            if (!specialShape(b) || b === 53 || b === 54) {
+              roof[column] = y;
               break;
             }
           }
         }
-      neighborhood.set(dx + ',' + dz, { a, ht });
+      neighborhood.set(dx + ',' + dz, { a, ht, roof });
       if (!dx && !dz) highest = top;
     }
     const center = neighborhood.get('0,0').a,
@@ -1036,6 +1041,19 @@ const Voxel = (() => {
       let n = neighborhood.get((x >> 4) + ',' + (z >> 4));
       return n ? n.ht[(z & 15) * 16 + (x & 15)] : 0;
     }
+    function roofHeight(x,z) {
+      const n=neighborhood.get((x >> 4)+','+(z >> 4));
+      return n ? n.roof[(z & 15)*16+(x & 15)] : 0;
+    }
+    // Three stable light levels encoded in the existing AO attribute.
+    // Sample the air side of each face so exterior walls stay bright.
+    function shadeLevel(x,y,z,f) {
+      const [dx,dy,dz]=directions[f];
+      if (roofHeight(x+dx,z+dz) > y+dy ||
+          (f===2 && roofHeight(x,z)>y)) return 2;
+      return height(x+1,z-1)>y+1 || height(x+2,z-2)>y+3 ? 1 : 0;
+    }
+    const ambient = level => level===2 ? .46 : level===1 ? .74 : 1;
     for (let f = 0; f < 6; f++) {
       const dir = directions[f],
         axis = f >> 1,
@@ -1059,7 +1077,7 @@ const Voxel = (() => {
             if (!b || specialShape(b)) continue;
             let other = at(x + dir[0], y + dir[1], z + dir[2]);
             if (other && other !== 25 && !specialShape(other) && (!transparent(other) || other === b)) continue;
-            const shade = height(x + 1, z - 1) > y + 1 || height(x + 2, z - 2) > y + 3 ? 1 : 0;
+            const shade = shadeLevel(x,y,z,f);
             // Shade must not overlap material ID. The old 32-stride corrupted block IDs >= 32.
             mask[j * W + i] = b | (shade << 8);
           }
@@ -1101,7 +1119,7 @@ const Voxel = (() => {
                 t[2] + oz,
                 b,
                 f,
-                n & 256 ? 0.74 : 1,
+                ambient(n >> 8),
               );
             }
           }
@@ -1120,12 +1138,13 @@ const Voxel = (() => {
         }
         const material = shape[6] ?? id;
         const out = transparent(material) ? alpha : solid;
+        const shade=roofHeight(x,z)>y ? 2 : shadeLevel(x,y,z,f);
         for (const [a,b] of [[0,0],[1,0],[1,1],[0,0],[1,1],[0,1]]) {
           const q = [shape[0], shape[1], shape[2]];
           q[axis] = boundary;
           q[u] += a * dims[u];
           q[v] += b * dims[v];
-          out.push(x + q[0] + ox, y + q[1], z + q[2] + oz, material, f, 1);
+          out.push(x + q[0] + ox, y + q[1], z + q[2] + oz, material, f, ambient(shade));
         }
       }
     }

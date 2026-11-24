@@ -90,12 +90,21 @@ const View = (() => {
  if(m==16.||m==56.){alpha=.28;if(min(fract(uv.x),fract(uv.y))<.045)alpha=.7;}
  if(m==7.){
    vec3 V=normalize(eye-w);
-   float wave=sin(w.x*1.8+w.z*.7+time*1.35)+sin(w.z*2.7+time*1.1);
-   vec3 N=normalize(vec3(.045*cos(w.x*1.8+time*1.35),1.,.055*cos(w.z*2.7+time*1.1)));
+   vec3 N=vec3(0.,1.,0.);
+   float wave=0.;
+   if(quality>0.){
+     wave=sin(w.x*1.8+w.z*.7+time*1.35)+sin(w.z*2.7+time*1.1);
+     N=normalize(vec3(.065*cos(w.x*1.8+time*1.35),1.,.075*cos(w.z*2.7+time*1.1)));
+   }
    float fres=pow(1.-clamp(dot(N,V),0.,1.),3.);
-   float glint=pow(max(0.,dot(reflect(-normalize(vec3(.58,.62,-.54)),N),V)),38.);
-   col=mix(vec3(.09,.47,.48),sky,.24+fres*.68)+vec3(1.,.82,.48)*glint*.8*light;
-   col+=max(0.,wave-1.64)*vec3(.19,.28,.22);pat*=.13;alpha=.62+.31*fres;
+   vec3 reflection=reflect(-V,N);
+   vec3 reflectedSky=mix(sky,mix(vec3(.028,.065,.15),vec3(.28,.56,.79),light),clamp(reflection.y,0.,1.));
+   float angle=(day-.25)*6.283185;
+   vec3 sunDir=normalize(vec3(cos(angle)*.72,sin(angle),-.55));
+   float glint=quality>0.?pow(max(0.,dot(reflect(-sunDir,N),V)),45.)*max(0.,sunDir.y):0.;
+   col=mix(mix(vec3(.035,.16,.23),vec3(.055,.40,.43),light),reflectedSky,.24+fres*.70);
+   col+=vec3(1.,.78,.42)*glint*.9+max(0.,wave-1.72)*vec3(.13,.22,.21)*light;
+   pat*=.10;alpha=.48+.44*fres;
  }
  if(m==80.)col=vec3(.38,.59,.25);
  if(m==81.)col=vec3(.98,.68,.22);
@@ -179,9 +188,28 @@ const View = (() => {
     if(m==139.){pat=0.;col*=1.4;}
  }
 
- col+=pat;float shade=f==2.?1.05:(f==3.?.50:(f==0.||f==5.?.83:.68));vec3 lighting=mix(vec3(.28,.34,.55),vec3(1.03,1.00,.90),light)*shade*amb;
- float torch=0.;for(int i=0;i<8;i++){if(float(i)<numLamps)torch=max(torch,max(0.,1.-length(w-lamps[i])/7.));}
- lighting+=torch*vec3(.89,.61,.32);if(m==25.||m==13.||m==29.||m==30.||m==67.||m==110.||m==111.)lighting=max(lighting,vec3(1.06,.98,.76));
+ col+=pat;
+ vec3 normal=f==0.?vec3(1.,0.,0.):f==1.?vec3(-1.,0.,0.):f==2.?vec3(0.,1.,0.):f==3.?vec3(0.,-1.,0.):f==4.?vec3(0.,0.,1.):vec3(0.,0.,-1.);
+ float solarAngle=(day-.25)*6.283185;
+ vec3 solarDir=normalize(vec3(cos(solarAngle)*.72,sin(solarAngle),-.55));
+ float direct=max(0.,dot(normal,solarDir))*max(0.,solarDir.y);
+ float shade=f==2.?1.0:(f==3.?.62:.80);
+ // Roof shading is baked into the same AO attribute as terrain shade.
+ vec3 lighting=mix(vec3(.23,.29,.46),vec3(.79,.83,.80),light)*shade*amb;
+ lighting+=vec3(.34,.26,.16)*direct*amb;
+ float torch=0.;
+ for(int i=0;i<8;i++){
+   if(float(i)<numLamps){
+     vec3 toLamp=lamps[i]-w;
+     float dist=length(toLamp);
+     float falloff=max(0.,1.-dist/8.);
+     float facing=.35+.65*max(0.,dot(normal,toLamp/max(dist,.01)));
+     float flicker=.97+.03*sin(time*5.+lamps[i].x*1.3+lamps[i].z*.7);
+     torch+=falloff*falloff*facing*flicker;
+   }
+ }
+ lighting+=min(torch,1.2)*vec3(1.28,.83,.43);
+ if(m==25.||m==13.||m==29.||m==30.||m==67.||m==110.||m==111.||m==136.)lighting=max(lighting,vec3(1.12,1.02,.80));
  col*=lighting;
  float horizon=1.-clamp(abs(normalize(w-eye).y)*2.,0.,1.);
  col+=.018*horizon*vec3(.88,.72,.47)*light;
@@ -196,8 +224,30 @@ const View = (() => {
  void main(){vec3 d=normalize(F+R*uv.x/proj.x+U*uv.y/proj.y);vec3 c=mix(sky,mix(vec3(.024,.042,.112),vec3(.34,.64,.82),light),smoothstep(0.,.82,d.y));
  float angle=(day-.25)*6.283185;vec3 sun=normalize(vec3(cos(angle)*.72,sin(angle),-.55));float sunD=length(d-sun);c+=vec3(.50,.32,.14)*exp(-sunD*9.)*light;
  if(max(abs(dot(d-sun,normalize(cross(sun,vec3(0.,1.,0.))))),abs(dot(d-sun,normalize(cross(sun,cross(sun,vec3(0.,1.,0.)))))))<.049&&dot(d,sun)>.96)c=vec3(1.,.9,.64);
- if(distance(d,-sun)<.039)c=vec3(.82,.87,.91);if(d.y>.07){vec2 stars=floor(d.xz*360./(d.y+.4));if(noise2(stars)>.998)c+=vec3((1.-light)*.7);}
- if(d.y>.055&&quality>0.){vec2 p=d.xz/(d.y+.025)*3.2+vec2(time*.008,0.);vec2 k=floor(p*vec2(1.5,3.))/vec2(1.5,3.);float n=sin(k.x*.46)+sin(k.y*.99)+sin(k.x*.81+k.y*.3);if(n>1.7)c=mix(c,mix(vec3(.14,.18,.29),vec3(.98,.85,.73),light),smoothstep(.05,.25,d.y)*.65);}
+ float twilight=(1.-smoothstep(.04,.42,abs(sun.y)))*exp(-abs(d.y)*5.);
+ c+=vec3(.24,.085,.026)*twilight;
+ float moonDist=distance(d,-sun);
+ if(sun.y<0.){
+   c+=vec3(.05,.07,.12)*exp(-moonDist*15.);
+   if(moonDist<.039){float crater=noise2(floor(d.xz*440.));c=mix(vec3(.65,.72,.84),vec3(.91,.94,1.),crater);}
+ }
+ if(d.y>.07){
+   vec2 stars=floor(d.xz*360./(d.y+.4));
+   float star=noise2(stars);
+   if(star>.997)c+=vec3(.68,.79,1.)*smoothstep(.997,1.,star)*(1.-smoothstep(.04,.46,light));
+ }
+ if(d.y>.055&&quality>0.){
+   vec2 p=d.xz/(d.y+.025)*3.2+vec2(time*.008,0.);
+   vec2 k=floor(p*vec2(1.5,3.))/vec2(1.5,3.);
+   float n=sin(k.x*.46)+sin(k.y*.99)+sin(k.x*.81+k.y*.3);
+   float clouds=smoothstep(1.48,2.02,n)*smoothstep(.055,.30,d.y);
+   vec3 cloudColor=mix(vec3(.105,.15,.24),vec3(.94,.91,.84),light);
+   c=mix(c,cloudColor,clouds*.72);
+   if(quality>1.){
+     float highCloud=sin(p.x*.23+p.y*.55)+sin(p.y*.61-p.x*.14);
+     c=mix(c,cloudColor,smoothstep(1.62,1.96,highCloud)*smoothstep(.30,.70,d.y)*.20);
+   }
+ }
  float az=atan(d.z,d.x);
  float ridge=.045+.022*sin(az*13.)+.018*sin(az*27.)+.009*sin(az*63.);
  if(d.y<ridge&&d.y>-.20)c=mix(c,vec3(.25,.35,.42)*(.4+.6*light),.34);
@@ -355,7 +405,7 @@ const View = (() => {
         gl.uniform1f(p.u.day, g.time);
         gl.uniform1f(p.u.light, l);
         gl.uniform3fv(p.u.sky, sky);
-        gl.uniform1f(p.u.quality, settings.motion ? settings.quality : 0);
+        gl.uniform1f(p.u.quality, settings.quality); // motion freezes time independently
         gl.uniform1f(p.u.immersed,underwater?1:0);
         gl.uniform1f(p.u.mist, g.misty ? 1 : 0);
         gl.uniform1f(p.u.beacon, glow);
@@ -748,6 +798,18 @@ const View = (() => {
         depth = new Float32Array(W * H);
       const phase = settings.motion ? g.elapsed : 0;
       const beacon = g.lights(30).length > 0;
+      const lamps = g.lights(), localLightCache=new Map();
+      const lampLight=(x,y,z)=>{
+        if(!lamps.length)return 0;
+        const k=x+','+y+','+z;
+        if(localLightCache.has(k))return localLightCache.get(k);
+        let value=0;
+        for(const lamp of lamps){
+          const d=Math.hypot(x+.5-lamp[0],y+.5-lamp[1],z+.5-lamp[2]);
+          value+=Math.max(0,1-d/8)**2;
+        }
+        value=Math.min(1,value); localLightCache.set(k,value); return value;
+      };
       const sunAngle = (g.time - 0.25) * Math.PI * 2;
       const sunX = Math.cos(sunAngle) * 0.86,
         sunY = Math.sin(sunAngle),
@@ -837,7 +899,9 @@ const View = (() => {
                       : [0.36, 0.93, 0.81]
                     : [0.22, 0.31, 0.31];
             }
-            if (hit === 13 || hit === 25 || hit === 29 || hit === 30) lighting = 1.15;
+            const warmth=lampLight(bx,by,bz);
+            if(warmth>0)rgb=rgb.map((v,i)=>v*(1+warmth*[.90,.55,.20][i]));
+            if ([13,25,29,30,67,136].includes(hit)||Voxel.torchWall(hit)) lighting = 1.15;
             const target = g.hit;
             if (target && target.p[0] === bx && target.p[1] === by && target.p[2] === bz) {
               const a = ax === 0 ? fz : fx,
