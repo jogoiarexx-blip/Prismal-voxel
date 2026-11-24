@@ -1,3 +1,12 @@
+# Mundo Prisma v0.9.43 — Revisão do GDD (prévia)
+
+- [Auditoria atualizada do GDD e plano para v1.0](docs/STATUS_GDD_VS_JOGO_v0.9.43.md).
+- Modo casual opcional para novos mundos solo: preservar mochila ao morrer, sem desativar inimigos. Padrão dos mundos antigos preservado.
+- Passos por superfície, volume de efeitos e interface separado; cache offline atualizado para a versão atual.
+- Teste: `node tests/gdd-0943.test.js`. Validação isolada de regras; falta teste em navegador/aparelho real.
+
+---
+
 # Mundo Prisma v0.9.42 — Mercado dos aldeões (prévia)
 
 - Moeda prisma (item 178), ícone próprio e 12 ofertas entre fazendeiro, ferreiro e construtor. Venda recursos e compre alimentos, sementes, metal, ferramentas e material de construção.
