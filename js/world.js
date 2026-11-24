@@ -168,15 +168,24 @@ const Voxel = (() => {
     ['Batata assada', 'b47b43', 0], // 164
     ['Milho assado', 'd4a23d', 0], // 165
     ['Sopa de legumes', 'c9924e', 0], // 166
+    ['Portão de madeira', 'a67a49', .7], // 167 closed X
+    ['Portão de madeira', 'a67a49', .7], // 168 closed Z
+    ['Portão aberto', 'a67a49', .7], // 169 open X
+    ['Portão aberto', 'a67a49', .7], // 170 open Z
+    ['Ninho de galinha', 'c3a55f', .45], // 171
+    ['Cocho de alimentação', '99734a', .7], // 172
+    ['Bebedouro', '879c98', .9], // 173
+    ['Ninho com ovo', 'c3a55f', .45], // 174
+    ['Bebedouro com água', '879c98', .9], // 175
   ];
   const blocks = data.map(([name, hex, hard], id) => ({
     id,
     name,
     hex,
     hard,
-    solid: (!!id && ![7, 21, 22, 23, 24, 25, 35, 36, 37, 41, 42, 43, 44, 45, 47, 80, 81, 82, 88, 89, 90].includes(id) && !(id >= 93 && id <= 96) && id < 105) || (id >= 126 && id <= 133) || id === 136 || (id >= 155 && id <= 163),
+    solid: (!!id && ![7, 21, 22, 23, 24, 25, 35, 36, 37, 41, 42, 43, 44, 45, 47, 80, 81, 82, 88, 89, 90].includes(id) && !(id >= 93 && id <= 96) && id < 105) || (id >= 126 && id <= 133) || id === 136 || (id >= 155 && id <= 163) || (id >= 167 && id <= 175),
     placeable:
-      (id === 134 || id === 135 || (id > 0 && id < 93 && ![7, 21, 22, 23, 24, 28, 29, 35, 37, 39, 40, 41, 42, 43, 44, 45, 47, 50, 51, 52, 58, 59, 60, 61, 62, 63, 64, 70, 71, 72, 80, 81, 82, 86, 89, 90].includes(id))),
+      ([167,171,172,173].includes(id) || id === 134 || id === 135 || (id > 0 && id < 93 && ![7, 21, 22, 23, 24, 28, 29, 35, 37, 39, 40, 41, 42, 43, 44, 45, 47, 50, 51, 52, 58, 59, 60, 61, 62, 63, 64, 70, 71, 72, 80, 81, 82, 86, 89, 90].includes(id))),
   }));
   // A few detailed architectural pieces are built from tiny boxes only when placed.
   // Regular terrain still uses greedy meshing, without textures or new draw calls.
@@ -523,6 +532,22 @@ const Voxel = (() => {
   }
   const cropForItem = id => ({37:39,152:155,153:158,154:161})[id] || 0;
   const cropInfo = id => id===39||id===40 ? {item:40,seed:37,first:39,last:40,seconds:45} : id>=155&&id<=163 ? (()=>{const k=Math.floor((id-155)/3),first=155+k*3;return {item:152+k,seed:152+k,first,last:first+2,seconds:[45,60,75][k]};})():null;
+  // Farm furniture uses ordinary voxel materials. Gate orientation and state are saved as IDs.
+  const farmGate = id => id>=167 && id<=170;
+  const farmStation = id => id>=171 && id<=175;
+  const farmBlock = id => farmGate(id)||farmStation(id);
+  const gatePosts=[box(0,0,.37,.055,1,.26,68),box(.945,0,.37,.055,1,.26,68)];
+  const gateClosed=[...gatePosts,box(.055,.06,.44,.89,.12,.12,8),box(.055,.76,.44,.89,.14,.12,8),box(.055,.32,.44,.89,.14,.12,8),box(.46,.10,.42,.08,.76,.16,68),box(.42,.68,.40,.16,.07,.20,35)];
+  const gateOpen=[...gatePosts,box(.005,.06,.04,.05,.12,.40,8),box(.005,.76,.04,.05,.14,.40,8),box(.005,.32,.04,.05,.14,.40,8),box(.945,.06,.56,.05,.12,.40,8),box(.945,.76,.56,.05,.14,.40,8),box(.945,.32,.56,.05,.14,.40,8)];
+  for(let dir=0;dir<2;dir++){
+    shapes.set(167+dir,gateClosed.map(p=>rotateShapeBox(p,dir)));
+    shapes.set(169+dir,gateOpen.map(p=>rotateShapeBox(p,dir)));
+    doorCollisions.set(167+dir,[rotateShapeBox(box(0,0,.37,1,1,.26),dir)]);
+  }
+  const nest=[box(.12,0,.12,.76,.12,.76,8),box(.18,.12,.18,.64,.07,.64,40),box(.12,.12,.12,.76,.14,.12,21),box(.12,.12,.76,.76,.14,.12,21),box(.12,.12,.24,.12,.14,.52,21),box(.76,.12,.24,.12,.14,.52,21)];
+  shapes.set(171,nest);shapes.set(174,[...nest,box(.41,.19,.42,.18,.20,.15,142),box(.435,.39,.445,.13,.045,.10,142)]);
+  const basin=(mat)=>[box(.08,0,.12,.15,.24,.76,68),box(.77,0,.12,.15,.24,.76,68),box(.08,.24,.12,.84,.10,.76,mat),box(.08,.34,.12,.84,.24,.10,mat),box(.08,.34,.78,.84,.24,.10,mat),box(.08,.34,.22,.10,.24,.56,mat),box(.82,.34,.22,.10,.24,.56,mat)];
+  shapes.set(172,basin(8));shapes.set(173,basin(74));shapes.set(175,[...basin(74),box(.18,.34,.22,.64,.16,.56,7)]);
   const shapeParts = (id) => shapes.get(id) || null;
   const specialShape = (id) => shapes.has(id);
   const doorLower = (id) => id >= 57 && id <= 64;
@@ -533,10 +558,10 @@ const Voxel = (() => {
   const bedOffset = (id) => [[0,0,-1],[1,0,0],[0,0,1],[-1,0,0]][(id-126)%4];
   const torchIdForNormal = (normal) => normal[0] === 1 ? 93 : normal[0] === -1 ? 94 : normal[2] === 1 ? 95 : normal[2] === -1 ? 96 : 25;
   const torchSupport = (id) => id === 93 ? [-1,0,0] : id === 94 ? [1,0,0] : id === 95 ? [0,0,-1] : id === 96 ? [0,0,1] : id === 25 ? [0,-1,0] : null;
-  const itemId = (id) => id === 136 ? 14 : bedFoot(id) || bedHead(id) ? 46 : id >= 49 && id <= 52 ? 49 : id >= 57 && id <= 64 || doorUpper(id) ? 57 : id >= 69 && id <= 72 ? 69 : torchWall(id) ? 25 : id === 86 ? 85 : id;
+  const itemId = (id) => farmGate(id) ? 167 : id===174 ? 171 : id===175 ? 173 : id === 136 ? 14 : bedFoot(id) || bedHead(id) ? 46 : id >= 49 && id <= 52 ? 49 : id >= 57 && id <= 64 || doorUpper(id) ? 57 : id >= 69 && id <= 72 ? 69 : torchWall(id) ? 25 : id === 86 ? 85 : id;
   const orientBlock = (id, yaw) => {
     const dir = ((Math.round(yaw / (Math.PI / 2)) % 4) + 4) % 4;
-    return id === 46 ? 126 + dir : id === 49 || id === 57 || id === 69 ? id + dir : id;
+    return id===167 ? 167+dir%2 : id === 46 ? 126 + dir : id === 49 || id === 57 || id === 69 ? id + dir : id;
   };
   const buildCategories = [
     ['Madeira', [8, 68, 49, 53, 55, 57, 77, 78, 79, 83, 84, 85, 87, 91, 134, 135]],
@@ -544,6 +569,7 @@ const Voxel = (() => {
     ['Telhados e paredes', [65, 66, 75, 16, 56, 92]],
     ['Detalhes', [67, 73, 76, 13, 25, 88]],
     ['Ferramentas', [22, 42, 43, 44, 45, 47, 89, 90]],
+    ['Fazenda', [55,167,171,172,173,38,67]],
   ];
   function intersects(id, bx, by, bz, x0, y0, z0, x1, y1, z1) {
     if (!blocks[id]?.solid) return false;
@@ -760,6 +786,7 @@ const Voxel = (() => {
   for(const [raw,cooked] of [[140,147],[141,148],[124,149],[125,150],[142,151]])
     recipes.push([cooked,1,[[raw,1],[9,1]],14]);
   recipes.push([164,1,[[153,1],[9,1]],14],[165,1,[[154,1],[9,1]],14],[166,1,[[152,1],[153,1],[154,1],[9,1]],14]);
+  recipes.push([167,1,[[8,4],[21,2]],12],[171,1,[[8,2],[40,2]],12],[172,1,[[8,5]],12],[173,1,[[3,5]],12]);
   // A recipe belongs to exactly one station: 0 (backpack), 12 (workbench),
   // or 14 (furnace). Keep recipe indexes stable for saves and UI events.
   const recipeStation = (recipe) => recipe?.[3] || 0;
@@ -1396,7 +1423,7 @@ const Voxel = (() => {
     farmHealth,
     farmDrops,
     farmNutrition,
-    farmScale,
+    farmScale, farmGate, farmStation, farmBlock,
     shapeParts,
     specialShape,
     itemId,

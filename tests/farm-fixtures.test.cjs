@@ -1,0 +1,38 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+const V=require('../js/world.js');
+const ctx={Voxel:V,Sound:{play(){}},crypto:{randomUUID:()=> 'fixtures'},Math,Date,console,structuredClone};
+vm.createContext(ctx);vm.runInContext(fs.readFileSync('js/navigation.js','utf8')+'\n'+fs.readFileSync('js/game.js','utf8')+'\nthis.Game=Game;',ctx);
+const P=ctx.Game.Session.prototype;P.startWorker=function(){};P.stream=function(){};P.changed=function(){this.changes=(this.changes||0)+1;};
+const g=new ctx.Game.Session(ctx.Game.fresh('Fazenda','fixtures','survival','normal'),null,{},()=>{},()=>{});
+g.p={...g.p,x:10,y:65,z:10};g.mobs=[];g.inv.fill(null);
+const chunk={a:new Uint8Array(16*16*V.H)};g.chunks.set('0,0',chunk);
+for(let x=0;x<16;x++)for(let z=0;z<16;z++)chunk.a[V.idx(x,64,z)]=3;
+g.set=function(x,y,z,b){if(!this.chunks.has(V.key(x>>4,z>>4)))return false;chunk.a[V.idx(x&15,y,z&15)]=b;this.changed();return true;};
+const hit=(x,y,z)=>({p:[x,y,z],b:g.get(x,y,z,true)});
+for(let id=167;id<=175;id++){
+ assert(V.blocks[id].solid&&V.specialShape(id));
+ for(const a of V.shapeParts(id))for(let i=0;i<3;i++)assert(a[i]>=-1e-8&&a[i+3]>0&&a[i]+a[i+3]<=1+1e-8);
+ assert(V.blocks[V.itemId(id)].placeable);
+}
+assert.equal(V.orientBlock(167,Math.PI/2),168);
+assert.equal(V.orientBlock(167,Math.PI),167);
+for(const id of [167,171,172,173])assert(V.recipesAtStation(12).some(x=>x.recipe[0]===id));
+for(const id of [167,168])assert(V.intersects(id,0,0,0,.3,.01,.3,.7,.9,.7));
+for(const id of [169,170])assert(!V.intersects(id,0,0,0,.3,.01,.3,.7,.9,.7));
+g.set(5,65,5,167);let cow={kind:'Vaca',id:1,x:5.5,y:65,z:4.5,hp:9};
+assert(!g.mobMove(cow,5.5,5.5,.42,1.55),'closed gate blocks actual mobMove');
+assert(g.farmFixtureAction(hit(5,65,5),null));assert.equal(g.get(5,65,5),169);
+assert(g.mobMove(cow,5.5,5.5,.42,1.55),'open gate permits cow');g.mobs=[cow];g.farmFixtureAction(hit(5,65,5),null);assert.equal(g.get(5,65,5),169,'cannot close occupied gate');g.mobs=[];g.farmFixtureAction(hit(5,65,5),null);assert.equal(g.get(5,65,5),167);
+g.set(6,65,5,55);assert(!g.mobMove(cow,6.5,5.5,.2,.5),'animal cannot climb or pass fence');
+g.set(8,65,8,171);const hen={kind:'Galinha',id:2,x:8.5,y:65,z:7.2,hp:3,eggReady:0};g.mobs=[hen];g.elapsed=100;g.farmTick(1);assert.equal(g.get(8,65,8),174);assert.equal(hen.eggReady,180);assert(!g.drops.length);const old=hit(8,65,8);assert(g.farmFixtureAction(old,null));assert.equal(g.get(8,65,8),171);assert.equal(g.inv[0].b,142);g.farmFixtureAction(old,null);assert.equal(g.inv[0].n,1,'stale hit cannot duplicate egg');
+g.set(8,65,7,172);g.inv[1]={b:37,n:2};g.selected=1;g.farmFixtureAction(hit(8,65,7),g.inv[1]);g.farmFixtureAction(hit(8,65,7),g.inv[1]);assert.equal(g.feeders['8,65,7'].n,2);assert.equal(g.inv[1],null);
+hen.x=8.5;hen.z=6.5;hen.tamed=true;g.farmTick(1);assert.equal(g.feeders['8,65,7'].n,1);assert.equal(hen.nextTroughFeed,160);g.farmTick(1);assert.equal(g.feeders['8,65,7'].n,1);
+const snapshot=g.snapshot();const loaded=new ctx.Game.Session(snapshot,null,{},()=>{},()=>{});assert.equal(loaded.feeders['8,65,7'].n,1);assert.equal(loaded.mobs[0].nextTroughFeed,160);
+g.farmFixtureAction(hit(8,65,7),null);assert(!g.feeders['8,65,7']);assert(g.inv.some(t=>t?.b===37&&t.n===1));
+g.set(9,65,6,173);g.set(10,65,6,7);g.farmFixtureAction(hit(9,65,6),null);assert.equal(g.get(9,65,6),175);hen.hp=2;g.farmTick(1);assert.equal(hen.hp,3);assert.equal(g.get(9,65,6),173);assert.equal(hen.drinkReady,130);
+g.networkGuest=true;g.farmFixtureAction(hit(8,65,8),null);assert.equal(g.get(8,65,8),171);
+assert(!Object.keys(g.restoreFeeders({'bad':{b:37,n:1},'8,65,7':{b:37,n:100}})).length);
+const ui=fs.readFileSync('js/ui.js','utf8');assert(ui.includes('Voxel.farmBlock(v[3])')&&ui.includes('Voxel.farmBlock(b)'));
+const job=V.makeJob({cx:0,cz:0,seed:123,sites:[],generator:3,rev:1,edits:{'0,0':{[V.idx(2,100,2)]:167,[V.idx(4,100,2)]:169,[V.idx(6,100,2)]:174,[V.idx(8,100,2)]:172,[V.idx(10,100,2)]:175}}},new Map());assert(job.solid.every(Number.isFinite)&&job.alpha.every(Number.isFinite));
+console.log('PASS farm fixtures: geometry, actual gate and fence movement, egg pickup, feeder cooldown, save/reload, water and P2P guards');

@@ -105,6 +105,7 @@ const Game = (() => {
       this.chests = rec.chests || {};
       this.furnaces = this.restoreFurnaces(rec.furnaces);
       this.furnaceTarget = null;
+      this.feeders = this.restoreFeeders(rec.feeders);
       this.saplings = rec.saplings || {};
       this.chestRevisions = rec.chestRevisions || Object.create(null);
       this.guestProfiles = rec.guestProfiles || Object.create(null);
@@ -322,7 +323,7 @@ const Game = (() => {
     }
     applyRemoteEdit(x, y, z, b) {
       x=Math.floor(x);y=Math.floor(y);z=Math.floor(z);b=Math.floor(b);
-      if(!Number.isFinite(x+z+y+b)||y<=0||y>=Voxel.H||b<0||!(b<105||Voxel.bedFoot(b)||Voxel.bedHead(b)||b===134||b===135||b===136||(b>=155&&b<=163)))return false;
+      if(!Number.isFinite(x+z+y+b)||y<=0||y>=Voxel.H||b<0||!(b<105||Voxel.bedFoot(b)||Voxel.bedHead(b)||b===134||b===135||b===136||(b>=155&&b<=163)||Voxel.farmBlock(b)))return false;
       const chunkKey=key(x>>4,z>>4), loaded=this.chunks.has(chunkKey);
       this.applyingRemoteEdit=true;
       try {
@@ -429,7 +430,7 @@ const Game = (() => {
     applyRemoteBatch(ops) {
       if (!Array.isArray(ops) || ops.length > 300) return false;
       const valid=ops.every(v=>Array.isArray(v)&&v.length===4&&v.every(Number.isInteger)&&
-        Math.abs(v[0])<100000&&Math.abs(v[2])<100000&&v[1]>0&&v[1]<Voxel.H&&v[3]>=0&&(v[3]<105||Voxel.bedFoot(v[3])||Voxel.bedHead(v[3])||v[3]===134||v[3]===135||v[3]===136||(v[3]>=155&&v[3]<=163)));
+        Math.abs(v[0])<100000&&Math.abs(v[2])<100000&&v[1]>0&&v[1]<Voxel.H&&v[3]>=0&&(v[3]<105||Voxel.bedFoot(v[3])||Voxel.bedHead(v[3])||v[3]===134||v[3]===135||v[3]===136||(v[3]>=155&&v[3]<=163)||Voxel.farmBlock(v[3])));
       if (!valid) return false;
       this.applyingRemoteEdit=true;
       try {
@@ -507,12 +508,12 @@ const Game = (() => {
           }
       return best;
     }
-    floorAt(x, z, y) {
+    floorAt(x, z, y, forMob = false) {
       x = Math.floor(x);
       z = Math.floor(z);
       if (!this.chunks.has(key(x >> 4, z >> 4))) return null;
       for (let h = Math.min(Voxel.H - 2, Math.floor(y)); h >= 0; h--)
-        if (solid(this.get(x, h, z)) && this.get(x, h + 1, z) !== 7) return h + 1;
+        if (solid(this.get(x,h,z)) && !(forMob && (this.get(x,h,z)===55 || Voxel.farmGate(this.get(x,h,z)))) && this.get(x,h+1,z)!==7) return h+1;
       return null;
     }
     physics(dt) {
@@ -821,6 +822,9 @@ const Game = (() => {
         if(this.progress !== -1)this.notify(this.networkGuest ? 'Forno compartilhado: peça ao anfitrião' : 'Retire todos os produtos do forno antes de removê-lo');
         this.progress=-1;return;
       }
+      if(hit && Voxel.farmBlock(hit.b) && (this.networkGuest || hit.b===174 || (hit.b===172 && this.feeders?.[hit.p.join(',')]?.n))) {
+        if(this.progress!==-1)this.notify(this.networkGuest?'Fazenda compartilhada: peça ao anfitrião':'Recolha os produtos ou alimentos antes de remover');this.progress=-1;return;
+      }
       if(this.networkGuest && hit && Voxel.cropInfo(hit.b)){this.notify('Plantação compartilhada: peça ao anfitrião');this.progress=-1;return;}
       if (this.networkGuest && hit && [15,83,84].includes(hit.b)) {
         if(this.progress===0)this.notify('Baú compartilhado: peça ao anfitrião para removê-lo');
@@ -842,7 +846,7 @@ const Game = (() => {
       const tool = this.inv[this.selected],
         rock = [3, 9, 10, 11, 14, 20, 32, 34].includes(hit.b);
       const speed = { 22: 3.2, 42: 4, 43: 5, 44: 6, 45: 8 }[tool?.b] || 1;
-      const wood = [5, 8, 12, 15, 27, 46, 49, 50, 51, 52, 53, 55, 57, 58, 59, 60, 61, 62, 63, 64, 68, 77, 78, 79, 83, 84, 85, 86, 91].includes(hit.b) || Voxel.bedFoot(hit.b) || Voxel.bedHead(hit.b);
+      const wood = [5, 8, 12, 15, 27, 46, 49, 50, 51, 52, 53, 55, 57, 58, 59, 60, 61, 62, 63, 64, 68, 77, 78, 79, 83, 84, 85, 86, 91].includes(hit.b) || Voxel.bedFoot(hit.b) || Voxel.bedHead(hit.b) || Voxel.farmGate(hit.b) || [171,172,174].includes(hit.b);
       const soil = [1, 2, 4, 17, 19, 38, 39, 40].includes(hit.b);
       const toolSpeed = tool?.b === 89 && wood ? 5.4 : tool?.b === 90 && soil ? 4 : rock ? speed : 1;
       if (hit.b === 34 && !this.creative && speed < 4) {
@@ -1250,6 +1254,7 @@ const Game = (() => {
       const { pos, b, twoHigh, partnerPos, partnerB } = this.lastFreeBlock;
       const [x, y, z] = pos;
       const storage = this.chests[pos.join(',')];
+      if (Voxel.farmBlock(b) && (this.networkGuest || this.get(...pos,true)===174 || this.feeders?.[pos.join(',')]?.n)) {this.notify('Recolha os produtos da fazenda primeiro');return false;}
       if (this.get(x, y, z, true) !== b ||
           (twoHigh && this.get(x,y+1,z,true) !== b+40) ||
           (partnerPos && this.get(...partnerPos,true)!==partnerB) || storage?.some(Boolean)) {
@@ -1390,6 +1395,72 @@ const Game = (() => {
       this.inv=copy;m[k]=this.elapsed+(shear?100:90);m.tamed=true;this.changed();
       this.notify(shear?'Lã recolhida · cresce novamente':'Leite recolhido');return true;
     }
+    restoreFeeders(raw) {
+      const out=Object.create(null);if(!raw||typeof raw!=='object'||Array.isArray(raw))return out;
+      for(const [k,v] of Object.entries(raw).slice(0,64)){
+        if(!/^-?\d+,-?\d+,-?\d+$/.test(k))continue;
+        const [x,y,z]=k.split(',').map(Number);
+        if(![x,y,z].every(Number.isSafeInteger)||Math.abs(x)>=100000||Math.abs(z)>=100000||y<=0||y>=Voxel.H)continue;
+        if(Object.values(Voxel.farmFood).includes(v?.b)&&Number.isSafeInteger(v.n)&&v.n>0&&v.n<=8)out[k]={b:v.b,n:v.n};
+      }
+      return out;
+    }
+    // Only inspect a small neighborhood when an animal actually needs a product.
+    nearbyFarm(m, ids, radius=2) {
+      const found=[];const cx=Math.floor(m.x),cy=Math.floor(m.y),cz=Math.floor(m.z);
+      for(let dy=-1;dy<=1;dy++)for(let dz=-radius;dz<=radius;dz++)for(let dx=-radius;dx<=radius;dx++){
+        const pos=[cx+dx,cy+dy,cz+dz],b=this.get(...pos,true);
+        if(!ids.includes(b))continue;
+        const dist=Math.hypot(pos[0]+.5-m.x,pos[1]+.3-m.y,pos[2]+.5-m.z);
+        if(dist>radius+.6)continue;
+        // Do not feed animals or deposit eggs through a wall or closed gate.
+        const eye=[m.x,m.y+.3,m.z],dir=[pos[0]+.5-eye[0],pos[1]+.3-eye[1],pos[2]+.5-eye[2]],len=Math.hypot(...dir);
+        if(len>.01){const hit=Voxel.ray((x,y,z)=>this.get(x,y,z,true),eye,dir.map(n=>n/len),len,true);if(hit&&hit.p.join(',')!==pos.join(','))continue;}
+        found.push({pos,b,dist});
+      }
+      return found.sort((a,b)=>a.dist-b.dist);
+    }
+    farmFixtureAction(h,t) {
+      if(!h||!Voxel.farmBlock(h.b))return false;
+      if(this.networkGuest){this.notify('Peça ao anfitrião para usar a fazenda.');return true;}
+      const k=h.p.join(','),[x,y,z]=h.p;
+      if(this.get(x,y,z,true)!==h.b)return true; // ignore a stale ray hit after a state change
+      if(Voxel.farmGate(h.b)){
+        const next=h.b<=168?h.b+2:h.b-2;
+        if(next<=168){
+          const occupied=(p,r,height)=>p&&Voxel.intersects(next,x,y,z,p.x-r,p.y,p.z-r,p.x+r,p.y+height,p.z+r);
+          if(occupied(this.p,.28,1.8)||occupied(this.networkHost&&this.remotePlayer?.active?this.remotePlayer:null,.28,1.8)||this.mobs.some(m=>m.hp>0&&occupied(m,.43,1.6))){this.notify('Portão ocupado');return true;}
+        }
+        if(this.set(...h.p,next))Sound.play('place',this.settings);return true;
+      }
+      if(h.b===174){
+        const copy=this.inv.map(v=>v&&{...v});if(fill(copy,142,1)){this.notify('Mochila cheia');return true;}
+        if(this.set(...h.p,171)){this.inv=copy;this.changed();this.notify('Ovo recolhido');}return true;
+      }
+      if(h.b===171){this.notify('Ninho vazio · mantenha galinhas por perto');return true;}
+      if(h.b===172){
+        const stored=this.feeders[k];
+        if(!t){
+          if(!stored){this.notify('Cocho vazio · use alimento para abastecer');return true;}
+          const copy=this.inv.map(v=>v&&{...v});if(fill(copy,stored.b,stored.n)){this.notify('Mochila cheia');return true;}
+          this.inv=copy;delete this.feeders[k];this.changed();this.notify('Alimento devolvido');return true;
+        }
+        if(!Object.values(Voxel.farmFood).includes(t.b)){this.notify('Use trigo, frutas ou sementes no cocho');return true;}
+        if(stored&&(stored.b!==t.b||stored.n>=8)){this.notify('Cocho cheio ou com outro alimento');return true;}
+        if(!stored&&Object.keys(this.feeders).length>=64){this.notify('Limite de 64 cochos abastecidos');return true;}
+        this.feeders[k]={b:t.b,n:(stored?.n||0)+1};if(!this.creative&&!--t.n)this.inv[this.selected]=null;
+        this.changed();this.notify('Cocho abastecido · '+this.feeders[k].n+'/8');return true;
+      }
+      // A water trough is fed by adjacent water or exposed rain; no new fluid simulation.
+      if(h.b===173&&this.troughWater(x,y,z))this.set(x,y,z,175);
+      this.notify(this.get(x,y,z,true)===175?'Bebedouro abastecido · recupera a saúde dos animais':'Bebedouro seco · coloque água ao lado ou aguarde chuva');return true;
+    }
+    troughWater(x,y,z) {
+      if([[1,0],[-1,0],[0,1],[0,-1]].some(([dx,dz])=>this.get(x+dx,y,z+dz,true)===7||this.get(x+dx,y-1,z+dz,true)===7))return true;
+      if(!this.raining)return false;
+      for(let h=y+1;h<Voxel.H;h++)if(solid(this.get(x,h,z,true)))return false;
+      return true;
+    }
     farmTick(dt) {
       if(this.networkGuest)return;
       this.farmTimer=(this.farmTimer||0)+dt;if(this.farmTimer<1)return;
@@ -1398,9 +1469,23 @@ const Game = (() => {
       for(const m of farms){
         if(m.juvenile){m.age=Math.min(180,(m.age||0)+step);if(m.age>=180){m.juvenile=false;this.changed();}}
         if(Math.hypot(m.x-this.p.x,m.z-this.p.z)>36)continue;
+        if(m.tamed && (m.fed||0)<=0 && (m.nextTroughFeed||0)<=this.elapsed && Object.keys(this.feeders||{}).length){
+          const feed=this.nearbyFarm(m,[172]).find(q=>this.feeders[q.pos.join(',')]?.b===Voxel.farmFood[m.kind]);
+          if(feed){const k=feed.pos.join(',');if(this.feedFarm(m)){if(--this.feeders[k].n<=0)delete this.feeders[k];m.nextTroughFeed=this.elapsed+60;this.changed();}}
+        }
+        if(m.hp<Voxel.farmHealth[m.kind] && (m.drinkReady||0)<=this.elapsed){
+          const trough=this.nearbyFarm(m,[173,175]).find(q=>q.b===175||this.troughWater(...q.pos));
+          if(trough && (trough.b===175||this.set(...trough.pos,175)) && this.set(...trough.pos,173)){
+            m.hp=Math.min(Voxel.farmHealth[m.kind],m.hp+1);m.drinkReady=this.elapsed+30;this.changed();
+          }
+        }
         if(m.kind==='Galinha'&&!m.juvenile){
           if(!Number.isFinite(m.eggReady))m.eggReady=this.elapsed+80;
-          if(this.elapsed>=m.eggReady && this.drops.length<32){this.addDrop(m.x,m.y+.2,m.z,142,1);m.eggReady=this.elapsed+80;this.changed();}
+          if(this.elapsed>=m.eggReady){
+            const nest=this.nearbyFarm(m,[171],2)[0];
+            if(nest && this.set(...nest.pos,174)){m.eggReady=this.elapsed+80;this.changed();}
+            else if(this.drops.length<32){this.addDrop(m.x,m.y+.2,m.z,142,1);m.eggReady=this.elapsed+80;this.changed();}
+          }
         }
       }
       if(farms.length>=12||this.mobs.length>=22)return;
@@ -1450,6 +1535,7 @@ const Game = (() => {
       // while normal tapping/right-clicking still interacts with them.
       const placing = forcePlace && !!blocks[t?.b]?.placeable;
       const sneaking = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') || this.touchCrouch;
+      if(!sneaking&&!placing&&this.farmFixtureAction(h,t))return true;
       if (h && (h.b === 85 || h.b === 86) && !sneaking && !placing) {
         if (this.set(...h.p, h.b === 85 ? 86 : 85)) Sound.play('place', this.settings);
         return;
@@ -1514,6 +1600,7 @@ const Game = (() => {
         return;
       }
       if (!h) return;
+      if(this.networkGuest && Voxel.farmBlock(t.b)){this.notify('Peça ao anfitrião para instalar o objeto da fazenda.');return;}
       const place = this.preview();
       if (!place) return;
       if (!place.valid) { this.notify('Espaço ocupado'); return; }
@@ -1556,7 +1643,7 @@ const Game = (() => {
     // Small voxel actor collider. Respect non-cube block shapes and unloaded chunks;
     // never permit movement through a closed door, fence, wall or the player.
     mobMove(m, nx, nz, radius = 0.26, height = 1.05) {
-      const floor = this.floorAt(nx, nz, m.y + 1.1);
+      const floor = this.floorAt(nx, nz, m.y + 1.1,true);
       if (floor === null || floor > m.y + 1.01 || floor < m.y - 1.15) return false;
       const x0 = nx - radius, x1 = nx + radius;
       const z0 = nz - radius, z1 = nz + radius;
@@ -1564,7 +1651,7 @@ const Game = (() => {
         for (let z = Math.floor(z0); z <= Math.floor(z1); z++)
           for (let x = Math.floor(x0); x <= Math.floor(x1); x++) {
             const b = this.get(x, y, z, true);
-            if (b < 0 || Voxel.intersects(b, x, y, z, x0, floor + .015, z0, x1, floor + height - .015, z1)) return false;
+            if (b < 0 || b===55 || Voxel.intersects(b, x, y, z, x0, floor + .015, z0, x1, floor + height - .015, z1)) return false;
           }
       // Prevent creatures from clipping into the player, without trapping them on spawn.
       if (Math.hypot(nx - this.p.x, nz - this.p.z) < radius + .26 && Math.abs(floor - this.p.y) < 1.6) return false;
@@ -1867,6 +1954,7 @@ const Game = (() => {
         edits: this.edits,
         chests: this.chests,
         furnaces: this.furnaces,
+        feeders: this.feeders,
         chestRevisions: this.chestRevisions,
         guestProfiles: this.guestProfiles,
         saplings: this.saplings,
