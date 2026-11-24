@@ -1189,18 +1189,28 @@ const Voxel = (() => {
         const y = height(x, z),
           b = center[idx(x, y, z)],
           roll = hash(ox + x, oz + z, seed ^ 291);
-        if ((b !== 1 && b !== 17) || at(x, y + 1, z) || roll > 0.27) continue;
-        const gx = ox + x + 0.22 + hash(ox + x, oz + z, seed ^ 119) * 0.56,
-          gz = oz + z + 0.22 + hash(ox + x, oz + z, seed ^ 122) * 0.56;
-        const h = 0.23 + hash(ox + x, oz + z, seed ^ 127) * 0.36,
-          a = roll * 31,
-          shade = height(x + 1, z - 1) > y + 1 ? 0.78 : 1;
-        blade(gx, y + 1, gz, a, 0.13, h, 80, shade);
-        blade(gx, y + 1, gz, a + 1.57, 0.115, h * 0.85, 80, shade);
-        if (roll < 0.065) {
-          const id = b === 17 ? 82 : 81;
-          blade(gx + 0.03, y + 1 + h * 0.73, gz, a, 0.14, 0.16, id, shade);
-          blade(gx + 0.03, y + 1 + h * 0.73, gz, a + 1.57, 0.14, 0.16, id, shade);
+        // Render-only ground cover: deterministic in world coordinates, no new save IDs.
+        // Never decorate water, a blocked cell, or the top boundary of the world.
+        const moss = b === 19, forest = b === 17;
+        if ((b !== 1 && !forest && !moss) || y + 1 >= H || at(x,y+1,z) ||
+            roll > (moss ? .22 : forest ? .34 : .27)) continue;
+        const gx = ox+x+.22+hash(ox+x,oz+z,seed^119)*.56;
+        const gz = oz+z+.22+hash(ox+x,oz+z,seed^122)*.56;
+        const variation = hash(ox+x,oz+z,seed^127);
+        const a = roll*31;
+        const h = moss ? .16+variation*.27 : forest ? .28+variation*.35 : .18+variation*.38;
+        const shade = ambient(roofHeight(x,z)>y+1 ? 2 : shadeLevel(x,y,z,2));
+        // Fern-like broader blades in the forest; low reeds on moss.
+        const width = forest ? .18 : moss ? .075 : .105;
+        blade(gx,y+1,gz,a,width,h,80,shade);
+        blade(gx,y+1,gz,a+1.57,width*.85,h*.78,80,shade);
+        if (forest && variation>.52 || moss && variation>.72)
+          blade(gx,y+1,gz,a+.78,width*.75,h*.63,80,shade);
+        if (roll < (moss ? .045 : .065)) {
+          const id = forest || moss ? 82 : 81;
+          // Two compact petals share the same stem and existing material batch.
+          blade(gx+.018,y+1+h*.73,gz,a,.12,.13,id,shade);
+          blade(gx+.018,y+1+h*.73,gz,a+1.57,.12,.13,id,shade);
         }
       }
     return {

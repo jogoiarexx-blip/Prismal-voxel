@@ -71,8 +71,30 @@ const View = (() => {
  void main(){float m=floor(mat+.5),f=floor(side+.5);vec2 uv=f<2.?w.zy:(f<4.?w.xz:w.xy);vec2 px=floor(uv*12.);float pix=rnd(px),large=rnd(floor(uv*3.)),cell=rnd(floor(uv+.0001));
  vec3 col=color(m);float pat=(pix-.5)*.105+(large-.5)*.105+(cell-.5)*.06;float alpha=1.;
  if(m==1.||m==17.){if(f!=2.&&(f==3.||fract(w.y)<.77+.12*rnd(vec2(floor(uv.x*6.),floor(w.y)))))col=color(2.);}
- if(m==5.||m==27.){if(f==2.||f==3.){float rings=max(abs(fract(uv.x)-.5),abs(fract(uv.y)-.5));pat+=.15*sin(rings*50.);col*=vec3(1.20,1.22,1.1);}else{pat+=.19*(rnd(vec2(px.x,floor(px.y/7.)))-.5);}}
- if(m==6.||m==18.){pat+=(large>.61?.10:-.045);col+=vec3(.008,.015,0.);}
+ // Botanical surfaces retain their original block IDs and atlas-free batching.
+ if(m==5.||m==27.){
+   if(f==2.||f==3.){
+     vec2 q=abs(fract(uv)-.5);float rings=max(q.x,q.y);
+     col*=.91+.23*smoothstep(.25,.48,rings)+.12*sin(rings*65.);
+   }else{
+     float bark=rnd(vec2(floor(uv.x*13.),floor(uv.y*1.8)));
+     col*=.77+.40*bark;pat*=.62;
+   }
+ }
+ if(m==6.||m==18.){
+   float cluster=rnd(floor(uv*5.));
+   vec3 shadeLeaf=m==6.?vec3(.20,.39,.14):vec3(.14,.33,.29);
+   vec3 tipLeaf=m==6.?vec3(.47,.66,.22):vec3(.29,.55,.43);
+   col=mix(shadeLeaf,tipLeaf,smoothstep(.19,.83,cluster));
+   col*=.91+.16*pix;pat*=.52;
+ }
+ if(m==19.){col=mix(vec3(.19,.31,.19),color(19.)*1.14,smoothstep(.20,.80,large));pat*=.7;}
+ if(m==4.){col*=.95+.07*sin(uv.x*17.+uv.y*8.);pat*=.43;}
+ if(m==32.){
+   float vein=abs(fract(uv.x*2.+uv.y*.75+(large-.5)*.15)-.5);
+   col=mix(color(32.)*.82,vec3(.83,.95,.98),1.-smoothstep(.025,.12,vein));pat*=.36;
+ }
+ if(m==33.){col=mix(color(33.)*.71,color(33.)*1.24,large);pat*=.74;}
  if(m==8.||m==12.||m==15.||m==49.||m==50.||m==51.||m==52.||m==53.||m==55.||m==57.||m==58.||m==59.||m==60.||m==61.||m==62.||m==63.||m==64.||m==68.||m==77.||m==78.||m==79.){if(fract(uv.y*3.)<.08||fract(uv.x+floor(uv.y*3.)*.37)<.035)col*=.6;if(m==12.&&f==2.&&min(fract(uv.x*3.),fract(uv.y*3.))<.12)col*=.59;if(m==15.&&f!=2.&&fract(w.y)>.46&&fract(w.y)<.61)col*=.5;}
  // Handcrafted stations share the original palette but have distinct grain,
  // fine seams and hardware highlights, with no texture downloads.
@@ -84,7 +106,17 @@ const View = (() => {
    if(m==84.&&f!=2.&&fract(uv.x*4.)<.04)col*=.78;
  }
  if(m==35.||m==73.){float glint=max(0.,sin(uv.y*43.+uv.x*17.));col*=.87+.20*glint;pat*=.30;}
- if(m==9.||m==10.||m==11.){col=color(3.);if(rnd(floor(uv*5.))>.67)col=m==9.?vec3(.23,.24,.23):(m==10.?vec3(.79,.46,.30):vec3(.76,.52,.90));}
+ // Mineral veins: coherent patches rather than isolated random pixels.
+ if(m==9.||m==10.||m==11.||m==34.){
+   vec2 oreUV=uv*4.;vec2 oreCell=floor(oreUV);vec2 q=abs(fract(oreUV)-.5);
+   float oreSeed=rnd(oreCell+vec2(m*.23,m*.61));
+   float edge=m==11.?q.x+q.y*.66:max(q.x,q.y);
+   float mask=step(.59,oreSeed)*(1.-smoothstep(.23,.39,edge));
+   vec3 mineral=m==9.?vec3(.18,.20,.21):m==10.?vec3(.78,.43,.23):m==34.?vec3(.66,.60,.51):vec3(.67,.43,.91);
+   float facet=fract((fract(oreUV.x)+fract(oreUV.y))*2.);
+   mineral*=.80+.35*facet;
+   col=mix(color(3.)*(.90+.14*large),mineral,mask);pat*=.60;
+ }
  if(m==14.&&f==4.&&fract(w.x)>.18&&fract(w.x)<.82&&fract(w.y)>.25&&fract(w.y)<.6)col*=.32;
  if(m==20.||m==26.){if(fract(uv.y*2.)<.08||fract(uv.x+floor(uv.y*2.)*.5)<.05)col*=.65;}
  if(m==16.||m==56.){alpha=.28;if(min(fract(uv.x),fract(uv.y))<.045)alpha=.7;}
@@ -106,9 +138,8 @@ const View = (() => {
    col+=vec3(1.,.78,.42)*glint*.9+max(0.,wave-1.72)*vec3(.13,.22,.21)*light;
    pat*=.10;alpha=.48+.44*fres;
  }
- if(m==80.)col=vec3(.38,.59,.25);
- if(m==81.)col=vec3(.98,.68,.22);
- if(m==82.)col=vec3(.75,.57,.88);
+ if(m==80.){col=mix(vec3(.25,.43,.18),vec3(.45,.64,.28),large);pat*=.45;}
+ if(m==81.||m==82.){col=mix(color(m)*.85,color(m)*1.15,pix);pat*=.3;}
  if(m==31.){vec2 tile=abs(fract(uv)-.5);float ring=abs(tile.x+tile.y-.29);col=mix(color(31.),vec3(.84,.62,.29),1.-smoothstep(.022,.045,ring));}
  if(m==28.||m==29.||m==30.){
    vec2 t=abs(fract(uv)-.5);float diamond=t.x+t.y;
@@ -117,10 +148,10 @@ const View = (() => {
    if(abs(diamond-.42)<.028)col=vec3(.93,.72,.34);
    col+=gem*max(0.,.25-diamond)*2.;
  }
- if(m==34.)col=rnd(floor(uv*5.))>.62?vec3(.76,.57,.44):color(3.);
+
  if(m>=38.&&m<=40.&&f==2.){float row=step(.48,fract(w.x*4.));col=mix(color(38.),color(m)*1.17,row);}
  if(m==46.&&f==2.)col=fract(w.z)>.68?vec3(.91,.84,.65):vec3(.59,.28,.23);
- if(m==36.)col*=1.4;
+ if(m==36.){col=mix(vec3(.16,.43,.32),vec3(.50,.96,.68),smoothstep(.25,.8,large));pat*=.4;}
  if(m==48.||m==66.||m==69.||m==70.||m==71.||m==72.||m==74.){
    if(fract(uv.y*3.)<.07 || fract(uv.x*2.+floor(uv.y*3.)*.5)<.045)col*=.7;
  }
@@ -211,6 +242,7 @@ const View = (() => {
  lighting+=min(torch,1.2)*vec3(1.28,.83,.43);
  if(m==25.||m==13.||m==29.||m==30.||m==67.||m==110.||m==111.||m==136.)lighting=max(lighting,vec3(1.12,1.02,.80));
  col*=lighting;
+ if(m==36.)col+=vec3(.035,.13,.08)*(1.-light*.5);
  float horizon=1.-clamp(abs(normalize(w-eye).y)*2.,0.,1.);
  col+=.018*horizon*vec3(.88,.72,.47)*light;
  if(immersed>.5)col=mix(col,sky,.22);float fog=immersed>.5?smoothstep(2.,20.,deep):smoothstep(36.-mist*12.,133.-mist*22.,deep);gl_FragColor=vec4(mix(col,sky,fog*.94),alpha);}`;
@@ -882,6 +914,11 @@ const View = (() => {
             lighting =
               (ax === 1 ? 1.04 : ax === 0 ? 0.8 : 0.68) * (0.45 + 0.55 * l) * (0.91 + noise * 0.16);
             if ((hit === 1 || hit === 17) && ax !== 1 && fy - Math.floor(fy) < 0.78) rgb = palette[2];
+            if (hit === 9 || hit === 10 || hit === 11 || hit === 34) {
+              const u=(ax===0?fz:fx)*4, v=(ax===1?fz:fy)*4;
+              const q=Math.max(Math.abs(u-Math.floor(u)-.5),Math.abs(v-Math.floor(v)-.5));
+              rgb=Voxel.hash(Math.floor(u),Math.floor(v),hit+981)>.59 && q<.36 ? palette[hit] : palette[3];
+            }
             if (hit === 7) {
               const ripple = Math.sin(fx * 1.8 + fz * 0.8 + phase * 1.3) + Math.sin(fz * 2.7 + phase);
               const sheen = 0.47 * Math.max(0, 1 - Math.abs(dy)) + 0.09 * Math.max(0, ripple - 1);
