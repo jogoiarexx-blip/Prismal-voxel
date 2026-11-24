@@ -1180,6 +1180,7 @@
       '<p class="smallnote">Atalhos: <kbd>H</kbd> abrir navegador · <kbd>N</kbd> alternar Casa/Objetivo. Toque na barra da bússola no celular.</p>'+
       btn('resume','Voltar ao jogo','primary'),true);
   }
+  const version = document.querySelector('.version')?.textContent.match(/\d+\.\d+\.\d+/)?.[0]||'desconhecida';
   function diagnosticText() {
     if (!g) return 'Nenhuma partida aberta';
     const perf = perfFrames.snapshot();
@@ -1189,13 +1190,14 @@
     const chestCount = Object.keys(g.chests || {}).length;
     const qualityNames = ['Baixa','Média','Alta'];
     return [
-      'MUNDO PRISMA · DIAGNÓSTICO LOCAL v0.9.33',
+      'MUNDO PRISMA · DIAGNÓSTICO LOCAL v'+version,
       'Gerado: ' + new Date().toISOString(),
       'Motor: ' + renderer.type + ' · qualidade: ' + (qualityNames[settings.quality] || settings.quality),
       'FPS médio: ' + perf.averageFPS + ' · FPS 1% low: ' + perf.low1FPS,
       'Quadro médio: ' + perf.avgMs + ' ms · p95: ' + perf.p95Ms + ' ms · amostras: ' + perf.samples,
       'Resolução dinâmica: ' + Math.round((renderer.dynamicScale || 1) * 100) + '%',
       'Draw calls: ' + renderer.calls + ' · triângulos: ' + renderer.tris,
+      'Entidades: '+g.mobs.length+' criaturas · '+g.drops.length+' drops · '+(renderer.visibleEntities||0)+' visíveis · '+(g.aiDecisions||0)+' decisões no último tick',
       'Chunks: ' + g.chunks.size + ' · jobs pendentes: ' + g.pending.size + ' · worker ocupado: ' + !!g.busy,
       'Persistência: ' + editedRegions.length + ' regiões alteradas · ' + editedBlocks + ' blocos editados · ' + chestCount + ' baús',
       'XYZ: ' + [g.p.x,g.p.y,g.p.z].map(v=>Math.floor(v)).join(', ') + ' · chunk: ' + g.cx + ',' + g.cz,
@@ -1424,7 +1426,7 @@
         '</ul><p>O primeiro selo libera a pedra rúnica. Com os três, use a bancada para combinar cristal, cobre e vidro em um Farol Prisma. Coloque-o para acender uma aurora sobre sua base.</p></div>';
     } else
       body =
-        '<p>Mundo Prisma é um sandbox voxel de exploração, sobrevivência e construção. Explore os Campos de Âmbar, a Floresta de Névoa e as Dunas de Vidro. Nas dunas, procure os obeliscos com cristais no topo.</p><p class="muted">Versão jogável 0.9.29 · Solo e multiplayer experimental<br>Arte, sprites, tipografia de título e efeitos sonoros criados para Mundo Prisma. Seu progresso é salvo neste navegador.</p>';
+        '<p>Mundo Prisma é um sandbox voxel de exploração, sobrevivência e construção. Explore os Campos de Âmbar, a Floresta de Névoa e as Dunas de Vidro. Nas dunas, procure os obeliscos com cristais no topo.</p><p class="muted">Versão jogável '+version+' · Solo e multiplayer experimental<br>Arte, sprites, tipografia de título e efeitos sonoros criados para Mundo Prisma. Seu progresso é salvo neste navegador.</p>';
     panel(
       'guide',
       'Guia de campo',
@@ -1926,11 +1928,12 @@
       'h' +
       String(minutes % 60).padStart(2, '0');
     const stat = (c, ic, n) => '<span class="stat ' + c + '">' + icon(ic) + Math.ceil(n) + '</span>';
-    $('#vitals').innerHTML = g.creative
+    const vitalsHtml = g.creative
       ? ''
       : stat('health', 'heart', g.p.life) +
         stat('food', 'food', g.p.food) +
         (g.submerged || g.p.air < 95 ? stat('air', 'air', g.p.air) : '');
+    const vitals=$('#vitals');if(vitals._old!==vitalsHtml){vitals.innerHTML=vitalsHtml;vitals._old=vitalsHtml;}
     const jumpButton = $('#touch [data-touch="jump"]');
     $('#touchJumpLabel').textContent = g.swimming ? 'Nadar' : 'Pular';
     const active = g.inv[g.selected];
@@ -2016,15 +2019,17 @@
         Math.floor(g.bag.y) +
         ', ' +
         Math.floor(g.bag.z);
-    $('#quest').innerHTML = '<small>' + (g.creative ? 'CRIATIVO' : 'GUIA DE CAMPO') + '</small>' + task;
+    const quest=$('#quest'),questHtml='<small>'+(g.creative?'CRIATIVO':'GUIA DE CAMPO')+'</small>'+task;
+    if(quest._old!==questHtml){quest.innerHTML=questHtml;quest._old=questHtml;}
     $('#debug').hidden = !debug;
-    if (debug)
+    if (debug){
+      const stats=perfFrames.snapshot();
       $('#debug').textContent =
-        'PRISMA 0.9.33 · ' +
+        'PRISMA '+version+' · ' +
         renderer.type +
         '\n' +
-        perfFrames.snapshot().averageFPS +
-        ' FPS médio · 1% low ' + perfFrames.snapshot().low1FPS + ' · p95 ' + perfFrames.snapshot().p95Ms + ' ms\n' +
+        stats.averageFPS +
+        ' FPS médio · 1% low ' + stats.low1FPS + ' · p95 ' + stats.p95Ms + ' ms\n' +
         renderer.calls +
         ' chamadas · ' +
         renderer.tris +
@@ -2044,6 +2049,7 @@
         g.pending.size +
         '\nSalvamento · ' +
         g.saveState;
+    }
   }
   document.addEventListener('click', (e) => {
     const node = e.target.closest('[data-act],[data-mode]');
