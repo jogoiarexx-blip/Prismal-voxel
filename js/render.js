@@ -219,6 +219,21 @@ const View = (() => {
     if(m==139.){pat=0.;col*=1.4;}
  }
 
+ // Pixel relief for earth, rock and grass, faded at distance to avoid shimmer.
+ if(quality>0. && deep<34. && (m==1.||m==2.||m==3.||m==17.||m==48.)){
+   float nearDetail=1.-smoothstep(18.,34.,deep);
+   vec2 grainUV=uv*16.;
+   vec2 gp=floor(grainUV);
+   float grain=rnd(gp+vec2(13.,29.));
+   float bevel=step(.68,grain)*step(fract(grainUV.y),.22);
+   if(m==3.||m==48.){
+     float split=abs(fract(uv.x*3.+floor(uv.y*4.)*.47)-.5);
+     float crack=1.-smoothstep(.015,.065,split);
+     col*=1.-nearDetail*.14*crack;
+   }
+   if(m==2.||m==1.||m==17.)col=mix(col,col*vec3(1.12,1.04,.85),nearDetail*.28*grain);
+   col+=nearDetail*(.04*(grain-.5)+.035*bevel);
+ }
  col+=pat;
  vec3 normal=f==0.?vec3(1.,0.,0.):f==1.?vec3(-1.,0.,0.):f==2.?vec3(0.,1.,0.):f==3.?vec3(0.,-1.,0.):f==4.?vec3(0.,0.,1.):vec3(0.,0.,-1.);
  float solarAngle=(day-.25)*6.283185;
@@ -227,7 +242,10 @@ const View = (() => {
  float shade=f==2.?1.0:(f==3.?.62:.80);
  // Roof shading is baked into the same AO attribute as terrain shade.
  vec3 lighting=mix(vec3(.23,.29,.46),vec3(.79,.83,.80),light)*shade*amb;
- lighting+=vec3(.34,.26,.16)*direct*amb;
+ // Sun warmth changes over the day; ambient occlusion remains baked.
+ float dusk=1.-smoothstep(.12,.62,max(0.,solarDir.y));
+ lighting+=mix(vec3(.30,.31,.28),vec3(.46,.23,.10),dusk)*direct*amb;
+ if(quality>0.)lighting*=mix(.88,1.,smoothstep(.32,.95,amb));
  float torch=0.;
  for(int i=0;i<8;i++){
    if(float(i)<numLamps){
