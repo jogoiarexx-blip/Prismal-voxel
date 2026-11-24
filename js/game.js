@@ -807,6 +807,7 @@ const Game = (() => {
       const mob = this.aimMob();
       if (mob) {
         this.progress = 0;
+        if(mob.kind==='Aldeão')return;
         if (!this.attackCool) {
           this.attackCool = .45;
           const item = this.inv[this.selected];
@@ -1754,7 +1755,7 @@ const Game = (() => {
               (animal || !nearLight(x, y, z, 8)) &&
               this.get(Math.floor(x), Math.floor(y), Math.floor(z)) === 0 &&
               this.get(Math.floor(x), Math.floor(y) + 1, Math.floor(z)) === 0 &&
-              !living.some(m => Math.hypot(m.x - x, m.z - z) < (animal ? 2.1 : 1.1))) {
+              !this.mobs.some(m => m.hp>0 && !m.dying && Math.hypot(m.x - x, m.z - z) < (animal ? 2.1 : 1.1))) {
             this.mobs.push({
               id:this.nextMobId++, kind, x, y, z,
               hp: Voxel.farmHealth[kind] || (kind === 'Vigia de Cascalho' ? 9 : kind==='Zumbi'?8:4),
