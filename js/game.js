@@ -47,7 +47,7 @@ const Game = (() => {
     return bag.reduce((a, t) => a + (t?.b === b ? t.n : 0), 0);
   }
   function fresh(name, seed, mode, difficulty, generator = 3, keepInventory = false) {
-    generator = [4,5,6].includes(generator) ? generator : 3;
+    generator = [4,5,6,7].includes(generator) ? generator : 3;
     let h = land(0, 3, Voxel.seedHash(seed), generator).h;
     let inv = empty();
     if (mode === 'creative') [8, 49, 53, 57, 55, 16, 83, 85, 87].forEach((v, i) => (inv[i] = slot(v, 64)));
@@ -90,7 +90,7 @@ const Game = (() => {
         difficulty: rec.difficulty,
         keepInventory:rec.keepInventory===true,
       };
-      if (![1, 2, 3, 4, 5, 6].includes(rec.generator) || rec.schema !== 1)
+      if (![1, 2, 3, 4, 5, 6, 7].includes(rec.generator) || rec.schema !== 1)
         throw Error('Versão de mundo incompatível');
       this.generator = rec.generator;
       this.fragments = [];
@@ -729,7 +729,7 @@ const Game = (() => {
     // Host produces the authoritative creature state; guests only interpolate it.
     networkMobState() {
       return this.mobs.slice(0,24).map(m => ({
-        id:m.id, kind:m.kind, ...(m.kind==='Aldeão'?{job:m.job}:{}),
+        id:m.id, kind:m.kind, ...(m.kind==='Aldeão'?{job:m.job,activity:m.activity||'walk'}:{}),
         x:+m.x.toFixed(2), y:+m.y.toFixed(2), z:+m.z.toFixed(2),
         hp:Math.max(0,m.hp), face:+(m.face || 0).toFixed(2),
         motion:+(m.motion || 0).toFixed(2), gait:+(m.gait || 0).toFixed(2),
@@ -765,7 +765,10 @@ const Game = (() => {
           dying:Math.max(0,Math.min(.55,row.dying)),
           wind:Number.isFinite(row.wind)?row.wind:0, juvenile:row.juvenile===true,
           age:Math.max(0,Math.min(180,Number(row.age)||0)),tamed:row.tamed===true,follow:row.follow===true,shorn:row.shorn===true});
-        if(m.kind==='Aldeão')m.job=Number.isInteger(row.job)&&row.job>=0&&row.job<3?row.job:0;
+        if(m.kind==='Aldeão'){
+          m.job=Number.isInteger(row.job)&&row.job>=0&&row.job<3?row.job:0;
+          m.activity=['walk','farm','forge','build','sleep','rest'].includes(row.activity)?row.activity:'walk';
+        }
         out.push(m);
       }
       this.mobs=out;
@@ -1527,6 +1530,7 @@ const Game = (() => {
       // The same right-click/tap works with the existing inventory and touch UI.
       const animal = (!forcePlace || !blocks[t?.b]?.placeable) && this.aimMob();
       if(animal?.kind==='Aldeão'){
+        if(animal.activity==='sleep'){this.notify('O aldeão está dormindo. Volte pela manhã.');return true;}
         const job=villageJobs[animal.job]||villageJobs[0];
         this.notify(job+' · '+(villageTips[animal.job]||villageTips[0]));
         if(this.networkGuest)this.notify('Comércio disponível para o anfitrião nesta versão.');
@@ -1697,9 +1701,9 @@ const Game = (() => {
     // Only the host/solo session creates residents, once per nearby house.
     // Far residents are unloaded and recreated from the same deterministic home.
     villageOffers(id) {
-      if(this.networkGuest || this.creative || this.generator!==6)return null;
+      if(this.networkGuest || this.creative || this.generator<6)return null;
       const m=this.mobs.find(v=>v.id===id&&v.kind==='Aldeão'&&v.hp>0&&!v.dying);
-      if(!m || typeof m.homeKey!=='string' || !/^-?\d+,-?\d+$/.test(m.homeKey) ||
+      if(!m || m.activity==='sleep' || typeof m.homeKey!=='string' || !/^-?\d+,-?\d+$/.test(m.homeKey) ||
           Math.hypot(this.p.x-m.x,this.p.y-m.y,this.p.z-m.z)>4)return null;
       const job=Number.isInteger(m.job)&&m.job>=0&&m.job<3?m.job:0;
       const rows=villageTrades[job].map(([pay,n,out,qty,limit],i)=>{
@@ -1728,7 +1732,7 @@ const Game = (() => {
       return true;
     }
     spawnVillagers() {
-      if(this.generator!==6 || this.networkGuest)return;
+      if(this.generator<6 || this.networkGuest)return;
       const players=[this.p];
       if(this.networkHost&&this.remotePlayer?.active)players.push(this.remotePlayer);
       const occupied=new Set(this.mobs.filter(m=>m.kind==='Aldeão').map(m=>m.homeKey));
@@ -1754,10 +1758,76 @@ const Game = (() => {
              players.some(p=>Math.hypot(p.x-x,p.z-z)<1.5))continue;
           const job=Math.floor(Voxel.hash(h.x,h.z,this.seed^911)*3);
           this.mobs.push({id:this.nextMobId++,kind:'Aldeão',job,x,y,z,hp:12,homeKey:k,
-            homeX:x,homeZ:z,face:0,motion:0,gait:0,roamTimer:0,cool:0});
+            homeX:x,homeZ:z,houseY:h.y,face:0,motion:0,gait:0,roamTimer:0,cool:0});
           count++;occupied.add(k);break;
         }
       }
+    }
+    // Residents only modify the designated generated farm, never arbitrary player plots.
+    villageRoutine(m,dt,night,walk,radius,height,d,dx,dz) {
+      const [hx,hz]=String(m.homeKey||'').split(',').map(Number);
+      if(!Number.isInteger(hx)||!Number.isInteger(hz))return false;
+      const h=Number.isFinite(m.houseY)?m.houseY:land(hx,hz,this.seed,this.generator).h+1;
+      const inside=Math.abs(m.x-hx-.5)<1.45&&Math.abs(m.z-hz-.5)<1.45&&Math.abs(m.y-h-1)<.5;
+      const door=[hx+.5,hz+2.5], entry=[hx+.5,hz+3.5];
+      const go=(x,z,speed=.82)=>{
+        const vx=x-m.x,vz=z-m.z;
+        m.activity='walk';
+        return Math.hypot(vx,vz)>.36&&walk(m,vx,vz,speed,radius,height);
+      };
+      if(night){
+        if(inside){m.activity='sleep';m.motion=0;return false;}
+        if(Math.hypot(m.x-door[0],m.z-door[1])<1.2)return go(hx+.5,hz+.5);
+        if(Math.hypot(m.x-entry[0],m.z-entry[1])<.65)return go(...door);
+        return go(...entry);
+      }
+      if(d<2.1){m.activity='rest';m.face=Math.atan2(dx,-dz);return false;}
+      const job=Number.isInteger(m.job)?m.job:0;
+      if(job===0&&this.generator>=7){
+        // Recompute the same garden plan after loading an old resident.
+        if(m.garden===undefined){
+          const houses=Voxel.villageHouses(Math.floor(hx/64),Math.floor(hz/64),this.seed,this.sites);
+          const home=houses.find(v=>v.x===hx&&v.z===hz);
+          m.garden=home?Voxel.villageGarden(home,this.seed,houses):null;
+        }
+        const farm=m.garden;
+        if(farm){
+          if(inside)return go(...door);
+          const x=farm.x-.5,z=farm.z+.5;
+          if(Math.hypot(m.x-x,m.z-z)>.8)return go(x,z);
+          m.activity='farm';m.face=Math.atan2(farm.x+.5-m.x,-(farm.z+.5-m.z));
+          m.workTimer=(m.workTimer||0)+dt;
+          if(m.workTimer>=8){
+            m.workTimer=0;
+            const b=this.get(farm.x,farm.y+1,farm.z,true);
+            if(this.get(farm.x+1,farm.y,farm.z,true)===7&&this.get(farm.x,farm.y,farm.z,true)===38){
+              if(b===40){this.set(farm.x,farm.y+1,farm.z,39);this.plots[[farm.x,farm.y+1,farm.z].join(',')]=0;this.changed();}
+              else if(b===0){this.set(farm.x,farm.y+1,farm.z,39);this.plots[[farm.x,farm.y+1,farm.z].join(',')]=0;this.changed();}
+            }
+          }
+          return false;
+        }
+      }
+      if(job===1||job===2){
+        if(!inside){
+          if(Math.hypot(m.x-door[0],m.z-door[1])<1.2)return go(hx+.5,hz+.5);
+          if(Math.hypot(m.x-entry[0],m.z-entry[1])<.65)return go(...door);
+          return go(...entry);
+        }
+        const stationX=hx+(job===1?1:-1),stationZ=hz-1;
+        if(this.get(stationX,h+1,stationZ,true)===(job===1?14:12)){
+          m.activity=job===1?'forge':'build';
+          m.face=Math.atan2(stationX+.5-m.x,-(stationZ+.5-m.z));return false;
+        }
+        m.activity='rest';return false;
+      }
+      if(inside)return go(...door);
+      m.roamTimer=(m.roamTimer||0)-dt;
+      if(m.roamTimer<=0){
+        const time=Math.floor(this.elapsed/4),a=Voxel.hash(m.id,time,this.seed^73)*Math.PI*2;
+        m.roamTimer=5;m.roamX=m.homeX+Math.cos(a)*3;m.roamZ=m.homeZ+Math.sin(a)*3;
+      }
+      return go(m.roamX,m.roamZ,.63);
     }
     ai(dt) {
       const peaceful = this.creative || this.meta.difficulty === 'peaceful';
@@ -1875,18 +1945,7 @@ const Game = (() => {
           const safe = nearLight(m.x, m.y, m.z, 4.4);
           const passive = ['Saltim', 'Musgato', 'Luzerrante'].includes(kind);
           if(kind==='Aldeão'){
-            m.roamTimer=(m.roamTimer||0)-dt;
-            if(m.roamTimer<=0){
-              const time=Math.floor(this.elapsed/4);
-              m.roamTimer=2+Voxel.hash(m.id,time,this.seed^31)*4;
-              const angle=Voxel.hash(m.id,time,this.seed^73)*Math.PI*2;
-              const distance=night?0:2+Voxel.hash(m.id,time,this.seed^82)*5;
-              m.roamX=m.homeX+Math.cos(angle)*distance;
-              m.roamZ=m.homeZ+Math.sin(angle)*distance;
-            }
-            const vx=(night?m.homeX:m.roamX)-m.x,vz=(night?m.homeZ:m.roamZ)-m.z;
-            if(d<2.1)m.face=Math.atan2(dx,-dz);
-            else if(Math.hypot(vx,vz)>.65)moved=walk(m,vx,vz,night?.85:.63,radius,height);
+            moved=this.villageRoutine(m,dt,night,walk,radius,height,d,dx,dz);
           } else if (isFarm(kind)) {
             m.roamTimer = (m.roamTimer || 0) - dt;
             if (m.roamTimer <= 0) {
