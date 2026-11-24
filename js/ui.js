@@ -1439,6 +1439,7 @@
         return cfgBack === 'pause' ? pauseMenu() : homeMenu();
       case 'guide':
         return origin === 'pause' ? pauseMenu() : origin === 'play' ? resume() : homeMenu();
+      case 'trade':
       case 'bag':
       case 'build':
       case 'chest':
@@ -1498,7 +1499,7 @@
   ];
   function recipeCategory(id) {
     if ([22, 42, 43, 44, 45, 47, 89, 90, 146].includes(id)) return 'tools';
-    if ([12, 13, 14, 15, 24, 25, 30, 31, 67, 144,171,172,173].includes(id)) return 'utility';
+    if ([12, 13, 14, 15, 24, 25, 30, 31, 67, 144,171,172,173,178].includes(id)) return 'utility';
     if (Voxel.farmNutrition[id] || [38,41,46,123,142,143,176,177].includes(id)) return 'survival';
     if ([77, 78, 79, 83, 84, 85, 87, 88].includes(id)) return 'decor';
     return 'build';
@@ -1846,6 +1847,22 @@
       };
     });
   }
+  let marketResident=null;
+  function villageMarket(id) {
+    const market=g?.villageOffers(id);
+    if(!market){toast('Aldeão indisponível. Aproxime-se novamente.');if(screen==='trade')resume();return;}
+    marketResident=id;
+    const rows=market.rows.map((o,i)=>{
+      const available=o.left>0&&Game.count(g.inv,o.pay)>=o.n;
+      return '<button class="recipe" data-act="vtrade:'+i+'" '+(available?'':'disabled')+'>'+
+        '<span class="recipe-icon">'+img(o.pay)+'</span><span><b>'+esc(name(o.pay))+' ×'+o.n+
+        ' → '+esc(name(o.out))+' ×'+o.qty+'</b><small>'+o.left+' trocas restantes hoje</small></span>'+
+        '<span class="recipe-icon">'+img(o.out)+'</span></button>';
+    }).join('');
+    panel('trade','Mercado · '+esc(market.job),
+      '<p>'+esc(market.tip)+'</p><p><b>Moedas prisma: '+Game.count(g.inv,178)+'</b> · Estoque renovado a cada dia.</p>'+
+      '<div class="recipes">'+rows+'</div>'+btn('resume','Voltar ao mundo','secondary fullwidth'),true);
+  }
   function signal(s, v) {
     if (s === 'ready') {
       if (screen === 'load' && g) resume(false);
@@ -1868,6 +1885,8 @@
       mp.send({t:'pickup',id:v.id,cap:v.cap}).catch(()=>{});
     } else if (s === 'hud') {
       if (screen === 'play') hud();
+    } else if (s === 'villageTrade') {
+      villageMarket(v);
     } else if (s === 'station') {
       if([14,136].includes(v.b))g.furnaceTarget=v.p.slice();
       [15, 83, 84].includes(v.b) ? chest(v) : inventory(true, v.b===136?14:v.b);
@@ -1933,7 +1952,7 @@
       ? Voxel.farmAnimals.includes(aimedCreature.kind)
         ? (aimedCreature.juvenile?'Filhote de ':'')+aimedCreature.kind+(aimedCreature.tamed?(aimedCreature.follow?' · seguindo':' · domesticado'):'') + (g.inv[g.selected]?.b === Voxel.farmFood[aimedCreature.kind]
           ? ' · Usar para alimentar' : aimedCreature.tamed&&!g.inv[g.selected]?' · Usar: seguir/parar':aimedCreature.kind==='Vaca'?' · Balde para ordenhar':aimedCreature.kind==='Ovelha'?' · Tesoura para tosquiar':' · Animal pacífico')
-        : aimedCreature.kind==='Aldeão' ? 'Aldeão · '+(['Fazendeiro','Ferreiro','Construtor'][aimedCreature.job]||'Fazendeiro')+' · Usar para conversar' : aimedCreature.kind || 'Raspejante'
+        : aimedCreature.kind==='Aldeão' ? 'Aldeão · '+(['Fazendeiro','Ferreiro','Construtor'][aimedCreature.job]||'Fazendeiro')+' · Usar para negociar' : aimedCreature.kind || 'Raspejante'
       : g.hit?.b === 28
         ? 'R · Despertar núcleo'
         : g.hit
@@ -2169,6 +2188,9 @@
       case 'inv':
       case 'chest':
         transfer(a, +i, e.shiftKey);
+        break;
+      case 'vtrade':
+        if(screen==='trade'&&g){if(!g.tradeVillage(marketResident,Number(i)))toast('Troca indisponível ou mochila cheia.');villageMarket(marketResident);}
         break;
       case 'craft':
         if (g.craft(+i, bagStation)) inventory(true, bagStation);
