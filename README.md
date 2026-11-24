@@ -1,3 +1,13 @@
+# Mundo Prisma v0.9.47 — Equipamentos avançados (prévia)
+
+- 17 novos IDs (179–195), 17 receitas de bancada, 87 receitas no total. Espadas de madeira/pedra/cobre/prisma, machados de madeira/pedra/cobre/prisma, pás de madeira/cobre/ferro/prisma, arco, flecha, escudos de madeira/ferro e armadura prisma. IDs anteriores preservados.
+- Arco com alcance de 18 blocos, dano 4, intervalo de 0,85 s; consome flecha e durabilidade, inclusive se errar. Disparo por raycast, sem projétil físico; bloqueado por paredes e chunks não carregados. Solo/anfitrião nesta versão.
+- Escudos: use com item selecionado para proteção temporária de 1,6 s, recarga 3 s; redução nominal de 50% (madeira) ou 65% (ferro), excluindo fome, queda e afogamento. Não exige direção frontal nesta versão.
+- Armadura Prisma reduz nominalmente 50% de dano de combate. Espaço exclusivo para uma armadura completa no inventário solo/anfitrião; compatibilidade com armaduras antigas na hotbar (somente a mais forte protege). Equipar, retirar, desgaste e perda/recuperação na morte. Não há peças individuais nem equipamento dedicado para visitantes ainda.
+- Ícones SVG e modelos na mão procedurais, sem downloads externos. Teste `node tests/equipment-0947.test.js`; verificação isolada de munição, alcance/obstáculos, escudo, inventário e receitas. Validação visual, FPS e P2P real pendentes. Geradores e schema mantidos. Próxima etapa: cavernas, minérios e água.
+
+---
+
 # Mundo Prisma v0.9.46 — Defesa dos vilarejos (prévia)
 
 - Guardas voxel com capacete, espada e escudo, patrulha local, combate contra monstros com alcance e linha de visão. Até dois guardas e três invasores simultâneos dentro do limite total existente de 24 atores. Guardas derrotados têm intervalo de 90 segundos antes de reaparecer.
