@@ -5,6 +5,13 @@ const Game = (() => {
     farmAnimals = Voxel.farmAnimals;
   const isFarm = (kind) => farmAnimals.includes(kind);
   const villageJobs=['Fazendeiro','Ferreiro','Construtor'];
+  // Each offer is [payment item, quantity, received item, quantity, daily stock].
+  // Selling and buying different quantities avoids a circular profit exploit.
+  const villageTrades=[
+    [[40,8,178,3,5],[23,6,178,2,5],[178,2,41,2,5],[178,1,37,3,4]],
+    [[9,8,178,3,5],[34,4,178,4,4],[178,5,35,2,4],[178,9,44,1,2]],
+    [[5,8,178,3,5],[3,16,178,3,5],[178,2,8,8,6],[178,4,65,6,4]]
+  ];
   const villageTips=['Plante sementes em um canteiro perto da água.','Use o forno para transformar minério em barras.','A bancada permite fabricar telhas, portas e ferramentas.'];
   const slot = (b, n = 1) => ({ b, n, ...(Voxel.durability[b] ? { dur: Voxel.durability[b] } : {}) }),
     empty = () => Array(BAG).fill(null);
@@ -124,6 +131,8 @@ const Game = (() => {
       this.guestPickupPending = new Map();
       this.bag = rec.bag;
       this.goals = rec.goals || {};
+      this.marketDay = Number.isSafeInteger(rec.marketDay)?rec.marketDay:0;
+      this.marketStock = rec.marketStock && typeof rec.marketStock==='object' && !Array.isArray(rec.marketStock)?rec.marketStock:{};
       this.renderer = renderer;
       this.settings = settings;
       this.notify = notify;
@@ -1517,6 +1526,9 @@ const Game = (() => {
       if(animal?.kind==='Aldeão'){
         const job=villageJobs[animal.job]||villageJobs[0];
         this.notify(job+' · '+(villageTips[animal.job]||villageTips[0]));
+        if(this.networkGuest)this.notify('Comércio disponível para o anfitrião nesta versão.');
+        else if(!this.creative)this.signal?.('villageTrade',animal.id);
+        else this.notify('Comércio disponível no modo Sobrevivência.');
         return true;
       }
       if(animal && this.farmProduct(animal,t))return true;
@@ -1681,6 +1693,37 @@ const Game = (() => {
     }
     // Only the host/solo session creates residents, once per nearby house.
     // Far residents are unloaded and recreated from the same deterministic home.
+    villageOffers(id) {
+      if(this.networkGuest || this.creative || this.generator!==6)return null;
+      const m=this.mobs.find(v=>v.id===id&&v.kind==='Aldeão'&&v.hp>0&&!v.dying);
+      if(!m || typeof m.homeKey!=='string' || !/^-?\d+,-?\d+$/.test(m.homeKey) ||
+          Math.hypot(this.p.x-m.x,this.p.y-m.y,this.p.z-m.z)>4)return null;
+      const job=Number.isInteger(m.job)&&m.job>=0&&m.job<3?m.job:0;
+      const rows=villageTrades[job].map(([pay,n,out,qty,limit],i)=>{
+        const key=m.homeKey+':'+i;
+        const raw=this.marketDay===this.day?this.marketStock?.[key]:0;
+        const used=Number.isInteger(raw)?Math.max(0,Math.min(limit,raw)):0;
+        return {pay,n,out,qty,left:limit-used,key};
+      });
+      return {job:villageJobs[job],tip:villageTips[job],rows};
+    }
+    tradeVillage(id,index) {
+      if(!Number.isInteger(index))return false;
+      const offer=this.villageOffers(id)?.rows[index];
+      if(!offer||offer.left<=0||count(this.inv,offer.pay)<offer.n)return false;
+      // Stage the entire transaction on a copy; no payment is lost on full bags.
+      const bag=this.inv.map(t=>t&&{...t});
+      cost(bag,offer.pay,offer.n);
+      if(fill(bag,offer.out,offer.qty))return false;
+      if(this.marketDay!==this.day){this.marketDay=this.day;this.marketStock={};}
+      if(!Object.hasOwn(this.marketStock,offer.key)&&Object.keys(this.marketStock).length>=4096)return false;
+      const prev=this.marketStock[offer.key];
+      this.marketStock[offer.key]=(Number.isInteger(prev)?Math.max(0,prev):0)+1;
+      this.inv=bag;
+      this.changed();
+      this.notify('Troca concluída · '+blocks[offer.out].name+' ×'+offer.qty);
+      return true;
+    }
     spawnVillagers() {
       if(this.generator!==6 || this.networkGuest)return;
       const players=[this.p];
@@ -2037,6 +2080,8 @@ const Game = (() => {
         mobs: this.mobs,
         bag: this.bag,
         goals: this.goals,
+        marketDay:this.marketDay,
+        marketStock:this.marketStock,
         sites: this.sites,
         plots: this.plots,
         bed: this.bed,
