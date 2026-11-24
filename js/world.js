@@ -149,6 +149,18 @@ const Voxel = (() => {
     ['Pele de zumbi', '83a783', 0], // 137: creature-only material
     ['Roupa gasta', '536c66', 0], // 138
     ['Olhos de zumbi', 'f3bb69', 0], // 139
+    ['Carne ovina crua', 'c98783', 0], // 140
+    ['Carne de frango crua', 'e7b496', 0], // 141
+    ['Ovo', 'f1e1bf', 0], // 142
+    ['Pena', 'e6e5d6', 0], // 143
+    ['Balde vazio', '9faead', 0], // 144
+    ['Balde de leite', 'f5edda', 0], // 145
+    ['Tesoura de tosquia', 'aebdc2', 0], // 146
+    ['Carne ovina assada', 'a66b43', 0], // 147
+    ['Frango assado', 'c88b4d', 0], // 148
+    ['Carne suína assada', 'b97d51', 0], // 149
+    ['Carne bovina assada', '925d37', 0], // 150
+    ['Ovo cozido', 'e9d5a0', 0], // 151
   ];
   const blocks = data.map(([name, hex, hard], id) => ({
     id,
@@ -606,7 +618,7 @@ const Voxel = (() => {
       3,
     ],
   );
-  const durability = { 22: 48, 42: 80, 43: 120, 44: 180, 45: 260, 47: 100, 89: 160, 90: 80 };
+  const durability = { 22: 48, 42: 80, 43: 120, 44: 180, 45: 260, 47: 100, 89: 160, 90: 80, 146: 80 };
   recipes.push(
     [
       38,
@@ -724,15 +736,21 @@ const Voxel = (() => {
   );
   // The original bed recipe remains compatible with older worlds.
   recipes.push([46, 1, [[123, 3], [8, 3]], 12]);
+  recipes.push([144,1,[[35,3]],12],[146,1,[[35,2]],12]);
+  for(const [raw,cooked] of [[140,147],[141,148],[124,149],[125,150],[142,151]])
+    recipes.push([cooked,1,[[raw,1],[9,1]],14]);
   // A recipe belongs to exactly one station: 0 (backpack), 12 (workbench),
   // or 14 (furnace). Keep recipe indexes stable for saves and UI events.
   const recipeStation = (recipe) => recipe?.[3] || 0;
   const recipesAtStation = (station = 0) => recipes
     .map((recipe, index) => ({ recipe, index }))
     .filter(({ recipe }) => recipeStation(recipe) === station);
-  const farmAnimals = Object.freeze(['Ovelha', 'Porco', 'Vaca']);
-  const farmFood = Object.freeze({ Ovelha: 40, Porco: 23, Vaca: 40 });
-  const farmHealth = Object.freeze({ Ovelha: 5, Porco: 6, Vaca: 9 });
+  const farmAnimals = Object.freeze(['Ovelha', 'Porco', 'Vaca', 'Galinha']);
+  const farmFood = Object.freeze({ Ovelha: 40, Porco: 23, Vaca: 40, Galinha: 37 });
+  const farmHealth = Object.freeze({ Ovelha: 5, Porco: 6, Vaca: 9, Galinha: 3 });
+  const farmDrops = Object.freeze({ Ovelha: [[140,1],[123,1]], Porco: [[124,2]], Vaca: [[125,2]], Galinha: [[141,1],[143,1]] });
+  const farmNutrition = Object.freeze({23:18,36:10,41:36,124:13,125:16,140:14,141:12,145:22,147:32,148:30,149:34,150:38,151:20});
+  const farmScale = m => m?.juvenile ? .55+.45*clip((Number(m.age)||0)/180,0,1) : 1;
   const ruins = [
     { name: 'Pórtico da Alvorada', seal: 'Aurora' },
     { name: 'Jardim das Brumas', seal: 'Bruma' },
@@ -821,13 +839,20 @@ const Voxel = (() => {
     const [dx,dy,dz] = offsets[site.id];
     return {x:site.x+dx,y:site.y+dy,z:site.z+dz,label:['Baú da Alvorada','Cabana das Brumas','Cripta do Zênite'][site.id]};
   }
-  function expeditionChests(sites) {
+  function expeditionChests(sites, seed = null) {
     const result = {};
     const tables = [[[25,8],[23,4],[24,3]],[[41,4],[9,6],[35,2],[42,1]],[[11,4],[35,5],[47,1],[13,2]]];
     for (const site of sites) {
       const p=treasurePoint(site);if(!p)continue;
       const items=Array(18).fill(null);
       tables[site.id].forEach(([b,n],i)=>{items[i]={b,n:durability[b]?1:n,...(durability[b]?{dur:durability[b]}:{})};});
+      if(Number.isFinite(seed)) {
+        const terrain=land(site.x,site.z,seed,5);
+        // A new world's reward is fixed on creation; never replenish existing chests.
+        const bonus=terrain.region==='Montanhas Azuis'||terrain.region==='Planícies de Cinza' ? [35,3] :
+          terrain.region==='Pântano Luminescente' ? [36,4] : terrain.dunes ? [11,2] : [23,3];
+        items[5]={b:bonus[0],n:bonus[1]};
+      }
       result[[p.x,p.y,p.z].join(',')]=items;
     }
     return result;
@@ -1347,6 +1372,9 @@ const Voxel = (() => {
     farmAnimals,
     farmFood,
     farmHealth,
+    farmDrops,
+    farmNutrition,
+    farmScale,
     shapeParts,
     specialShape,
     itemId,

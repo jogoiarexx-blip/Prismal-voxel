@@ -63,7 +63,7 @@ const Game = (() => {
       day: 1,
       elapsed: 0,
       edits: {},
-      chests: sites ? Voxel.expeditionChests(sites) : {},
+      chests: sites ? Voxel.expeditionChests(sites,Voxel.seedHash(seed)) : {},
       drops: [],
       mobs: [],
       bag: null,
@@ -660,7 +660,7 @@ const Game = (() => {
               break;
             }
           }
-        for (const k of Object.keys(this.plots)) {
+        if(!this.networkGuest) for (const k of Object.keys(this.plots)) {
           const [x, y, z] = k.split(',').map(Number);
           if (!this.chunks.has(key(x >> 4, z >> 4))) continue;
           if (this.get(x, y, z) !== 39) {
@@ -671,6 +671,10 @@ const Game = (() => {
           for (let dx = -2; dx <= 2 && !wet; dx++)
             for (let dz = -2; dz <= 2 && !wet; dz++)
               wet = this.get(x + dx, y, z + dz) === 7 || this.get(x + dx, y - 1, z + dz) === 7;
+          if(!wet && this.raining){
+            wet=true;
+            for(let yy=y+1;yy<Voxel.H;yy++)if(solid(this.get(x,yy,z))){wet=false;break;}
+          }
           if (wet && ++this.plots[k] >= 45) {
             this.set(x, y, z, 40);
             delete this.plots[k];
@@ -680,6 +684,7 @@ const Game = (() => {
       if (!this.networkGuest) {
         this.growSaplings(dt);
         this.ai(dt);
+        this.farmTick(dt);
         this.loot(dt);
       } else {
         this.interpolateNetworkMobs(dt);
@@ -710,10 +715,13 @@ const Game = (() => {
       if (mob.hp <= 0 && !mob.dying) {
         mob.dying = .55; mob.wind = 0;
         if (mob.kind === 'Guardião Prisma') this.goals.guardian = true;
-        const farmDrop = { Ovelha: 123, Porco: 124, Vaca: 125 }[mob.kind];
-        this.addDrop(mob.x, mob.y + .15, mob.z,
-          farmDrop || (mob.kind === 'Saltim' ? 23 : mob.kind === 'Musgato' ? 36 : 11),
-          farmDrop ? (mob.kind === 'Vaca' ? 2 : 1) : 1);
+        const products=Voxel.farmDrops[mob.kind];
+        if(products) {
+          if(!mob.juvenile) for(const [b,n] of products) {
+            if(b===123 && (mob.woolReady||0)>this.elapsed)continue;
+            this.addDrop(mob.x,mob.y+.15,mob.z,b,n);
+          }
+        } else this.addDrop(mob.x,mob.y+.15,mob.z,mob.kind==='Saltim'?23:mob.kind==='Musgato'?36:11,1);
         this.changed();
       }
       return true;
@@ -727,6 +735,8 @@ const Game = (() => {
         motion:+(m.motion || 0).toFixed(2), gait:+(m.gait || 0).toFixed(2),
         hurt:+(m.hurt || 0).toFixed(2), attack:+(m.attack || 0).toFixed(2),
         dying:+(m.dying || 0).toFixed(2), wind:+(m.wind || 0).toFixed(2),
+        juvenile:!!m.juvenile, age:Math.max(0,Math.min(180,Number(m.age)||0)), tamed:!!m.tamed,
+        shorn:m.kind==='Ovelha' && (m.woolReady||0)>this.elapsed,
       }));
     }
     networkDropState() {
@@ -737,7 +747,7 @@ const Game = (() => {
       if (!this.networkGuest || !Array.isArray(msg?.mobs) || msg.mobs.length > 24 ||
           !Number.isSafeInteger(msg.seq) || msg.seq <= this.lastNetworkMobSeq) return false;
       const allowed = new Set(['Saltim','Musgato','Luzerrante','Raspejante','Zumbi','Vigia de Cascalho',
-        'Guardião Prisma','Ovelha','Porco','Vaca']);
+        'Guardião Prisma','Ovelha','Porco','Vaca','Galinha']);
       const old = new Map(this.mobs.map(m => [m.id,m]));
       const out=[];
       for (const row of msg.mobs) {
@@ -753,7 +763,8 @@ const Game = (() => {
           motion:Math.max(0,Math.min(1,row.motion)),gait:row.gait%628.318,
           hurt:Math.max(0,Math.min(.36,row.hurt)),attack:Math.max(0,Math.min(.36,row.attack)),
           dying:Math.max(0,Math.min(.55,row.dying)),
-          wind:Number.isFinite(row.wind)?row.wind:0});
+          wind:Number.isFinite(row.wind)?row.wind:0, juvenile:row.juvenile===true,
+          age:Math.max(0,Math.min(180,Number(row.age)||0)),tamed:row.tamed===true,shorn:row.shorn===true});
         out.push(m);
       }
       this.mobs=out;
@@ -1249,12 +1260,62 @@ const Game = (() => {
         (isBed && occupiedAt(partnerB,...partnerPos));
       return { pos, b, partnerPos, partnerB, valid: headFree && otherFree && seedlingOk && !occupied };
     }
+    feedFarm(m) {
+      if(!m || !isFarm(m.kind) || m.hp<=0 || m.dying || (m.fed||0)>0)return false;
+      m.hp=Math.min(Voxel.farmHealth[m.kind],m.hp+2);m.fed=5;m.flee=0;m.graze=0;
+      m.feeds=Math.min(2,(m.feeds||0)+1);if(m.feeds>=2)m.tamed=true;
+      if(!m.juvenile && (m.breedReady||0)<=this.elapsed)m.loveUntil=this.elapsed+30;
+      this.changed();return true;
+    }
+    farmProduct(m,t) {
+      if(!m || !t || m.juvenile || m.hp<=0 || m.dying)return false;
+      const shear=m.kind==='Ovelha'&&t.b===146, milk=m.kind==='Vaca'&&t.b===144;
+      if(!shear&&!milk)return false;
+      // New production operations are host-only until guest inventory commits are transactional.
+      if(this.networkGuest){this.notify('Peça ao anfitrião para recolher este produto.');return true;}
+      const k=shear?'woolReady':'milkReady';
+      if((m[k]||0)>this.elapsed){this.notify('Produto ainda não renovado');return true;}
+      const copy=this.inv.map(v=>v&&{...v});const item=copy[this.selected];
+      if(!this.creative){if(shear){if(--item.dur<=0)copy[this.selected]=null;}else if(!--item.n)copy[this.selected]=null;}
+      if(fill(copy,shear?123:145,shear?2:1)){this.notify('Mochila cheia');return true;}
+      this.inv=copy;m[k]=this.elapsed+(shear?100:90);m.tamed=true;this.changed();
+      this.notify(shear?'Lã recolhida · cresce novamente':'Leite recolhido');return true;
+    }
+    farmTick(dt) {
+      if(this.networkGuest)return;
+      this.farmTimer=(this.farmTimer||0)+dt;if(this.farmTimer<1)return;
+      const step=this.farmTimer;this.farmTimer=0;
+      const farms=this.mobs.filter(m=>isFarm(m.kind)&&m.hp>0&&!m.dying);
+      for(const m of farms){
+        if(m.juvenile){m.age=Math.min(180,(m.age||0)+step);if(m.age>=180){m.juvenile=false;this.changed();}}
+        if(Math.hypot(m.x-this.p.x,m.z-this.p.z)>36)continue;
+        if(m.kind==='Galinha'&&!m.juvenile){
+          if(!Number.isFinite(m.eggReady))m.eggReady=this.elapsed+80;
+          if(this.elapsed>=m.eggReady && this.drops.length<32){this.addDrop(m.x,m.y+.2,m.z,142,1);m.eggReady=this.elapsed+80;this.changed();}
+        }
+      }
+      if(farms.length>=12||this.mobs.length>=22)return;
+      const ready=m=>!m.juvenile&&(m.loveUntil||0)>this.elapsed&&(m.breedReady||0)<=this.elapsed&&Math.hypot(m.x-this.p.x,m.z-this.p.z)<30;
+      for(const a of farms.filter(ready)){
+        const b=farms.find(m=>m!==a&&m.kind===a.kind&&ready(m)&&Math.abs(m.y-a.y)<1.5&&Math.hypot(m.x-a.x,m.z-a.z)<5);
+        if(!b)continue;
+        const baby={id:this.nextMobId,kind:a.kind,x:a.x,y:a.y,z:a.z,hp:Voxel.farmHealth[a.kind],juvenile:true,age:0,tamed:true,face:a.face||0};
+        let placed=false;
+        for(const [dx,dz] of [[1.2,0],[-1.2,0],[0,1.2],[0,-1.2],[1,1],[-1,-1]]){
+          if(this.mobMove(baby,a.x+dx,a.z+dz,.25,.75)){placed=true;break;}
+        }
+        if(!placed)continue;
+        this.nextMobId++;this.mobs.push(baby);a.loveUntil=b.loveUntil=0;a.breedReady=b.breedReady=this.elapsed+120;a.tamed=b.tamed=true;
+        this.notify('Nasceu um filhote de '+a.kind.toLowerCase()+'!');this.changed();break;
+      }
+    }
     use(forcePlace = false) {
       const t = this.inv[this.selected],
         h = this.hit;
       // Feed farm animals with their preferred food, including in peaceful mode.
       // The same right-click/tap works with the existing inventory and touch UI.
       const animal = !forcePlace && this.aimMob();
+      if(animal && this.farmProduct(animal,t))return true;
       if (animal && isFarm(animal.kind) && t?.b === Voxel.farmFood[animal.kind]) {
         if (this.networkGuest) {
           this.signal('p2pFeedMob',{id:animal.id,food:t.b});
@@ -1264,10 +1325,7 @@ const Game = (() => {
           this.notify(animal.kind + ' já está alimentado(a)');
           return true;
         }
-        animal.hp = Math.min(Voxel.farmHealth[animal.kind], animal.hp + 2);
-        animal.fed = 5;
-        animal.flee = 0;
-        animal.graze = 0;
+        if(!this.feedFarm(animal))return true;
         if (!this.creative && !--t.n) this.inv[this.selected] = null;
         Sound.play('eat', this.settings);
         this.notify(animal.kind + ' alimentado(a)');
@@ -1343,14 +1401,18 @@ const Game = (() => {
         this.notify('Plantado · irrigue com água a até dois blocos');
         return;
       }
-      if ([23, 36, 41, 124, 125].includes(t?.b) && !this.creative) {
+      if (Voxel.farmNutrition[t?.b] && !this.creative) {
         if (this.p.food >= 99.9 && this.p.life >= 99.9) {
           this.notify('Você já está alimentado');
           return;
         }
-        this.p.food = Math.min(100, this.p.food + (t.b === 41 ? 36 : t.b === 36 ? 10 : t.b === 124 ? 13 : t.b === 125 ? 16 : 18));
-        this.p.life = Math.min(100, this.p.life + 3);
-        if (!--t.n) this.inv[this.selected] = null;
+        if(t.b===145){
+          const copy=this.inv.map(v=>v&&{...v});if(!--copy[this.selected].n)copy[this.selected]=null;
+          if(fill(copy,144,1)){this.notify('Sem espaço para o balde vazio');return;}
+          this.inv=copy;
+        }else if(!--t.n)this.inv[this.selected]=null;
+        this.p.food=Math.min(100,this.p.food+Voxel.farmNutrition[t.b]);
+        this.p.life=Math.min(100,this.p.life+3);
         Sound.play('eat', this.settings);
         this.changed();
         this.signal('hud');
@@ -1390,7 +1452,7 @@ const Game = (() => {
         d = View.basis(this.p).f;
       return this.mobs.find((m) => {
         if (m.dying || m.hp <= 0) return false;
-        let a = [m.x - eye[0], m.y + 0.6 - eye[1], m.z - eye[2]],
+        let a = [m.x - eye[0], m.y + (m.kind==='Galinha'?.35:.6)*Voxel.farmScale(m) - eye[1], m.z - eye[2]],
           dist = a.reduce((s, v, i) => s + v * d[i], 0);
         return (
           dist > 0 &&
@@ -1443,7 +1505,7 @@ const Game = (() => {
         const living = this.mobs.filter(m => m.hp > 0 && !m.dying);
         const animals = living.filter(m => isFarm(m.kind)).length;
         const otherMobs = living.length - animals;
-        if (living.length < 8 && (animals < 4 || otherMobs < 4)) {
+        if (living.length < 16 && (animals < 8 || otherMobs < 4)) {
           // Short, deterministic local sampling. Grassy areas spawn livestock,
           // even when the difficulty is Pacífico. No new meshes or assets loaded.
           const tick = ++this.animalSeed;
@@ -1454,7 +1516,7 @@ const Game = (() => {
           const spawnAround = remote && (tick % 2 === 0) ? remote : p;
           const x = spawnAround.x + Math.cos(a) * rad, z = spawnAround.z + Math.sin(a) * rad;
           const cave = p.y < land(p.x, p.z, this.seed, this.generator).h - 5;
-          const wantsAnimal = !night && !cave && animals < 4 &&
+          const wantsAnimal = !night && !cave && animals < 8 &&
             (otherMobs >= 3 || Voxel.hash(tick, this.day, this.seed ^ 529) < .78);
           const farm = farmAnimals[Math.floor(Voxel.hash(tick, this.day, this.seed ^ 83) * farmAnimals.length)];
           const kind = wantsAnimal ? farm : cave ? 'Vigia de Cascalho'
@@ -1465,7 +1527,7 @@ const Game = (() => {
           const hostile = kind === 'Raspejante' || kind === 'Vigia de Cascalho' || kind === 'Zumbi';
           const y = this.floorAt(x, z, cave ? p.y + 2 : 145);
           const ground = y == null ? 0 : this.get(Math.floor(x), Math.floor(y) - 1, Math.floor(z));
-          if ((animal ? animals < 4 && (ground === 1 || ground === 17) : otherMobs < 4) &&
+          if ((animal ? animals < 8 && (ground === 1 || ground === 17) : otherMobs < 4) &&
               (!hostile || !peaceful) && y !== null &&
               (animal || !nearLight(x, y, z, 8)) &&
               this.get(Math.floor(x), Math.floor(y), Math.floor(z)) === 0 &&
@@ -1507,10 +1569,11 @@ const Game = (() => {
       for (const m of this.mobs) {
         const kind = m.kind || 'Raspejante';
         const boss = kind === 'Guardião Prisma';
-        const radius = boss ? .38 : kind === 'Vaca' ? .42 : kind === 'Ovelha' ? .32 :
-          kind === 'Porco' ? .31 : kind === 'Vigia de Cascalho' ? .33 : kind === 'Zumbi' ? .29 : .24;
-        const height = boss ? 1.95 : kind === 'Vaca' ? 1.55 : kind === 'Ovelha' ? 1.27 :
-          kind === 'Porco' ? .93 : kind === 'Vigia de Cascalho' ? 1.8 : kind==='Zumbi'?1.7:1.12;
+        const scale=Voxel.farmScale(m);
+        const radius = (boss ? .38 : kind === 'Vaca' ? .42 : kind === 'Ovelha' ? .32 :
+          kind === 'Porco' ? .31 : kind === 'Vigia de Cascalho' ? .33 : kind === 'Zumbi' ? .29 : .24)*scale;
+        const height = (boss ? 1.95 : kind === 'Vaca' ? 1.55 : kind === 'Ovelha' ? 1.27 :
+          kind === 'Porco' ? .93 : kind==='Galinha'?.72:kind === 'Vigia de Cascalho' ? 1.8 : kind==='Zumbi'?1.7:1.12)*scale;
         m.hurt = Math.max(0, (m.hurt || 0) - dt);
         m.attack = Math.max(0, (m.attack || 0) - dt);
         m.stun = Math.max(0, (m.stun || 0) - dt);
@@ -1617,7 +1680,7 @@ const Game = (() => {
       }
       this.mobs = this.mobs.filter(m =>
         !((m.hp <= 0) && m.dying === 0) &&
-        (m.kind === 'Guardião Prisma' || Math.hypot(m.x - p.x, m.z - p.z) <
+        (m.kind === 'Guardião Prisma' || (isFarm(m.kind)&&m.tamed) || Math.hypot(m.x - p.x, m.z - p.z) <
           (isFarm(m.kind) ? 44 : (night ? 47 : 19)) ||
           (this.networkHost && this.remotePlayer?.active &&
             Math.hypot(m.x-this.remotePlayer.x,m.z-this.remotePlayer.z)<(isFarm(m.kind)?44:47))));

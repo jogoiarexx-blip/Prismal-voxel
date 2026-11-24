@@ -543,7 +543,7 @@ const View = (() => {
         const dead=mob.hp<=0 ? Math.max(.10,Math.min(1,(mob.dying||0)/.55)) : 1;
         const s=Math.min(1.2,Math.max(.08,(kind==='Guardião Prisma' ? 1.06 : kind==='Vaca' ? 1.14 :
           kind==='Ovelha' ? .97 : kind==='Porco' ? .91 :
-          kind==='Vigia de Cascalho' ? 1.02 : kind==='Zumbi' ? 1.02 : kind==='Saltim' ? .72 : .82)*dead));
+          kind==='Vigia de Cascalho' ? 1.02 : kind==='Zumbi' ? 1.02 : kind==='Saltim' ? .72 : kind==='Galinha'?.64:.82)*dead*Voxel.farmScale(mob)));
         const start=ent.length;
         // One shared vertex buffer, no extra draw calls or additional texture atlases.
         // Clamped, positive cuboids prevent warped/stretched enemies even after
@@ -564,9 +564,10 @@ const View = (() => {
         };
         if (kind === 'Ovelha') {
           // White fluffy body, grey face and four articulated black hooves.
-          piece(-.42,.39,-.37,.84,.71,.78,115);
+          const wool=(mob.shorn||(mob.woolReady||0)>g.elapsed)?116:115;
+          piece(-.42,.39,-.37,.84,.71,.78,wool);
           for(const side of [-1,1]) {
-            piece(side*.35-.19,.50,-.4,.35,.38,.82,115);
+            piece(side*.35-.19,.50,-.4,.35,.38,.82,wool);
             piece(side*.30-.12,.12,-.27+side*step*.14,.25,.35,.22,116);
             piece(side*.30-.12,.12,.22-side*step*.14,.25,.35,.22,116);
             piece(side*.30-.13,.02,-.27+side*step*.14,.27,.14,.24,117);
@@ -577,8 +578,8 @@ const View = (() => {
           piece(-.30,.80,-.57,.60,.42,.32,116);
           piece(-.22,.84,-.76,.44,.18,.11,116);
           piece(-.12,.93,-.78,.24,.11,.04,117);
-          piece(-.21,1.23,-.42,.42,.12,.25,115);
-          piece(-.20,.72,.39,.40,.25,.20,115);
+          piece(-.21,1.23,-.42,.42,.12,.25,wool);
+          piece(-.20,.72,.39,.40,.25,.20,wool);
         } else if (kind === 'Porco') {
           // Pink round body, blocky muzzle, pointed ears, curled tail.
           piece(-.48,.31,-.39,.96,.66,.82,118);
@@ -614,6 +615,20 @@ const View = (() => {
           }
           piece(-.16,.28,-.13,.32,.19,.36,119); // udder
           piece(.35,.84,.40+Math.sin(t*2)*.035,.13,.18,.36,120); // tail
+        } else if(kind==='Galinha') {
+          // Compact white bird with red comb, beak, animated wings and two legs.
+          piece(-.32,.24,-.27,.64,.55,.76,115);
+          piece(-.20,.66,-.47,.40,.38,.36,115);
+          piece(-.13,.72,-.59,.26,.14,.16,113);
+          piece(-.06,1.01,-.39,.12,.17,.25,88);
+          piece(-.07,.57,-.55,.14,.14,.10,88);
+          for(const side of [-1,1]){
+            piece(side*.16-.04,.88,-.48,.08,.08,.07,112);
+            piece(side*.28-.07,.34+Math.abs(step)*.08,-.13,.14,.36,.45,121);
+            piece(side*.14-.035,.01,step*side*.17,.07,.26,.08,113);
+            piece(side*.14-.09,0,-.08+step*side*.17,.18,.05,.17,113);
+          }
+          piece(-.18,.60,.43,.36,.36,.15,121);
         } else if(kind==='Zumbi') {
           // Compact nocturnal undead: pale voxel skin, tattered shirt and
           // distinctly slow arm reach. No imported rigging or sprite sheets.
@@ -1018,14 +1033,20 @@ const View = (() => {
         const col=({Saltim:'#d6a56a',Musgato:'#5a946b',Luzerrante:'#50efd4',
           'Vigia de Cascalho':'#687580','Guardião Prisma':'#677c83',
           'Zumbi':'#87a18a',
-          'Ovelha':'#eee9d9','Porco':'#e7a6ab','Vaca':'#755a4a'})[kind]||'#366658';
+          'Ovelha':'#eee9d9','Porco':'#e7a6ab','Vaca':'#755a4a','Galinha':'#eee9d9'})[kind]||'#366658';
         const bob=kind==='Saltim'?Math.max(0,Math.sin(m.gait||0))*(m.motion||0)*.14:
           kind==='Luzerrante'?.32+Math.sin(g.elapsed*3)*.07:0;
         const die=m.hp<=0?Math.max(.1,Math.min(1,(m.dying||0)/.55)):1;
         const scale=(boss?1.5:kind==='Vaca'?1.2:kind==='Ovelha'?1.08:
-          kind==='Vigia de Cascalho'?1.15:.85)*die;
+          kind==='Vigia de Cascalho'?1.15:kind==='Galinha'?.6:.85)*die*Voxel.farmScale(m);
         const color=m.hurt>0?'#efb169':col;
-        drawSprite(m.x,m.y+.40+bob,m.z,.85*scale,color);
+        if(kind==='Galinha'){
+          drawSprite(m.x,m.y+.40*scale,m.z,.85*scale,color);
+          drawSprite(m.x,m.y+.84*scale,m.z-.2,.42*scale,col);
+          drawSprite(m.x,m.y+1.12*scale,m.z-.2,.20*scale,'#b8645d');
+          drawSprite(m.x,m.y+.77*scale,m.z-.35,.16*scale,'#cf9c59');continue;
+        }
+        drawSprite(m.x,m.y+.40*scale+bob,m.z,.85*scale,color);
         drawSprite(m.x,m.y+.84+bob,m.z,.53*scale,m.hurt>0?'#ffe39e':kind==='Musgato'?'#396e58':col);
         for(const side of [-1,1]){
           drawSprite(m.x+side*.19*scale,m.y+1.02*scale+bob,m.z,.13*scale,

@@ -1186,7 +1186,7 @@
     const chestCount = Object.keys(g.chests || {}).length;
     const qualityNames = ['Baixa','Média','Alta'];
     return [
-      'MUNDO PRISMA · DIAGNÓSTICO LOCAL v0.9.29',
+      'MUNDO PRISMA · DIAGNÓSTICO LOCAL v0.9.30',
       'Gerado: ' + new Date().toISOString(),
       'Motor: ' + renderer.type + ' · qualidade: ' + (qualityNames[settings.quality] || settings.quality),
       'FPS médio: ' + perf.averageFPS + ' · FPS 1% low: ' + perf.low1FPS,
@@ -1495,9 +1495,9 @@
     ['survival', 'Sobrevivência', '✦'],
   ];
   function recipeCategory(id) {
-    if ([22, 42, 43, 44, 45, 47, 89, 90].includes(id)) return 'tools';
-    if ([12, 13, 14, 15, 24, 25, 30, 31, 67].includes(id)) return 'utility';
-    if ([38, 41, 46].includes(id)) return 'survival';
+    if ([22, 42, 43, 44, 45, 47, 89, 90, 146].includes(id)) return 'tools';
+    if ([12, 13, 14, 15, 24, 25, 30, 31, 67, 144].includes(id)) return 'utility';
+    if ([38, 41, 46, 123,124,125,140,141,142,143,145,147,148,149,150,151].includes(id)) return 'survival';
     if ([77, 78, 79, 83, 84, 85, 87, 88].includes(id)) return 'decor';
     return 'build';
   }
@@ -1911,8 +1911,8 @@
     const aimedCreature = g.aimMob();
     $('#target').textContent = aimedCreature
       ? Voxel.farmAnimals.includes(aimedCreature.kind)
-        ? aimedCreature.kind + (g.inv[g.selected]?.b === Voxel.farmFood[aimedCreature.kind]
-          ? ' · Usar para alimentar' : ' · Animal pacífico')
+        ? (aimedCreature.juvenile?'Filhote de ':'')+aimedCreature.kind+(aimedCreature.tamed?' · domesticado':'') + (g.inv[g.selected]?.b === Voxel.farmFood[aimedCreature.kind]
+          ? ' · Usar para alimentar' : aimedCreature.kind==='Vaca'?' · Balde para ordenhar':aimedCreature.kind==='Ovelha'?' · Tesoura para tosquiar':' · Animal pacífico')
         : aimedCreature.kind || 'Raspejante'
       : g.hit?.b === 28
         ? 'R · Despertar núcleo'
@@ -1978,7 +1978,7 @@
     $('#debug').hidden = !debug;
     if (debug)
       $('#debug').textContent =
-        'PRISMA 0.9.29 · ' +
+        'PRISMA 0.9.30 · ' +
         renderer.type +
         '\n' +
         perfFrames.snapshot().averageFPS +
