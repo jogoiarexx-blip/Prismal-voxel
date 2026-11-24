@@ -811,7 +811,7 @@ const Game = (() => {
             this.signal('p2pHitMob', {id:mob.id, weapon:item?.b || 0});
             this.signal('hitEnemy');
           } else {
-            const damage = item?.b === 47 ? 5 : Voxel.durability[item?.b] ? 2 : 1;
+            const damage = item?.b === 47 ? 5 : Voxel.durability[item?.b] && !Voxel.armor[item?.b] ? 2 : 1;
             this.strikeMob(mob, damage, this.p.x, this.p.z);
             if (item?.b === 47 && --item.dur <= 0) this.inv[this.selected] = null;
           }
@@ -1867,6 +1867,23 @@ const Game = (() => {
     damage(n, why) {
       if (this.creative || this.damageCool > 0) return;
       this.damageCool = 1.2;
+      // Armor is active while carried in the hotbar. Only the strongest
+      // piece protects; no stacking or protection against hunger/drowning/falls.
+      if (!['Queda','Sem fôlego','Fome'].includes(why)) {
+        let best=-1;
+        for(let i=0;i<9;i++){
+          const t=this.inv[i];
+          if(t && Voxel.armor[t.b] && t.dur>0 &&
+            (best<0 || Voxel.armor[t.b]>Voxel.armor[this.inv[best].b]))best=i;
+        }
+        if(best>=0){
+          const t=this.inv[best];
+          n=Math.max(1,Math.round(n*(1-Voxel.armor[t.b])));
+          if(--t.dur<=0){this.inv[best]=null;this.notify('Sua armadura se desgastou.');}
+          this.changed();
+          this.signal('hud');
+        }
+      }
       this.p.life = Math.max(0, this.p.life - n);
       Sound.play('hurt', this.settings);
       this.signal('hurt');
