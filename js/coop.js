@@ -39,6 +39,38 @@ const PrismaCoop = (() => {
       return {status:'ready',state:{t:'chest-state',pos,rev:game.chestRevisions[pos]||0,items:structuredClone(items),inv:structuredClone(profile.inv),profileRev:profile.rev,initial:true}};
     });
   }
+  // A pickup is a single world transaction: the drop and guest inventory
+  // are persisted together. No client-side grant or second inventory write.
+  function pickup(game,id,msg,fill,position,maxId=256){
+    return inWorldQueue(game,async()=>{
+      const profile=validId(id)&&game.guestProfiles?.[id];
+      if(!profile||!validInventory(profile.inv,36,maxId)||!Number.isSafeInteger(msg?.request)||msg.request<1)
+        return {status:'invalid'};
+      const state=(status,amount=0,b=0)=>({status,state:{t:'loot-state',id,request:msg.request,drop:msg.drop,
+        status,amount,b,rev:profile.rev,seq:profile.seq||0,inv:structuredClone(profile.inv)}});
+      if(!Number.isSafeInteger(msg.drop)||msg.drop<1||!Number.isSafeInteger(msg.seq)||msg.seq<0||msg.seq>(profile.seq||0)||msg.rev!==profile.rev)return state('conflict');
+      const p=typeof position==='function'?position():position;
+      const d=game.drops.find(d=>d.id===msg.drop&&d.n>0);
+      if(!p||!p.active||![p.x,p.y,p.z].every(Number.isFinite)||!d||
+         !Number.isInteger(d.b)||d.b<1||d.b>=maxId||!Number.isInteger(d.n)||d.n<1||d.n>64||
+         Math.hypot(d.x-p.x,d.z-p.z)>2.6||Math.abs(d.y-p.y)>2.6)return state('unavailable');
+      const next=structuredClone(profile.inv),amount=d.n-fill(next,d.b,d.n,d.dur);
+      if(!Number.isInteger(amount)||amount<0||amount>d.n||!validInventory(next,36,maxId))return state('invalid');
+      if(!amount)return state('full');
+      game.lootReservations ||= new Set();
+      if(game.lootReservations.has(d.id))return state('unavailable');
+      game.lootReservations.add(d.id);
+      const old={inv:profile.inv,rev:profile.rev,n:d.n};
+      profile.inv=next;profile.rev++;d.n-=amount;
+      game.changed();
+      let saved=false;
+      try{saved=await game.save()===true;}catch{}
+      if(!saved){profile.inv=old.inv;profile.rev=old.rev;d.n=old.n;game.lootReservations.delete(d.id);game.changed();return state('failed');}
+      game.lootReservations.delete(d.id);
+      game.drops=game.drops.filter(o=>o.n>0||game.lootReservations.has(o.id));
+      return state('committed',amount,d.b);
+    });
+  }
   function transact(game,id,pos,msg,chestMove,maxId=256) {
     return inWorldQueue(game,()=>transactUnlocked(game,id,pos,msg,chestMove,maxId));
   }
@@ -117,6 +149,6 @@ const PrismaCoop = (() => {
       conflicted:!!(pending && !replay && pending.seq>host.seq),
       seq:Math.max(host.seq,replay?pending.seq:0)};
   }
-  return {validId,validInventory,ensureProfile,transact,snapshot,syncInventory,recoverGuestInventory,readChest};
+  return {validId,validInventory,ensureProfile,transact,snapshot,syncInventory,recoverGuestInventory,readChest,pickup};
 })();
 if(typeof module!=='undefined')module.exports=PrismaCoop;
