@@ -1730,7 +1730,7 @@ const Game = (() => {
     }
     aimMob(range=3.7) {
       const eye=this.eye(),d=View.basis(this.p).f;
-      const wall=range>3.7?Voxel.ray((x,y,z)=>this.get(x,y,z,true),eye,d,range,true):this.hit;
+      const wall=range>3.7?Voxel.ray((x,y,z)=>{const b=this.get(x,y,z,true);return b<0?3:b;},eye,d,range,true):this.hit;
       let best=null,nearest=Math.min(range,(wall?.dist??range)+.05);
       for(const m of this.mobs){
         if(m.dying||m.hp<=0)continue;
@@ -2301,6 +2301,7 @@ const Game = (() => {
             if (t?.n) this.addDrop(this.bag.x, this.bag.y, this.bag.z, t.b, t.n, t.dur);
         this.bag = { x:p.x,y:p.y,z:p.z,inv:this.wornArmor?[...this.inv,this.wornArmor]:this.inv };
         this.wornArmor=null;this.inv = empty();
+        this.shieldTime=0;this.shieldItem=null;
       }
       const h = land(0, 3, this.seed,this.generator).h;
       p.x = 0.5;
