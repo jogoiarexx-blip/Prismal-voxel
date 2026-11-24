@@ -4,6 +4,8 @@ const Game = (() => {
     BAG = 36,
     farmAnimals = Voxel.farmAnimals;
   const isFarm = (kind) => farmAnimals.includes(kind);
+  const villageJobs=['Fazendeiro','Ferreiro','Construtor'];
+  const villageTips=['Plante sementes em um canteiro perto da água.','Use o forno para transformar minério em barras.','A bancada permite fabricar telhas, portas e ferramentas.'];
   const slot = (b, n = 1) => ({ b, n, ...(Voxel.durability[b] ? { dur: Voxel.durability[b] } : {}) }),
     empty = () => Array(BAG).fill(null);
   const solid = (id) => id < 0 || !!blocks[id]?.solid;
@@ -688,7 +690,7 @@ const Game = (() => {
       }
     }
     strikeMob(mob, damage, fromX, fromZ) {
-      if (!mob || mob.hp <= 0 || mob.dying) return false;
+      if (!mob || mob.hp <= 0 || mob.dying || mob.kind==='Aldeão') return false;
       mob.hp -= Math.max(1, Math.min(5, damage));
       mob.stun = mob.hurt = .36;
       mob.knockback = .34;
@@ -715,7 +717,7 @@ const Game = (() => {
     // Host produces the authoritative creature state; guests only interpolate it.
     networkMobState() {
       return this.mobs.slice(0,24).map(m => ({
-        id:m.id, kind:m.kind,
+        id:m.id, kind:m.kind, ...(m.kind==='Aldeão'?{job:m.job}:{}),
         x:+m.x.toFixed(2), y:+m.y.toFixed(2), z:+m.z.toFixed(2),
         hp:Math.max(0,m.hp), face:+(m.face || 0).toFixed(2),
         motion:+(m.motion || 0).toFixed(2), gait:+(m.gait || 0).toFixed(2),
@@ -733,7 +735,7 @@ const Game = (() => {
       if (!this.networkGuest || !Array.isArray(msg?.mobs) || msg.mobs.length > 24 ||
           !Number.isSafeInteger(msg.seq) || msg.seq <= this.lastNetworkMobSeq) return false;
       const allowed = new Set(['Saltim','Musgato','Luzerrante','Raspejante','Zumbi','Vigia de Cascalho',
-        'Guardião Prisma','Ovelha','Porco','Vaca','Galinha']);
+        'Guardião Prisma','Ovelha','Porco','Vaca','Galinha','Aldeão']);
       const old = new Map(this.mobs.map(m => [m.id,m]));
       const out=[];
       for (const row of msg.mobs) {
@@ -751,6 +753,7 @@ const Game = (() => {
           dying:Math.max(0,Math.min(.55,row.dying)),
           wind:Number.isFinite(row.wind)?row.wind:0, juvenile:row.juvenile===true,
           age:Math.max(0,Math.min(180,Number(row.age)||0)),tamed:row.tamed===true,follow:row.follow===true,shorn:row.shorn===true});
+        if(m.kind==='Aldeão')m.job=Number.isInteger(row.job)&&row.job>=0&&row.job<3?row.job:0;
         out.push(m);
       }
       this.mobs=out;
@@ -1509,7 +1512,12 @@ const Game = (() => {
         h = this.hit;
       // Feed farm animals with their preferred food, including in peaceful mode.
       // The same right-click/tap works with the existing inventory and touch UI.
-      const animal = !forcePlace && this.aimMob();
+      const animal = (!forcePlace || !blocks[t?.b]?.placeable) && this.aimMob();
+      if(animal?.kind==='Aldeão'){
+        const job=villageJobs[animal.job]||villageJobs[0];
+        this.notify(job+' · '+(villageTips[animal.job]||villageTips[0]));
+        return true;
+      }
       if(animal && this.farmProduct(animal,t))return true;
       if(animal&&isFarm(animal.kind)&&animal.tamed&&!t){
         if(this.networkGuest){this.notify('Peça ao anfitrião para comandar o animal.');return true;}
@@ -1631,7 +1639,7 @@ const Game = (() => {
         d = View.basis(this.p).f;
       return this.mobs.find((m) => {
         if (m.dying || m.hp <= 0) return false;
-        let a = [m.x - eye[0], m.y + (m.kind==='Galinha'?.35:.6)*Voxel.farmScale(m) - eye[1], m.z - eye[2]],
+        let a = [m.x - eye[0], m.y + (m.kind==='Aldeão'?1.25:m.kind==='Galinha'?.35:.6)*Voxel.farmScale(m) - eye[1], m.z - eye[2]],
           dist = a.reduce((s, v, i) => s + v * d[i], 0);
         return (
           dist > 0 &&
@@ -1670,6 +1678,40 @@ const Game = (() => {
       m.y = floor;
       return true;
     }
+    // Only the host/solo session creates residents, once per nearby house.
+    // Far residents are unloaded and recreated from the same deterministic home.
+    spawnVillagers() {
+      if(this.generator!==6 || this.networkGuest)return;
+      const players=[this.p];
+      if(this.networkHost&&this.remotePlayer?.active)players.push(this.remotePlayer);
+      const occupied=new Set(this.mobs.filter(m=>m.kind==='Aldeão').map(m=>m.homeKey));
+      let count=this.mobs.filter(m=>m.kind==='Aldeão').length;
+      const candidates=new Map();
+      for(const p of players)
+        for(let gz=Math.floor((p.z-35)/64);gz<=Math.floor((p.z+35)/64);gz++)
+          for(let gx=Math.floor((p.x-35)/64);gx<=Math.floor((p.x+35)/64);gx++)
+            for(const h of Voxel.villageHouses(gx,gz,this.seed,this.sites)){
+              const k=h.x+','+h.z;
+              const dist=Math.min(...players.map(p=>Math.hypot(p.x-h.x,p.z-h.z)));
+              if(dist<32&&!occupied.has(k))candidates.set(k,{h,dist});
+            }
+      for(const [k,{h}] of [...candidates].sort((a,b)=>a[1].dist-b[1].dist)){
+        if(count>=8||this.mobs.length>=24)break;
+        // Spawn outside the entrance, never in walls, water or on rooftops.
+        for(const [dx,dz] of [[0,4],[1,4],[-1,4],[4,0],[-4,0],[0,-4]]){
+          const x=h.x+dx+.5,z=h.z+dz+.5,y=this.floorAt(x,z,h.y+1,true);
+          if(y===null||Math.abs(y-h.y)>4||players.every(p=>Math.abs(p.y-y)>18))continue;
+          const bx=Math.floor(x),bz=Math.floor(z);
+          if(this.get(bx,y,bz,true)!==0||this.get(bx,y+1,bz,true)!==0||
+             this.mobs.some(m=>Math.hypot(m.x-x,m.z-z)<1.1)||
+             players.some(p=>Math.hypot(p.x-x,p.z-z)<1.5))continue;
+          const job=Math.floor(Voxel.hash(h.x,h.z,this.seed^911)*3);
+          this.mobs.push({id:this.nextMobId++,kind:'Aldeão',job,x,y,z,hp:12,homeKey:k,
+            homeX:x,homeZ:z,face:0,motion:0,gait:0,roamTimer:0,cool:0});
+          count++;occupied.add(k);break;
+        }
+      }
+    }
     ai(dt) {
       const peaceful = this.creative || this.meta.difficulty === 'peaceful';
       const p = this.p,
@@ -1681,10 +1723,11 @@ const Game = (() => {
       this.spawnTick -= dt;
       if (this.spawnTick <= 0) {
         this.spawnTick = 6;
-        const living = this.mobs.filter(m => m.hp > 0 && !m.dying);
+        this.spawnVillagers();
+        const living = this.mobs.filter(m => m.hp > 0 && !m.dying && m.kind!=='Aldeão');
         const animals = living.filter(m => isFarm(m.kind)).length;
         const otherMobs = living.length - animals;
-        if (living.length < 16 && (animals < 8 || otherMobs < 4)) {
+        if (this.mobs.length < 24 && living.length < 16 && (animals < 8 || otherMobs < 4)) {
           // Short, deterministic local sampling. Grassy areas spawn livestock,
           // even when the difficulty is Pacífico. No new meshes or assets loaded.
           const tick = ++this.animalSeed;
@@ -1750,9 +1793,9 @@ const Game = (() => {
         const boss = kind === 'Guardião Prisma';
         const scale=Voxel.farmScale(m);
         const radius = (boss ? .38 : kind === 'Vaca' ? .42 : kind === 'Ovelha' ? .32 :
-          kind === 'Porco' ? .31 : kind === 'Vigia de Cascalho' ? .33 : kind === 'Zumbi' ? .29 : .24)*scale;
+          kind === 'Porco' ? .31 : kind === 'Vigia de Cascalho' ? .33 : kind === 'Zumbi' || kind==='Aldeão' ? .29 : .24)*scale;
         const height = (boss ? 1.95 : kind === 'Vaca' ? 1.55 : kind === 'Ovelha' ? 1.27 :
-          kind === 'Porco' ? .93 : kind==='Galinha'?.72:kind === 'Vigia de Cascalho' ? 1.8 : kind==='Zumbi'?1.7:1.12)*scale;
+          kind === 'Porco' ? .93 : kind==='Galinha'?.72:kind === 'Vigia de Cascalho' ? 1.8 : kind==='Zumbi'||kind==='Aldeão'?1.7:1.12)*scale;
         m.hurt = Math.max(0, (m.hurt || 0) - dt);
         m.attack = Math.max(0, (m.attack || 0) - dt);
         m.stun = Math.max(0, (m.stun || 0) - dt);
@@ -1784,7 +1827,20 @@ const Game = (() => {
         if (!m.stun && d > .001 && d < 30) {
           const safe = nearLight(m.x, m.y, m.z, 4.4);
           const passive = ['Saltim', 'Musgato', 'Luzerrante'].includes(kind);
-          if (isFarm(kind)) {
+          if(kind==='Aldeão'){
+            m.roamTimer=(m.roamTimer||0)-dt;
+            if(m.roamTimer<=0){
+              const time=Math.floor(this.elapsed/4);
+              m.roamTimer=2+Voxel.hash(m.id,time,this.seed^31)*4;
+              const angle=Voxel.hash(m.id,time,this.seed^73)*Math.PI*2;
+              const distance=night?0:2+Voxel.hash(m.id,time,this.seed^82)*5;
+              m.roamX=m.homeX+Math.cos(angle)*distance;
+              m.roamZ=m.homeZ+Math.sin(angle)*distance;
+            }
+            const vx=(night?m.homeX:m.roamX)-m.x,vz=(night?m.homeZ:m.roamZ)-m.z;
+            if(d<2.1)m.face=Math.atan2(dx,-dz);
+            else if(Math.hypot(vx,vz)>.65)moved=walk(m,vx,vz,night?.85:.63,radius,height);
+          } else if (isFarm(kind)) {
             m.roamTimer = (m.roamTimer || 0) - dt;
             if (m.roamTimer <= 0) {
               m.roamTimer = 2.5 + Voxel.hash(Math.floor(m.x * 3), Math.floor(m.z * 3), this.seed ^ Math.floor(this.elapsed / 3)) * 4;
@@ -1860,9 +1916,9 @@ const Game = (() => {
       this.mobs = this.mobs.filter(m =>
         !((m.hp <= 0) && m.dying === 0) &&
         (m.kind === 'Guardião Prisma' || (isFarm(m.kind)&&m.tamed) || Math.hypot(m.x - p.x, m.z - p.z) <
-          (isFarm(m.kind) ? 44 : (night ? 47 : 19)) ||
+          (m.kind==='Aldeão'?48:isFarm(m.kind) ? 44 : (night ? 47 : 19)) ||
           (this.networkHost && this.remotePlayer?.active &&
-            Math.hypot(m.x-this.remotePlayer.x,m.z-this.remotePlayer.z)<(isFarm(m.kind)?44:47))));
+            Math.hypot(m.x-this.remotePlayer.x,m.z-this.remotePlayer.z)<(m.kind==='Aldeão'?48:isFarm(m.kind)?44:47))));
     }
     damage(n, why) {
       if (this.creative || this.damageCool > 0) return;
