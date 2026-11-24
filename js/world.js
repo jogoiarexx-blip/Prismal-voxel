@@ -1089,29 +1089,27 @@ const Voxel = (() => {
   }
   // New village decoration belongs exclusively to generator 7.
   function villageGarden(h,s,houses=[]) {
-    const x=h.x+4,z=h.z+5,t=land(x,z,s,7);
-    const ground=t.h;
-    for(const [dx,dz] of [[0,0],[1,0],[-1,0],[0,1],[1,1],[-1,1]]){
-      const q=land(x+dx,z+dz,s,7);
-      if(q.river||q.h<=SEA+1||Math.abs(q.h-ground)>1||
-        houses.some(o=>o!==h&&Math.abs(o.x-x-dx)<=3&&Math.abs(o.z-z-dz)<=3))return null;
+    const x=h.x+4,z=h.z+5,t=land(x,z,s,7),ground=h.y;
+    if(Math.abs(t.h-ground)>4)return null;
+    for(let dx=-1;dx<=5;dx++)for(let dz=3;dz<=6;dz++){
+      const q=land(h.x+dx,h.z+dz,s,7);
+      if(q.river||q.h<=SEA+1||Math.abs(q.h-ground)>4||
+        houses.some(o=>o!==h&&Math.abs(o.x-h.x-dx)<=3&&Math.abs(o.z-h.z-dz)<=3))return null;
     }
     return {x,y:ground,z};
   }
   function decorateVillageHouse(h,set,s,houses) {
     const {x,y,z}=h;
-    // An accessible approach to the entrance, built in steps of at most one block.
-    const end=land(x,z+6,s,7);
-    if(!end.river&&end.h>SEA+1&&Math.abs(end.h-y)<=4){
-      for(let dz=3;dz<=6;dz++){
-        const t=land(x,z+dz,s,7);
-        if(t.river||t.h<=SEA+1)continue;
-        const level=Math.round(mix(y,end.h,(dz-2)/4));
-        for(let yy=Math.min(t.h,level);yy<=level;yy++)set(x,yy,z+dz,48);
-        for(let yy=level+1;yy<=Math.max(t.h+2,level+2);yy++)set(x,yy,z+dz,0);
-      }
-    }
     const farm=villageGarden(h,s,houses);
+    // Level, bounded terrace joins the house entrance to the garden.
+    // Fill only shallow foundations; no water or nearby structures are replaced.
+    const xmax=farm?5:1;
+    for(let dz=3;dz<=6;dz++)for(let dx=-1;dx<=xmax;dx++){
+      const t=land(x+dx,z+dz,s,7);
+      if(t.river||t.h<=SEA+1||Math.abs(t.h-y)>4)continue;
+      for(let yy=Math.min(t.h,y-1);yy<=y;yy++)set(x+dx,yy,z+dz,48);
+      for(let yy=y+1;yy<=Math.max(t.h+8,y+8);yy++)set(x+dx,yy,z+dz,0);
+    }
     if(farm){
       const {x:fx,y:fy,z:fz}=farm;
       for(let dz=0;dz<=1;dz++)for(let dx=-1;dx<=1;dx++){
