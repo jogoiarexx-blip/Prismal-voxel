@@ -320,7 +320,7 @@ const Game = (() => {
     }
     applyRemoteEdit(x, y, z, b) {
       x=Math.floor(x);y=Math.floor(y);z=Math.floor(z);b=Math.floor(b);
-      if(!Number.isFinite(x+z+y+b)||y<=0||y>=Voxel.H||b<0||!(b<105||Voxel.bedFoot(b)||Voxel.bedHead(b)||b===134||b===135||b===136))return false;
+      if(!Number.isFinite(x+z+y+b)||y<=0||y>=Voxel.H||b<0||!(b<105||Voxel.bedFoot(b)||Voxel.bedHead(b)||b===134||b===135||b===136||(b>=155&&b<=163)))return false;
       const chunkKey=key(x>>4,z>>4), loaded=this.chunks.has(chunkKey);
       this.applyingRemoteEdit=true;
       try {
@@ -427,7 +427,7 @@ const Game = (() => {
     applyRemoteBatch(ops) {
       if (!Array.isArray(ops) || ops.length > 300) return false;
       const valid=ops.every(v=>Array.isArray(v)&&v.length===4&&v.every(Number.isInteger)&&
-        Math.abs(v[0])<100000&&Math.abs(v[2])<100000&&v[1]>0&&v[1]<Voxel.H&&v[3]>=0&&(v[3]<105||Voxel.bedFoot(v[3])||Voxel.bedHead(v[3])||v[3]===134||v[3]===135||v[3]===136));
+        Math.abs(v[0])<100000&&Math.abs(v[2])<100000&&v[1]>0&&v[1]<Voxel.H&&v[3]>=0&&(v[3]<105||Voxel.bedFoot(v[3])||Voxel.bedHead(v[3])||v[3]===134||v[3]===135||v[3]===136||(v[3]>=155&&v[3]<=163)));
       if (!valid) return false;
       this.applyingRemoteEdit=true;
       try {
@@ -660,26 +660,7 @@ const Game = (() => {
               break;
             }
           }
-        if(!this.networkGuest) for (const k of Object.keys(this.plots)) {
-          const [x, y, z] = k.split(',').map(Number);
-          if (!this.chunks.has(key(x >> 4, z >> 4))) continue;
-          if (this.get(x, y, z) !== 39) {
-            delete this.plots[k];
-            continue;
-          }
-          let wet = false;
-          for (let dx = -2; dx <= 2 && !wet; dx++)
-            for (let dz = -2; dz <= 2 && !wet; dz++)
-              wet = this.get(x + dx, y, z + dz) === 7 || this.get(x + dx, y - 1, z + dz) === 7;
-          if(!wet && this.raining){
-            wet=true;
-            for(let yy=y+1;yy<Voxel.H;yy++)if(solid(this.get(x,yy,z))){wet=false;break;}
-          }
-          if (wet && ++this.plots[k] >= 45) {
-            this.set(x, y, z, 40);
-            delete this.plots[k];
-          }
-        }
+        if(!this.networkGuest) this.growCrops();
       }
       if (!this.networkGuest) {
         this.growSaplings(dt);
@@ -735,7 +716,7 @@ const Game = (() => {
         motion:+(m.motion || 0).toFixed(2), gait:+(m.gait || 0).toFixed(2),
         hurt:+(m.hurt || 0).toFixed(2), attack:+(m.attack || 0).toFixed(2),
         dying:+(m.dying || 0).toFixed(2), wind:+(m.wind || 0).toFixed(2),
-        juvenile:!!m.juvenile, age:Math.max(0,Math.min(180,Number(m.age)||0)), tamed:!!m.tamed,
+        juvenile:!!m.juvenile, age:Math.max(0,Math.min(180,Number(m.age)||0)), tamed:!!m.tamed, follow:!!m.follow,
         shorn:m.kind==='Ovelha' && (m.woolReady||0)>this.elapsed,
       }));
     }
@@ -764,7 +745,7 @@ const Game = (() => {
           hurt:Math.max(0,Math.min(.36,row.hurt)),attack:Math.max(0,Math.min(.36,row.attack)),
           dying:Math.max(0,Math.min(.55,row.dying)),
           wind:Number.isFinite(row.wind)?row.wind:0, juvenile:row.juvenile===true,
-          age:Math.max(0,Math.min(180,Number(row.age)||0)),tamed:row.tamed===true,shorn:row.shorn===true});
+          age:Math.max(0,Math.min(180,Number(row.age)||0)),tamed:row.tamed===true,follow:row.follow===true,shorn:row.shorn===true});
         out.push(m);
       }
       this.mobs=out;
@@ -833,6 +814,7 @@ const Game = (() => {
         return;
       }
       const hit = this.hit;
+      if(this.networkGuest && hit && Voxel.cropInfo(hit.b)){this.notify('Plantação compartilhada: peça ao anfitrião');this.progress=-1;return;}
       if (this.networkGuest && hit && [15,83,84].includes(hit.b)) {
         if(this.progress===0)this.notify('Baú compartilhado: peça ao anfitrião para removê-lo');
         this.progress=-1;return;
@@ -922,11 +904,13 @@ const Game = (() => {
         this.signal('chestBreak',k);
       }
       if (!this.creative) {
-        this.addDrop(x + 0.5, y + 0.12, z + 0.5, b === 39 ? 38 : b === 1 || b === 17 ? 2 : Voxel.itemId(b), 1);
+        this.addDrop(x + 0.5, y + 0.12, z + 0.5, Voxel.cropInfo(b) ? 38 : b === 1 || b === 17 ? 2 : Voxel.itemId(b), 1);
         if (b === 6 || b === 18) {
           if (Voxel.hash(x+this.day,y,z+this.seed)>.78)this.addDrop(x+.5,y+.2,z+.5,b===6?134:135,1);
           else this.addDrop(x + 0.5, y + 0.2, z + 0.5, 23, 1);
         }
+        if (b>=155&&b<=163){const c=Voxel.cropInfo(b);this.addDrop(x+.5,y+.2,z+.5,c.seed,b===c.last?3:1);}
+        if([1,17].includes(b) && Voxel.hash(x,z,this.seed^902)>.82)this.addDrop(x+.5,y+.2,z+.5,152+Math.floor(Voxel.hash(x,z,this.seed^903)*3),1);
         if ([1, 17, 39, 40].includes(b)) this.addDrop(x + 0.5, y + 0.2, z + 0.5, 37, b === 40 ? 2 : 1);
         if (b === 5 || b === 27) this.goals.wood = true;
         if (((speed > 1 && rock) || (tool?.b === 89 && wood) || (tool?.b === 90 && soil)) && --tool.dur <= 0) {
@@ -1260,6 +1244,41 @@ const Game = (() => {
         (isBed && occupiedAt(partnerB,...partnerPos));
       return { pos, b, partnerPos, partnerB, valid: headFree && otherFree && seedlingOk && !occupied };
     }
+    growCrops() {
+      if(this.networkGuest)return;
+      for(const k of Object.keys(this.plots)){
+        const [x,y,z]=k.split(',').map(Number);
+        if(!this.chunks.has(key(x>>4,z>>4)))continue;
+        const b=this.get(x,y,z), crop=Voxel.cropInfo(b);
+        if(!crop||b===crop.last){delete this.plots[k];continue;}
+        let wet=false;
+        for(let dx=-2;dx<=2&&!wet;dx++)for(let dz=-2;dz<=2&&!wet;dz++)
+          wet=this.get(x+dx,y,z+dz)===7||this.get(x+dx,y-1,z+dz)===7;
+        if(!wet&&this.raining){wet=true;for(let yy=y+1;yy<Voxel.H;yy++)if(solid(this.get(x,yy,z))){wet=false;break;}}
+        if(!wet)continue;
+        const age=this.plots[k]=Math.min(crop.seconds,Math.max(0,Number(this.plots[k])||0)+1);
+        const next=age>=crop.seconds?crop.last:crop.first===39?39:crop.first+(age>=crop.seconds/2?1:0);
+        if(next!==b&&this.set(x,y,z,next)&&next===crop.last)delete this.plots[k];
+      }
+    }
+    cropAction(hit,item){
+      if(!hit)return false;
+      const c=Voxel.cropInfo(hit.b), first=Voxel.cropForItem(item?.b);
+      if(!(c&&hit.b===c.last)&&!(hit.b===38&&first))return false;
+      if(this.networkGuest){this.notify('Peça ao anfitrião para cuidar da plantação.');return true;}
+      const [x,y,z]=hit.p,k=hit.p.join(',');
+      if(this.get(x,y,z)!==hit.b)return true;
+      if(c&&hit.b===c.last){
+        if(!this.set(x,y,z,38))return true;
+        delete this.plots[k];
+        if(!this.creative){this.addDrop(x+.5,y+1,z+.5,c.item,c.seed===c.item?3:1);if(c.seed!==c.item)this.addDrop(x+.5,y+1,z+.5,c.seed,2);}
+        this.notify('Colheita pronta · replante no canteiro');return true;
+      }
+      if(!this.set(x,y,z,first))return true;
+      this.plots[k]=0;
+      if(!this.creative&&!--item.n)this.inv[this.selected]=null;
+      this.changed();this.notify('Plantado · irrigue com água ou chuva');return true;
+    }
     feedFarm(m) {
       if(!m || !isFarm(m.kind) || m.hp<=0 || m.dying || (m.fed||0)>0)return false;
       m.hp=Math.min(Voxel.farmHealth[m.kind],m.hp+2);m.fed=5;m.flee=0;m.graze=0;
@@ -1316,6 +1335,11 @@ const Game = (() => {
       // The same right-click/tap works with the existing inventory and touch UI.
       const animal = !forcePlace && this.aimMob();
       if(animal && this.farmProduct(animal,t))return true;
+      if(animal&&isFarm(animal.kind)&&animal.tamed&&!t){
+        if(this.networkGuest){this.notify('Peça ao anfitrião para comandar o animal.');return true;}
+        animal.follow=!animal.follow;animal.graze=0;this.changed();
+        this.notify(animal.kind+(animal.follow?' · seguindo você':' · permanecer por aqui'));return true;
+      }
       if (animal && isFarm(animal.kind) && t?.b === Voxel.farmFood[animal.kind]) {
         if (this.networkGuest) {
           this.signal('p2pFeedMob',{id:animal.id,food:t.b});
@@ -1385,22 +1409,7 @@ const Game = (() => {
         this.save();
         return;
       }
-      if (h?.b === 40 && !sneaking && !placing) {
-        this.set(...h.p, 38);
-        this.addDrop(h.p[0] + 0.5, h.p[1] + 1, h.p[2] + 0.5, 40, 1);
-        this.addDrop(h.p[0] + 0.5, h.p[1] + 1, h.p[2] + 0.5, 37, 2);
-        this.notify('Trigo colhido · canteiro pronto para replantar');
-        this.changed();
-        return;
-      }
-      if (h?.b === 38 && t?.b === 37) {
-        this.set(...h.p, 39);
-        this.plots[h.p.join(',')] = 0;
-        if (!this.creative && !--t.n) this.inv[this.selected] = null;
-        this.changed();
-        this.notify('Plantado · irrigue com água a até dois blocos');
-        return;
-      }
+      if (!sneaking && !placing && this.cropAction(h,t)) return;
       if (Voxel.farmNutrition[t?.b] && !this.creative) {
         if (this.p.food >= 99.9 && this.p.life >= 99.9) {
           this.notify('Você já está alimentado');
@@ -1618,10 +1627,10 @@ const Game = (() => {
             let speed = kind === 'Vaca' ? .52 : kind === 'Ovelha' ? .65 : .74;
             if (m.flee > 0 && d < 13) {
               vx = -dx; vz = -dz; speed = kind === 'Vaca' ? 1.75 : 2.15;
-            } else if (food && d > 2.3 && d < 9.5) {
+            } else if (((m.tamed && m.follow && target===p && d<25)|| (food&&d<9.5)) && d > 2.3) {
               vx = dx; vz = dz; speed = kind === 'Vaca' ? .85 : 1.04;
               m.graze = 0;
-            } else if (m.graze > 0 || d < 1.9) speed = 0;
+            } else if (m.graze > 0 || d < 1.9 || (m.tamed&&m.follow)) speed = 0;
             moved = walk(m, vx, vz, speed, radius, height);
           } else if (passive) {
             m.roamTimer = (m.roamTimer || 0) - dt;

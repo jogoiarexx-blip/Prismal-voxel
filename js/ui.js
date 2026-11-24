@@ -704,14 +704,16 @@
       if(mpGuestEdits.length<2000)mpGuestEdits.push(msg);
     } else if(msg.t==='edit' && g && [msg.x,msg.y,msg.z,msg.b].every(Number.isInteger)) {
       const {x,y,z,b}=msg;
-      if(Math.abs(x)>100000||Math.abs(z)>100000||y<=0||y>=Voxel.H||b<0||!(b<105||Voxel.bedFoot(b)||Voxel.bedHead(b)||b===134||b===135||b===136))return;
+      if(Math.abs(x)>100000||Math.abs(z)>100000||y<=0||y>=Voxel.H||b<0||!(b<105||Voxel.bedFoot(b)||Voxel.bedHead(b)||b===134||b===135||b===136||(b>=155&&b<=163)))return;
+      // Crops are host-managed; reject direct guest changes to planted cells.
+      if(mpRole==='host' && (Voxel.cropInfo(b)||Voxel.cropInfo(g.get(x,y,z,true))))return;
       // Protect the shared chest from client-side deletion and item duplication.
       if(mpRole==='host' && [15,83,84].includes(g.get(x,y,z,true)) && ![15,83,84].includes(b))return;
       // Only accept edits near the most recently reported explorer position.
       if(mpRole==='host' && (!mpWorldReady || !mpRemote?.active || Math.hypot(x-mpRemote.x,y-mpRemote.y,z-mpRemote.z)>12))return;
       g.applyRemoteEdit(x,y,z,b);
     } else if(msg.t==='batch' && g && Array.isArray(msg.ops) && msg.ops.length<=300) {
-      if(mpRole==='host' && (!mpWorldReady || !mpRemote?.active || !msg.ops.every(v=>Array.isArray(v)&&v.length===4&&v.every(Number.isInteger)&&Math.hypot(v[0]-mpRemote.x,v[1]-mpRemote.y,v[2]-mpRemote.z)<12 &&
+      if(mpRole==='host' && (!mpWorldReady || !mpRemote?.active || !msg.ops.every(v=>Array.isArray(v)&&v.length===4&&v.every(Number.isInteger)&&Math.hypot(v[0]-mpRemote.x,v[1]-mpRemote.y,v[2]-mpRemote.z)<12 && !Voxel.cropInfo(v[3]) && !Voxel.cropInfo(g.get(v[0],v[1],v[2],true)) &&
         (![15,83,84].includes(g.get(v[0],v[1],v[2],true)) || [15,83,84].includes(v[3])))))return;
       g.applyRemoteBatch(msg.ops);
     } else if (msg.t==='entities' && mpRole==='guest' && g?.ready) {
@@ -1186,7 +1188,7 @@
     const chestCount = Object.keys(g.chests || {}).length;
     const qualityNames = ['Baixa','Média','Alta'];
     return [
-      'MUNDO PRISMA · DIAGNÓSTICO LOCAL v0.9.30',
+      'MUNDO PRISMA · DIAGNÓSTICO LOCAL v0.9.31',
       'Gerado: ' + new Date().toISOString(),
       'Motor: ' + renderer.type + ' · qualidade: ' + (qualityNames[settings.quality] || settings.quality),
       'FPS médio: ' + perf.averageFPS + ' · FPS 1% low: ' + perf.low1FPS,
@@ -1497,7 +1499,7 @@
   function recipeCategory(id) {
     if ([22, 42, 43, 44, 45, 47, 89, 90, 146].includes(id)) return 'tools';
     if ([12, 13, 14, 15, 24, 25, 30, 31, 67, 144].includes(id)) return 'utility';
-    if ([38, 41, 46, 123,124,125,140,141,142,143,145,147,148,149,150,151].includes(id)) return 'survival';
+    if (Voxel.farmNutrition[id] || [38,41,46,123,142,143].includes(id)) return 'survival';
     if ([77, 78, 79, 83, 84, 85, 87, 88].includes(id)) return 'decor';
     return 'build';
   }
@@ -1911,8 +1913,8 @@
     const aimedCreature = g.aimMob();
     $('#target').textContent = aimedCreature
       ? Voxel.farmAnimals.includes(aimedCreature.kind)
-        ? (aimedCreature.juvenile?'Filhote de ':'')+aimedCreature.kind+(aimedCreature.tamed?' · domesticado':'') + (g.inv[g.selected]?.b === Voxel.farmFood[aimedCreature.kind]
-          ? ' · Usar para alimentar' : aimedCreature.kind==='Vaca'?' · Balde para ordenhar':aimedCreature.kind==='Ovelha'?' · Tesoura para tosquiar':' · Animal pacífico')
+        ? (aimedCreature.juvenile?'Filhote de ':'')+aimedCreature.kind+(aimedCreature.tamed?(aimedCreature.follow?' · seguindo':' · domesticado'):'') + (g.inv[g.selected]?.b === Voxel.farmFood[aimedCreature.kind]
+          ? ' · Usar para alimentar' : aimedCreature.tamed&&!g.inv[g.selected]?' · Usar: seguir/parar':aimedCreature.kind==='Vaca'?' · Balde para ordenhar':aimedCreature.kind==='Ovelha'?' · Tesoura para tosquiar':' · Animal pacífico')
         : aimedCreature.kind || 'Raspejante'
       : g.hit?.b === 28
         ? 'R · Despertar núcleo'
@@ -1978,7 +1980,7 @@
     $('#debug').hidden = !debug;
     if (debug)
       $('#debug').textContent =
-        'PRISMA 0.9.30 · ' +
+        'PRISMA 0.9.31 · ' +
         renderer.type +
         '\n' +
         perfFrames.snapshot().averageFPS +

@@ -161,13 +161,20 @@ const Voxel = (() => {
     ['Carne suína assada', 'b97d51', 0], // 149
     ['Carne bovina assada', '925d37', 0], // 150
     ['Ovo cozido', 'e9d5a0', 0], // 151
+    ['Cenoura', 'e78c37', 0], // 152
+    ['Batata', 'c1a264', 0], // 153
+    ['Milho', 'e6c64d', 0], // 154
+    ...['Cenoura','Batata','Milho'].flatMap((name,i)=>['broto','crescendo','maduro'].map(stage=>[name+' · '+stage,['74a14c','628c45','91a849'][i],.35])), // 155–163
+    ['Batata assada', 'b47b43', 0], // 164
+    ['Milho assado', 'd4a23d', 0], // 165
+    ['Sopa de legumes', 'c9924e', 0], // 166
   ];
   const blocks = data.map(([name, hex, hard], id) => ({
     id,
     name,
     hex,
     hard,
-    solid: (!!id && ![7, 21, 22, 23, 24, 25, 35, 36, 37, 41, 42, 43, 44, 45, 47, 80, 81, 82, 88, 89, 90].includes(id) && !(id >= 93 && id <= 96) && id < 105) || (id >= 126 && id <= 133) || id === 136,
+    solid: (!!id && ![7, 21, 22, 23, 24, 25, 35, 36, 37, 41, 42, 43, 44, 45, 47, 80, 81, 82, 88, 89, 90].includes(id) && !(id >= 93 && id <= 96) && id < 105) || (id >= 126 && id <= 133) || id === 136 || (id >= 155 && id <= 163),
     placeable:
       (id === 134 || id === 135 || (id > 0 && id < 93 && ![7, 21, 22, 23, 24, 28, 29, 35, 37, 39, 40, 41, 42, 43, 44, 45, 47, 50, 51, 52, 58, 59, 60, 61, 62, 63, 64, 70, 71, 72, 80, 81, 82, 86, 89, 90].includes(id))),
   }));
@@ -503,6 +510,19 @@ const Voxel = (() => {
     box(.14,.11,.479,.33,.36,.042,56),box(.53,.11,.479,.33,.36,.042,56),
     box(.14,.53,.479,.33,.36,.042,56),box(.53,.53,.479,.33,.36,.042,56),
   ]);
+  // Crops reuse the soil cell: stepped foliage is decorative, the soil is solid.
+  for(let id=155;id<=163;id++){
+    const stage=(id-155)%3, kind=Math.floor((id-155)/3), h=[.10,.23,.42][stage];
+    const parts=[box(0,0,0,1,.55,1,38)];
+    for(const [x,z] of [[.24,.24],[.64,.64],[.24,.64],[.64,.24]]){
+      parts.push(box(x,.55,z,.10,h,.10,kind===2?17:6));
+      if(stage>0)parts.push(box(x-.07,.55+h*.55,z-.07,.24,.09,.24,kind===1?17:6));
+      if(stage===2)parts.push(box(x,.55+h*.65,z,.13,.13,.13,[152,153,154][kind]));
+    }
+    shapes.set(id,parts);
+  }
+  const cropForItem = id => ({37:39,152:155,153:158,154:161})[id] || 0;
+  const cropInfo = id => id===39||id===40 ? {item:40,seed:37,first:39,last:40,seconds:45} : id>=155&&id<=163 ? (()=>{const k=Math.floor((id-155)/3),first=155+k*3;return {item:152+k,seed:152+k,first,last:first+2,seconds:[45,60,75][k]};})():null;
   const shapeParts = (id) => shapes.get(id) || null;
   const specialShape = (id) => shapes.has(id);
   const doorLower = (id) => id >= 57 && id <= 64;
@@ -528,7 +548,7 @@ const Voxel = (() => {
   function intersects(id, bx, by, bz, x0, y0, z0, x1, y1, z1) {
     if (!blocks[id]?.solid) return false;
     if (x1 <= bx || x0 >= bx + 1 || y1 <= by || y0 >= by + 1 || z1 <= bz || z0 >= bz + 1) return false;
-    const parts = doorCollisions.get(id) || shapeParts(id);
+    const parts = id>=155&&id<=163 ? [[0,0,0,1,.55,1]] : doorCollisions.get(id) || shapeParts(id);
     return !parts || parts.some(([x,y,z,w,h,d]) => x0 < bx+x+w && x1 > bx+x && y0 < by+y+h && y1 > by+y && z0 < bz+z+d && z1 > bz+z);
   }
   const recipes = [
@@ -739,6 +759,7 @@ const Voxel = (() => {
   recipes.push([144,1,[[35,3]],12],[146,1,[[35,2]],12]);
   for(const [raw,cooked] of [[140,147],[141,148],[124,149],[125,150],[142,151]])
     recipes.push([cooked,1,[[raw,1],[9,1]],14]);
+  recipes.push([164,1,[[153,1],[9,1]],14],[165,1,[[154,1],[9,1]],14],[166,1,[[152,1],[153,1],[154,1],[9,1]],14]);
   // A recipe belongs to exactly one station: 0 (backpack), 12 (workbench),
   // or 14 (furnace). Keep recipe indexes stable for saves and UI events.
   const recipeStation = (recipe) => recipe?.[3] || 0;
@@ -749,7 +770,7 @@ const Voxel = (() => {
   const farmFood = Object.freeze({ Ovelha: 40, Porco: 23, Vaca: 40, Galinha: 37 });
   const farmHealth = Object.freeze({ Ovelha: 5, Porco: 6, Vaca: 9, Galinha: 3 });
   const farmDrops = Object.freeze({ Ovelha: [[140,1],[123,1]], Porco: [[124,2]], Vaca: [[125,2]], Galinha: [[141,1],[143,1]] });
-  const farmNutrition = Object.freeze({23:18,36:10,41:36,124:13,125:16,140:14,141:12,145:22,147:32,148:30,149:34,150:38,151:20});
+  const farmNutrition = Object.freeze({23:18,36:10,41:36,124:13,125:16,140:14,141:12,145:22,147:32,148:30,149:34,150:38,151:20,152:12,153:9,154:14,164:28,165:27,166:48});
   const farmScale = m => m?.juvenile ? .55+.45*clip((Number(m.age)||0)/180,0,1) : 1;
   const ruins = [
     { name: 'Pórtico da Alvorada', seal: 'Aurora' },
@@ -1371,6 +1392,7 @@ const Voxel = (() => {
     durability,
     farmAnimals,
     farmFood,
+    cropForItem, cropInfo,
     farmHealth,
     farmDrops,
     farmNutrition,
