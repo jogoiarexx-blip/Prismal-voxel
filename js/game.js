@@ -1772,7 +1772,7 @@ const Game = (() => {
       const door=[hx+.5,hz+2.5], entry=[hx+.5,hz+3.5];
       const go=(x,z,speed=.82)=>{
         m.activity='walk';
-        if(!Number.isFinite(x)||!Number.isFinite(z)||Math.hypot(x-m.x,z-m.z)<=.36)return false;
+        if(!Number.isFinite(x)||!Number.isFinite(z)||Math.hypot(x-m.x,z-m.z)<=.15)return false;
         const target=Math.floor(x)+','+Math.floor(z);
         // Bounded local grid search, at most once per two seconds per resident.
         // Cache only waypoints; movement still uses the real actor collider.
@@ -1805,7 +1805,7 @@ const Game = (() => {
         return walk(m,goal[0]-m.x,goal[1]-m.z,speed,radius,height);
       };
       if(night){
-        if(inside){m.activity='sleep';m.motion=0;return false;}
+        if(inside){if(Math.hypot(m.x-hx-.5,m.z-hz-.5)>.35)return go(hx+.5,hz+.5);m.activity='sleep';m.motion=0;return false;}
         if(Math.hypot(m.x-door[0],m.z-door[1])<1.2)return go(hx+.5,hz+.5);
         if(Math.hypot(m.x-entry[0],m.z-entry[1])<.65)return go(...door);
         return go(...entry);
