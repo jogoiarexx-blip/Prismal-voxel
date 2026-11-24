@@ -373,7 +373,7 @@
       worldList.map(w=>'<option value="'+esc(w.id)+'">'+esc(w.name)+' · '+mode(w.mode)+'</option>').join('')+'</select></label>'+
       '<div id="mpNewWorldFields" class="mp-new-world">'+
       '<label class="field">Nome do mundo<input id="mpWorldName" value="Aventura em dupla" maxlength="48"></label>'+
-      '<label class="field">Modo<select id="mpWorldMode"><option value="survival">Sobrevivência</option><option value="creative">Criativo (blocos ilimitados)</option></select></label><label class="field">Geração<select id="mpWorldGenerator"><option value="3">Clássico</option><option value="4">Exploração</option></select></label></div>'+
+      '<label class="field">Modo<select id="mpWorldMode"><option value="survival">Sobrevivência</option><option value="creative">Criativo (blocos ilimitados)</option></select></label><label class="field">Geração<select id="mpWorldGenerator"><option value="3">Clássico</option><option value="4">Exploração</option><option value="5">Expedição · ruínas e tesouros</option></select></label></div>'+
       '<button class="primary fullwidth" id="mpMakeInvite">Gerar convite P2P</button>'+
       '<p class="smallnote">Compartilhe o convite apenas com alguém de confiança. Antes de abrir um mundo importante, use Meus mundos → Backup. O Criativo é recomendado para construir em dupla.</p>',true);
     const sel=$('#mpWorldSelect'), fresh=$('#mpNewWorldFields');
@@ -666,7 +666,7 @@
     }
     if(msg.t==='world' && mpRole==='guest') {
       const src=msg.rec;
-      if(!src || src.schema!==1 || ![1,2,3,4].includes(src.generator) || typeof src.seed!=='string' ||
+      if(!src || src.schema!==1 || ![1,2,3,4,5].includes(src.generator) || typeof src.seed!=='string' ||
         typeof src.name!=='string' || !src.edits || typeof src.edits!=='object')return toast('Dados do mundo incompatíveis.');
       const rec=structuredClone(src);
       const existing=g && mpHostWorldId===src.id ? {p:{...g.p},inv:structuredClone(g.inv)} : null;
@@ -864,7 +864,7 @@
             '<small>Construa livremente, sem limite de blocos, e voe para explorar.</small></span>' +
             '<span class="mode-check" aria-hidden="true">✓</span></button>' +
         '</div>' +
-        '<label class="field"><span class="field-heading">✦ Geração do terreno</span><select id="worldGenerator"><option value="3">Clássico · terreno atual</option><option value="4">Exploração · cavernas profundas e riachos</option></select><small>A mesma semente reproduz o mapa quando a geração é igual.</small></label>' +
+        '<label class="field"><span class="field-heading">✦ Geração do terreno</span><select id="worldGenerator"><option value="3">Clássico · terreno atual</option><option value="4">Exploração · cavernas profundas e riachos</option><option value="5">Expedição · ruínas, cabana e cripta</option></select><small>A mesma semente reproduz o mapa quando a geração é igual.</small></label>' +
         '<label class="field rhythm-field" id="difficultyField"><span class="field-heading"><span class="field-badge" aria-hidden="true">◷</span> Ritmo da partida</span>' +
           '<select id="difficulty"><option value="normal">Normal · ciclo de 24 minutos</option>' +
           '<option value="short">Ciclo rápido · 4 minutos</option>' +
@@ -950,7 +950,7 @@
     } catch(e) {console.error(e); toast('Falha ao exportar mundo.');}
   }
   function validateBackup(rec) {
-    if (!rec || rec.schema !== 1 || ![1,2,3,4].includes(rec.generator) ||
+    if (!rec || rec.schema !== 1 || ![1,2,3,4,5].includes(rec.generator) ||
         typeof rec.seed !== 'string' || rec.seed.length > 150 ||
         typeof rec.name !== 'string' || !rec.name.trim() ||
         !['survival','creative'].includes(rec.mode) ||
@@ -1157,6 +1157,13 @@
       options.push(navigationCard('ruin:'+i, '◇ '+label,
         (g.seals[i]?'Selo coletado':'Selo pendente')+' · '+Math.round(Math.hypot(g.p.x-s.x,g.p.z-s.z))+' m',true,active==='ruin:'+i));
     }
+    if(g.generator===5)for(const site of g.sites||[]){
+      const p=Voxel.treasurePoint(site);if(!p)continue;
+      const k='treasure:'+site.id;
+      const items=g.chests[[p.x,p.y,p.z].join(',')];
+      const hint=(items?.some(Boolean)?'Tesouro disponível':'Sem recompensa registrada')+' · '+Math.round(Math.hypot(g.p.x-p.x,g.p.z-p.z))+' m';
+      options.push(navigationCard(k,'▣ '+p.label,hint,true,active===k));
+    }
     panel('house','Navegador de destinos',
       '<p class="house-lede">Escolha um destino para receber orientação no jogo. A seta mostra a direção em <strong>linha reta</strong>: contorne rios, paredões e construções.</p>'+
       '<div class="nav-active"><small>DESTINO SELECIONADO</small><strong>'+esc(target?.label||'Nenhum destino ativo')+'</strong>'+
@@ -1179,7 +1186,7 @@
     const chestCount = Object.keys(g.chests || {}).length;
     const qualityNames = ['Baixa','Média','Alta'];
     return [
-      'MUNDO PRISMA · DIAGNÓSTICO LOCAL v0.9.28',
+      'MUNDO PRISMA · DIAGNÓSTICO LOCAL v0.9.29',
       'Gerado: ' + new Date().toISOString(),
       'Motor: ' + renderer.type + ' · qualidade: ' + (qualityNames[settings.quality] || settings.quality),
       'FPS médio: ' + perf.averageFPS + ' · FPS 1% low: ' + perf.low1FPS,
@@ -1412,7 +1419,7 @@
         '</ul><p>O primeiro selo libera a pedra rúnica. Com os três, use a bancada para combinar cristal, cobre e vidro em um Farol Prisma. Coloque-o para acender uma aurora sobre sua base.</p></div>';
     } else
       body =
-        '<p>Mundo Prisma é um sandbox voxel de exploração, sobrevivência e construção. Explore os Campos de Âmbar, a Floresta de Névoa e as Dunas de Vidro. Nas dunas, procure os obeliscos com cristais no topo.</p><p class="muted">Versão jogável 0.9.28 · Solo e multiplayer experimental<br>Arte, sprites, tipografia de título e efeitos sonoros criados para Mundo Prisma. Seu progresso é salvo neste navegador.</p>';
+        '<p>Mundo Prisma é um sandbox voxel de exploração, sobrevivência e construção. Explore os Campos de Âmbar, a Floresta de Névoa e as Dunas de Vidro. Nas dunas, procure os obeliscos com cristais no topo.</p><p class="muted">Versão jogável 0.9.29 · Solo e multiplayer experimental<br>Arte, sprites, tipografia de título e efeitos sonoros criados para Mundo Prisma. Seu progresso é salvo neste navegador.</p>';
     panel(
       'guide',
       'Guia de campo',
@@ -1971,7 +1978,7 @@
     $('#debug').hidden = !debug;
     if (debug)
       $('#debug').textContent =
-        'PRISMA 0.9.28 · ' +
+        'PRISMA 0.9.29 · ' +
         renderer.type +
         '\n' +
         perfFrames.snapshot().averageFPS +

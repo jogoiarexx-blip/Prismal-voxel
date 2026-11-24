@@ -748,13 +748,13 @@ const Voxel = (() => {
         const x = Math.round(Math.sin(arc) * radius),
           z = -Math.round(Math.cos(arc) * radius),
           h = land(x, z, seed, generator).h;
-        if ((generator === 4 && land(x,z,seed,generator).river) || h < SEA + 2 || (player && Math.hypot(player.x - x, player.z - z) < 12)) continue;
+        if ((generator === 5 && h > H - 12) || (generator >= 4 && land(x,z,seed,generator).river) || h < SEA + 2 || (player && Math.hypot(player.x - x, player.z - z) < 12)) continue;
         let free = true;
         for (let dz = -4; dz <= 4 && free; dz++)
           for (let dx = -4; dx <= 4 && free; dx++) {
             if (
               edits[key((x + dx) >> 4, (z + dz) >> 4)] ||
-              (generator === 4 && land(x+dx,z+dz,seed,generator).river) ||
+              (generator >= 4 && land(x+dx,z+dz,seed,generator).river) ||
               Math.abs(land(x + dx, z + dz, seed, generator).h - h) > 3
             )
               free = false;
@@ -811,6 +811,60 @@ const Voxel = (() => {
     }
     set(x, y, z, 31);
     set(x, y + 1, z, 28);
+  }
+  // Expedition generation (5): independent visual structures and one-time
+  // treasure caches. Coordinates stay inside the reserved ruin footprint.
+  function treasurePoint(site) {
+    if (!site || !Number.isInteger(site.id) || site.id < 0 || site.id > 2 ||
+        ![site.x,site.y,site.z].every(Number.isInteger)) return null;
+    const offsets = [[3,0,1],[-2,0,2],[-1,-5,-2]];
+    const [dx,dy,dz] = offsets[site.id];
+    return {x:site.x+dx,y:site.y+dy,z:site.z+dz,label:['Baú da Alvorada','Cabana das Brumas','Cripta do Zênite'][site.id]};
+  }
+  function expeditionChests(sites) {
+    const result = {};
+    const tables = [[[25,8],[23,4],[24,3]],[[41,4],[9,6],[35,2],[42,1]],[[11,4],[35,5],[47,1],[13,2]]];
+    for (const site of sites) {
+      const p=treasurePoint(site);if(!p)continue;
+      const items=Array(18).fill(null);
+      tables[site.id].forEach(([b,n],i)=>{items[i]={b,n:durability[b]?1:n,...(durability[b]?{dur:durability[b]}:{})};});
+      result[[p.x,p.y,p.z].join(',')]=items;
+    }
+    return result;
+  }
+  function decorateExpedition(site,set) {
+    const {x,y,z,id}=site;
+    const put=(dx,dy,dz,b)=>set(x+dx,y+dy,z+dz,b);
+    if(id===0){
+      // Broken arcade, mosaic walkway, and a little open-air supply depot.
+      for(let dx=-2;dx<=2;dx++)for(let dz=1;dz<=3;dz++)put(dx,-1,dz,(dx+dz)%2?26:74);
+      for(const dx of [-3,3]){put(dx,0,-2,48);put(dx,1,-2,31);put(dx,2,-2,54);}
+      put(3,0,0,20);put(3,1,0,67);put(2,0,2,48);
+    } else if(id===1){
+      // Abandoned 3x3 shelter: open doorway, missing roof tile and a glazed window.
+      for(let dx=-3;dx<=-1;dx++)for(let dz=1;dz<=3;dz++){
+        put(dx,-1,dz,8);
+        const edge=dx===-3||dx===-1||dz===1||dz===3;
+        for(let dy=0;dy<3;dy++)put(dx,dy,dz,edge && !(dx===-1&&dz===2&&dy<2)?(dy===1&&dx===-3&&dz===2?92:dy===0?48:68):0);
+        put(dx,3,dz,dx===-3&&dz===3?0:65);
+      }
+      put(-3,1,3,91);put(2,0,3,67);put(1,0,-3,19);
+    } else {
+      // Small underground shrine with a descending, walkable stair corridor.
+      // Carve the room first, then steps; keep the surface core untouched.
+      for(let dx=-2;dx<=2;dx++)for(let dz=-3;dz<=-1;dz++){
+        put(dx,-6,dz,26);for(let dy=-5;dy<=-3;dy++)put(dx,dy,dz,0);
+        put(dx,-2,dz,20);
+      }
+      for(let i=0;i<6;i++){
+        const dz=3-i, floor=-1-i;
+        for(const dx of [1,2]){put(dx,floor,dz,74);for(let dy=floor+1;dy<=floor+3;dy++)put(dx,dy,dz,0);}
+      }
+      put(-2,-5,-3,31);put(-2,-4,-3,13);put(0,-5,-3,20);
+      // Surface entrance signaled by two rune posts, not a new seal.
+      put(0,0,3,31);put(0,1,3,13);put(3,0,3,31);
+    }
+    const p=treasurePoint(site);if(p)set(p.x,p.y,p.z,15);
   }
   function seedHash(str) {
     let h = 2166136261;
@@ -878,7 +932,7 @@ const Voxel = (() => {
   // continuous across chunk borders, irrespective of loading order.
   function land(x, z, s, generator = 1) {
     const base = classicLand(x, z, s, generator);
-    if (generator !== 4 || x < 12 || Math.hypot(x,z-3) < 24) return base;
+    if (generator < 4 || x < 12 || Math.hypot(x,z-3) < 24) return base;
     const center = 46 + 12 * Math.sin(x * .035 + (s % 29) * .065) + 5 * Math.sin(x * .091);
     const width = 2.1 + 1.8 * noise(x * .055, 2, s ^ 441);
     const distance = Math.abs(z-center);
@@ -927,7 +981,7 @@ const Voxel = (() => {
           wz = oz + z,
           { h, mist, dunes, region, waterY = SEA, river = false } = land(wx, wz, s, generator);
         top = Math.max(top, h, waterY);
-        const tunnels = generator === 4 ? explorationCaves(wx,wz,s,h) : [];
+        const tunnels = generator >= 4 ? explorationCaves(wx,wz,s,h) : [];
         const cv = noise(wx * 0.081, wz * 0.081, s ^ 871),
           path = SEA - 8 + 5 * Math.sin(wx * 0.079) + 3 * Math.cos(wz * 0.095);
         for (let y = 0; y <= Math.max(waterY, h); y++) {
@@ -945,7 +999,7 @@ const Voxel = (() => {
                   : 19;
           else if (y === h) b = h <= SEA + 1 || (generator >= 2 && dunes) ? 4 : mist ? 17 : 1;
           else if (y >= h - 3) b = h < SEA + 1 || (generator >= 2 && dunes) ? 4 : 2;
-          else if (generator === 4 && tunnels.some(([lo,hi])=>y>=lo && y<=hi)) b = 0;
+          else if (generator >= 4 && tunnels.some(([lo,hi])=>y>=lo && y<=hi)) b = 0;
           else if (y > 8 && cv > 0.54 && Math.abs(y - path) < (cv - 0.51) * 11) b = 0;
           else if (y > 0) {
             const ore = hash(wx + y * 3, wz - y * 2, s ^ 717);
@@ -1001,7 +1055,7 @@ const Voxel = (() => {
     tree(2, 0, true);
     for (const site of sites)
       if (site.x + 4 >= ox && site.z + 4 >= oz && site.x - 4 < ox + 16 && site.z - 4 < oz + 16)
-        buildRuin(site, set);
+        { buildRuin(site, set); if(generator===5)decorateExpedition(site,set); }
     return { a, top };
   }
   const directions = [
@@ -1310,6 +1364,8 @@ const Voxel = (() => {
     seedHash,
     ruins,
     planRuins,
+    treasurePoint,
+    expeditionChests,
     hash,
     land,
     generate,

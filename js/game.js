@@ -38,16 +38,18 @@ const Game = (() => {
     return bag.reduce((a, t) => a + (t?.b === b ? t.n : 0), 0);
   }
   function fresh(name, seed, mode, difficulty, generator = 3) {
-    generator = generator === 4 ? 4 : 3;
+    generator = [4,5].includes(generator) ? generator : 3;
     let h = land(0, 3, Voxel.seedHash(seed), generator).h;
     let inv = empty();
     if (mode === 'creative') [8, 49, 53, 57, 55, 16, 83, 85, 87].forEach((v, i) => (inv[i] = slot(v, 64)));
     else {
       inv[0] = slot(23, 3);
     }
+    const sites = generator===5 ? Voxel.planRuins(Voxel.seedHash(seed),{}, {x:.5,z:3.5},5) : null;
     return {
       schema: 1,
       generator,
+      ...(sites ? {sites} : {}),
       id: crypto.randomUUID?.() || Date.now().toString(36) + Math.random().toString(36).slice(2),
       name,
       seed,
@@ -61,7 +63,7 @@ const Game = (() => {
       day: 1,
       elapsed: 0,
       edits: {},
-      chests: {},
+      chests: sites ? Voxel.expeditionChests(sites) : {},
       drops: [],
       mobs: [],
       bag: null,
@@ -77,7 +79,7 @@ const Game = (() => {
         mode: rec.mode,
         difficulty: rec.difficulty,
       };
-      if (![1, 2, 3, 4].includes(rec.generator) || rec.schema !== 1)
+      if (![1, 2, 3, 4, 5].includes(rec.generator) || rec.schema !== 1)
         throw Error('Versão de mundo incompatível');
       this.generator = rec.generator;
       this.fragments = [];

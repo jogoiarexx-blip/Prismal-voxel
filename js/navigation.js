@@ -8,7 +8,7 @@ const Navigation = (() => {
   function normalize(mode) {
     if (typeof mode !== 'string') return 'objective';
     if (modes.includes(mode)) return mode;
-    if (/^ruin:[012]$/.test(mode)) return mode;
+    if (/^(ruin|treasure):[012]$/.test(mode)) return mode;
     return 'objective';
   }
   function target(session) {
@@ -24,6 +24,10 @@ const Navigation = (() => {
       point=(session.sites || []).find(s=>s && !(session.seals||[])[s.id]);
       label=point ? ((typeof Voxel !== 'undefined' ? Voxel.ruins?.[point.id]?.name : null) || 'Próxima ruína') : '';
       key=point ? 'objective:'+point.id : '';
+    } else if (mode.startsWith('treasure:')) {
+      if(session.generator!==5 || typeof Voxel==='undefined')return null;
+      point=Voxel.treasurePoint(site(Number(mode.slice(9))));
+      label=point?.label || 'Tesouro';key=mode;
     } else if (mode.startsWith('ruin:')) {
       const id=Number(mode.slice(5));point=site(id);
       label=(typeof Voxel !== 'undefined' ? Voxel.ruins?.[id]?.name : null) || 'Ruína '+(id+1);
