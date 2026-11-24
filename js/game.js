@@ -46,7 +46,7 @@ const Game = (() => {
   function count(bag, b) {
     return bag.reduce((a, t) => a + (t?.b === b ? t.n : 0), 0);
   }
-  function fresh(name, seed, mode, difficulty, generator = 3) {
+  function fresh(name, seed, mode, difficulty, generator = 3, keepInventory = false) {
     generator = [4,5,6].includes(generator) ? generator : 3;
     let h = land(0, 3, Voxel.seedHash(seed), generator).h;
     let inv = empty();
@@ -64,6 +64,7 @@ const Game = (() => {
       seed,
       mode,
       difficulty,
+      keepInventory:keepInventory===true,
       saved: Date.now(),
       p: { x: 0.5, y: h + 1.02, z: 3.5, yaw: 0.59, pitch: -0.025, life: 100, food: 100, air: 100 },
       inv,
@@ -87,6 +88,7 @@ const Game = (() => {
         seed: rec.seed,
         mode: rec.mode,
         difficulty: rec.difficulty,
+        keepInventory:rec.keepInventory===true,
       };
       if (![1, 2, 3, 4, 5, 6].includes(rec.generator) || rec.schema !== 1)
         throw Error('Versão de mundo incompatível');
@@ -619,7 +621,8 @@ const Game = (() => {
       if ((forward || side) && (this.grounded || this.swimming)) {
         this.stepTick -= dt;
         if (this.stepTick <= 0) {
-          Sound.play(this.swimming ? 'swim' : 'step', this.settings);
+          const ground=this.get(Math.floor(p.x),Math.floor(p.y-.06),Math.floor(p.z));
+          Sound.play(this.swimming ? 'swim' : Sound.footstep(ground), this.settings);
           this.stepTick = this.swimming ? 2.1 / 2.9 : sprint ? 0.34 : 0.48;
         }
       }
@@ -1991,14 +1994,14 @@ const Game = (() => {
     }
     respawn(why) {
       let p = this.p;
-      if (!this.creative && this.meta.difficulty !== 'peaceful') {
+      if (!this.creative && this.meta.difficulty !== 'peaceful' && !this.meta.keepInventory) {
         if (this.bag)
           for (let t of this.bag.inv)
             if (t?.n) this.addDrop(this.bag.x, this.bag.y, this.bag.z, t.b, t.n, t.dur);
         this.bag = { x: p.x, y: p.y, z: p.z, inv: this.inv };
         this.inv = empty();
       }
-      const h = land(0, 3, this.seed).h;
+      const h = land(0, 3, this.seed,this.generator).h;
       p.x = 0.5;
       p.z = 3.5;
       p.y = h + 1.02;
@@ -2043,7 +2046,7 @@ const Game = (() => {
       this.damageCool = 5;
       this.previousEye = null;
       this.stream(true);
-      this.notify('Você renasceu' + (why ? ' · ' + why : ''));
+      this.notify('Você renasceu' + (why ? ' · ' + why : '')+(this.meta.keepInventory?' · Inventário preservado':''));
       this.changed();
       this.save();
     }
