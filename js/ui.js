@@ -1761,7 +1761,7 @@
       if(mpRole==='guest' && mp?.connected) {
         chestLoaded=false;chestPending=true;chestRevision=-1;
         guestInventorySync();
-        mp.send({t:'chest-open',pos:chestPos,id:mpGuestProfile?.id,seq:mpGuestSeq}).catch(()=>{
+        mp.send({t:'chest-open',pos:chestPos,id:mpGuestProfile?.id,seq:mpGuestProfile?.pendingInv?.seq||0}).catch(()=>{
           chestPending=false;toast('Não foi possível abrir o baú do anfitrião.');
         });
       }
