@@ -1,3 +1,12 @@
+# Mundo Prisma v0.9.44 — Vilarejos vivos (prévia)
+
+- Gerador opcional 7, Vilarejos vivos: terraços e hortas irrigadas em locais adequados. Geradores 1–6 mantidos; mundos anteriores não ganham novas estruturas automaticamente.
+- Aldeões com rotinas de dia/noite, trabalho agrícola nos canteiros gerados, ida ao forno ou bancada e animação de trabalho. A colheita é replantada; ainda não abastece o estoque comercial. Ferreiros e construtores animam o trabalho, sem fabricação autônoma de itens.
+- À noite, tentam entrar na casa e deitar no centro do piso; comércio suspenso durante o sono. Não atravessam obstáculos por teleporte. Busca local limitada de caminhos, sincronização de atividade P2P e atualização do cache offline.
+- Teste `node tests/village-routine-0944.test.js`: 12 casas com ciclo completo e estações; 72 chunks legados idênticos e 55 hortas elegíveis em três sementes. Validação WebGL, desempenho mobile e P2P real continuam pendentes. Caminhos bloqueados por jogadores podem impedir a rotina.
+
+---
+
 # Mundo Prisma v0.9.43 — Revisão do GDD (prévia)
 
 - [Auditoria atualizada do GDD e plano para v1.0](docs/STATUS_GDD_VS_JOGO_v0.9.43.md).
