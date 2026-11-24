@@ -179,6 +179,7 @@ const Voxel = (() => {
     ['Bebedouro com água', '879c98', .9], // 175
     ['Armadura de cobre', 'c88b56', 0], // 176
     ['Armadura de ferro', 'cbd4d8', 0], // 177
+    ['Moeda prisma', 'efc66a', 0], // 178
   ];
   const blocks = data.map(([name, hex, hard], id) => ({
     id,
