@@ -3,7 +3,7 @@
 // No matchmaking/signaling backend and no third-party runtime libraries.
 const PrismaNet = (() => {
   const PREFIX = 'PRISMA1:';
-  const PROTOCOL=2;
+  const PROTOCOL=3;
   const MAX_CODE_LENGTH = 170000;
   const MAX_PAYLOAD = 5_000_000;
   const RTC = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun.cloudflare.com:3478' }] };
