@@ -10,6 +10,10 @@ const View = (() => {
       d = Math.cos(p.pitch);
     return { r: [c, 0, s], u: [-s * t, d, c * t], f: [s * d, t, -c * d] };
   };
+  function entityVisible(entity,eye,forward,range) {
+    const x=entity.x-eye[0],y=entity.y-eye[1],z=entity.z-eye[2];
+    return x*x+y*y+z*z<=range*range&&(x*x+y*y+z*z<36||x*forward[0]+y*forward[1]+z*forward[2]>-3);
+  }
   function camera(g, settings, alpha = 1) {
     const axes = basis(g.p),
       now = g.eye(),
@@ -544,7 +548,11 @@ const View = (() => {
       if(g.remotePlayer?.active) explorerAvatar(g.remotePlayer,true);
       // Each creature has its own lightweight voxel anatomy and patterned palette.
       // No GLB models, image atlases or additional draw calls are necessary.
+      const entityRange=Math.max(30,(g.radius||3)*16+12);
+      this.visibleEntities=0;
       for (const mob of g.mobs) {
+        if(!entityVisible(mob,eye,f,entityRange))continue;
+        this.visibleEntities++;
         const x=mob.x, y=mob.y, z=mob.z;
         if (![x,y,z,mob.face||0].every(Number.isFinite)) continue;
         const kind=mob.kind || 'Raspejante';
@@ -775,12 +783,14 @@ const View = (() => {
           ent[i+2]=z+px*sin+pz*cos;
         }
       }
-      for (const p of g.fragments) box(ent, p.x, p.y, p.z, 0.1, 0.1, 0.1, p.b);
+      for (const p of g.fragments) if(entityVisible(p,eye,f,24))box(ent,p.x,p.y,p.z,.1,.1,.1,p.b);
       for (let d of g.drops) {
+        if(!entityVisible(d,eye,f,entityRange))continue;
+        this.visibleEntities++;
         const y = d.y + 0.16 + Math.sin(g.elapsed * 3 + d.x) * 0.06;
         box(ent, d.x - 0.13, y, d.z - 0.13, 0.26, 0.26, 0.26, d.b);
       }
-      if (g.bag) {
+      if (g.bag&&entityVisible(g.bag,eye,f,entityRange)) {
         const b = g.bag;
         box(ent, b.x - 0.35, b.y + 0.05, b.z - 0.3, 0.7, 0.65, 0.6, 15);
       }
@@ -1073,7 +1083,11 @@ const View = (() => {
             );
           }
       }
+      const entityRange=Math.max(30,(g.radius||3)*16+12);
+      this.visibleEntities=0;
       for (const m of g.mobs) {
+        if(!entityVisible(m,o,f,entityRange))continue;
+        this.visibleEntities++;
         // The low-end software renderer also keeps recognizable silhouettes.
         const kind=m.kind||'Raspejante', boss=kind==='Guardião Prisma';
         const col=({Saltim:'#d6a56a',Musgato:'#5a946b',Luzerrante:'#50efd4',
@@ -1129,9 +1143,9 @@ const View = (() => {
         }
         if(boss) drawSprite(m.x,m.y+1.59,m.z,.34,'#b49fe7');
       }
-      for (const p of g.fragments) drawSprite(p.x, p.y, p.z, 0.11, '#' + Voxel.blocks[p.b].hex);
-      for (const d of g.drops) drawSprite(d.x, d.y + 0.25, d.z, 0.28, '#' + Voxel.blocks[d.b].hex);
-      if (g.bag) drawSprite(g.bag.x, g.bag.y + 0.4, g.bag.z, 0.65, '#b58e5d');
+      for (const p of g.fragments) if(entityVisible(p,o,f,24))drawSprite(p.x,p.y,p.z,.11,'#'+Voxel.blocks[p.b].hex);
+      for (const d of g.drops) if(entityVisible(d,o,f,entityRange)){this.visibleEntities++;drawSprite(d.x,d.y+.25,d.z,.28,'#'+Voxel.blocks[d.b].hex);}
+      if (g.bag&&entityVisible(g.bag,o,f,entityRange)) drawSprite(g.bag.x, g.bag.y + 0.4, g.bag.z, 0.65, '#b58e5d');
     }
   }
   function create(c) {
@@ -1149,5 +1163,5 @@ const View = (() => {
     c.style.imageRendering = 'pixelated';
     return new CPURender(c);
   }
-  return { create, basis, camera };
+  return { create, basis, camera, entityVisible };
 })();
