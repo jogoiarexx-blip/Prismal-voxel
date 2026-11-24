@@ -1188,7 +1188,7 @@
     const chestCount = Object.keys(g.chests || {}).length;
     const qualityNames = ['Baixa','Média','Alta'];
     return [
-      'MUNDO PRISMA · DIAGNÓSTICO LOCAL v0.9.31',
+      'MUNDO PRISMA · DIAGNÓSTICO LOCAL v0.9.32',
       'Gerado: ' + new Date().toISOString(),
       'Motor: ' + renderer.type + ' · qualidade: ' + (qualityNames[settings.quality] || settings.quality),
       'FPS médio: ' + perf.averageFPS + ' · FPS 1% low: ' + perf.low1FPS,
@@ -1578,6 +1578,21 @@
       true,
     );
   }
+  function furnaceMarkup() {
+    if(g.networkGuest)return '<p class="smallnote">O anfitrião administra este forno compartilhado.</p>';
+    const q=g.furnaceQueue();
+    return '<div class="quickcraft-box" id="furnaceQueue"><div class="sectionhead">Fila do forno · '+q.length+'/3</div>' +
+      '<p class="smallnote">Combustível por receita: carvão indicado na receita ou 1 carvão (alternativa: 2 tábuas). O preparo pausa ao sair do jogo.</p>' +
+      q.map((j,i)=>{const r=Voxel.recipes[j.recipe];return '<div style="margin:.55rem 0"><b>'+esc(name(r[0]))+' ×'+r[1]+'</b><progress id="furnaceProgress'+i+'" max="'+g.furnaceDuration(r)+'" value="'+(g.furnaceDuration(r)-j.remaining)+'" style="width:100%;height:12px;accent-color:#e5ae63"></progress><small id="furnaceTime'+i+'"></small></div>';}).join('')+
+      (q.length?'':'<p class="smallnote">Forno vazio. Escolha uma receita abaixo.</p>')+
+      '<button type="button" class="secondary fullwidth" data-act="furnacecollect" '+(q.some(j=>j.remaining===0)?'':'disabled')+'>Retirar próximo produto pronto</button></div>';
+  }
+  function updateFurnaceProgress() {
+    if(!g||screen!=='bag'||bagStation!==14)return;
+    const q=g.furnaceQueue();
+    q.forEach((j,i)=>{const p=$('#furnaceProgress'+i),t=$('#furnaceTime'+i);if(p)p.value=g.furnaceDuration(Voxel.recipes[j.recipe])-j.remaining;if(t){const label=j.remaining===0?'Pronto para retirar':Math.ceil(j.remaining)+' s restantes';if(t.textContent!==label)t.textContent=label;}});
+    const button=$('[data-act="furnacecollect"]');if(button)button.disabled=!q.some(j=>j.remaining===0);
+  }
   function inventory(reset = true, station = null) {
     if (reset) bagSel = null;
     // E and the mobile Bag button always open hand crafting. Re-rendering an
@@ -1641,7 +1656,7 @@
             '>' +
             '<span class="recipe-icon">' + img(r[0]) + '</span>' +
             '<span><b>' + esc(name(r[0])) + ' ×' + r[1] + '</b><small>' +
-            r[2].map(([b, n]) => n + ' ' + esc(name(b)).toLowerCase()).join(' + ') +
+            (activeStation===14 ? g.furnaceIngredients(r) : r[2]).map(([b, n]) => n + ' ' + esc(name(b)).toLowerCase()).join(' + ') +
             stationText + sealText +
             '</small></span><strong>+</strong></button>'
           );
@@ -1649,6 +1664,7 @@
         .join('');
       right =
         '<div class="bag-panel bag-side-panel">' +
+          (activeStation===14 ? furnaceMarkup() : '') +
           '<div class="quickcraft-box">' +
             '<div class="sectionhead bag-side-title">' + esc(craftingLabel) + '</div>' +
             '<div class="quickcraft-shell">' +
@@ -1692,6 +1708,7 @@
       true,
     );
     bindSlots();
+    updateFurnaceProgress();
   }
   const validInventory = (items,count) => PrismaCoop.validInventory(items,count,Voxel.blocks.length);
   function validSharedChest(pos) {
@@ -1852,6 +1869,7 @@
     } else if (s === 'hud') {
       if (screen === 'play') hud();
     } else if (s === 'station') {
+      if([14,136].includes(v.b))g.furnaceTarget=v.p.slice();
       [15, 83, 84].includes(v.b) ? chest(v) : inventory(true, v.b===136?14:v.b);
     } else if(s==='chestBreak') {
       broadcastChest(v,true);
@@ -1980,7 +1998,7 @@
     $('#debug').hidden = !debug;
     if (debug)
       $('#debug').textContent =
-        'PRISMA 0.9.31 · ' +
+        'PRISMA 0.9.32 · ' +
         renderer.type +
         '\n' +
         perfFrames.snapshot().averageFPS +
@@ -2154,6 +2172,9 @@
         break;
       case 'craft':
         if (g.craft(+i, bagStation)) inventory(true, bagStation);
+        break;
+      case 'furnacecollect':
+        if(g.collectFurnace())inventory(true,14);
         break;
       case 'crafttab':
         bagRecipeTab = i;
@@ -2614,7 +2635,14 @@
     const frameSeconds = (now - (lastFrame || now)) / 1000;
     const dt = Math.min(0.1, frameSeconds);
     lastFrame = now;
-    if (!g || !g.ready || g.paused) return;
+    if (!g || !g.ready) return;
+    if(g.paused) {
+      if(screen==='bag'&&bagStation===14&&!document.hidden&&!g.networkGuest) {
+        g.tickFurnaces(dt);updateFurnaceProgress();
+        if(now-lastEmergencyAt>15000){lastEmergencyAt=now;emergencyCheckpoint();}
+      }
+      return;
+    }
     if (!document.hidden) perfFrames.push(frameSeconds);
     // Sync local journal is a best-effort safety net for abrupt tab closures.
     // Normal IndexedDB autosaves remain the authoritative persistent record.

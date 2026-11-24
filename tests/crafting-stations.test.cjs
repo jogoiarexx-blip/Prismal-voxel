@@ -42,12 +42,12 @@ check(!g.canCraft(Voxel.recipes[furnace],0),'furnace recipe cannot be made in ba
 check(!g.canCraft(Voxel.recipes[furnace],12),'furnace recipe cannot be made in workbench');
 check(!g.canCraft(Voxel.recipes[bench],14),'workbench recipe cannot be made in furnace');
 check(g.canCraft(Voxel.recipes[bench],12),'workbench recipe at correct station');
-check(g.canCraft(Voxel.recipes[furnace],14),'furnace recipe at correct station');
+check(!g.canCraft(Voxel.recipes[furnace],14),'guest furnace must be operated by host');
 const original=JSON.stringify(g.inv);
 check(!Session.prototype.craft.call(g,bench,0),'craft rejects the wrong station');
 check(JSON.stringify(g.inv)===original,'rejected craft does not consume items');
 check(Session.prototype.craft.call(g,bench,12),'bench recipe crafts at workbench');
-check(Session.prototype.craft.call(g,furnace,14),'furnace recipe crafts at furnace');
+check(!Session.prototype.craft.call(g,furnace,14),'guest cannot create unconfirmed furnace output');
 check(Session.prototype.craft.call(g,hand,0),'hand recipe crafts in backpack');
 g.nearStation=()=>false;
 check(!g.canCraft(Voxel.recipes[bench],12),'bench crafting denied when player moves away');

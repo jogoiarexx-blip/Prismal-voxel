@@ -1,0 +1,22 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+const V=require('../js/world.js');
+const ctx={Voxel:V,Sound:{play(){}},crypto:{randomUUID:()=> 'forno'},Math,Date,console,structuredClone};
+vm.createContext(ctx);vm.runInContext(fs.readFileSync('js/navigation.js','utf8')+'\n'+fs.readFileSync('js/game.js','utf8')+'\nthis.Game=Game;',ctx);
+const P=ctx.Game.Session.prototype; P.startWorker=function(){};P.stream=function(){};P.changed=function(){this.changes=(this.changes||0)+1;};P.pump=function(){};P.relight=function(){};
+function create(rec){const g=new ctx.Game.Session(rec||ctx.Game.fresh('Forno','seed','survival','normal'),null,{},()=>{},()=>{});g.p.x=2.5;g.p.y=65;g.p.z=2.5;g.chunks.set('0,0',{a:new Uint8Array(16*16*V.H)});g.chunks.get('0,0').a[V.idx(3,65,2)]=14;g.chunks.get('0,0').a[V.idx(4,65,2)]=14;g.furnaceTarget=[3,65,2];return g;}
+const glass=V.recipes.findIndex(r=>r[0]===16&&r[3]===14),coal=V.recipes.findIndex(r=>r[0]===9&&r[3]===14);
+const amount=(g,b)=>g.inv.reduce((a,t)=>a+(t?.b===b?t.n:0),0);
+const g=create();g.inv.fill(null);g.inv[0]={b:4,n:20};g.inv[1]={b:9,n:5};g.inv[2]={b:5,n:5};g.inv[3]={b:8,n:10};
+assert(g.craft(glass,14));assert.equal(amount(g,4),18);assert.equal(amount(g,9),4);assert.equal(amount(g,16),0);assert.equal(g.get(3,65,2),136);assert(!g.collectFurnace());
+assert(g.craft(glass,14));assert(g.craft(glass,14));assert(!g.craft(glass,14));assert.equal(g.furnaceQueue().length,3);assert.equal(amount(g,4),14);
+g.tickFurnaces(5);assert.equal(g.furnaceQueue()[0].remaining,7);assert.equal(g.furnaceQueue()[1].remaining,12);
+const copy=create(g.snapshot());assert.equal(copy.furnaceQueue()[0].remaining,7);copy.tickFurnaces(7);assert.equal(copy.furnaceQueue()[0].remaining,0);assert.equal(copy.furnaceQueue()[1].remaining,12);assert(copy.collectFurnace());assert.equal(amount(copy,16),2);assert(!copy.collectFurnace());
+copy.tickFurnaces(12);copy.tickFurnaces(12);assert.equal(copy.get(3,65,2),14);assert(copy.collectFurnace());assert(copy.collectFurnace());assert(!copy.collectFurnace());assert.equal(amount(copy,16),6);assert.equal(Object.keys(copy.furnaces).length,0);
+copy.inv.fill(null);copy.inv[0]={b:5,n:2};assert(!copy.craft(coal,14));copy.inv[1]={b:8,n:2};assert(copy.craft(coal,14));assert.equal(amount(copy,8),0);assert.equal(amount(copy,5),1);
+copy.furnaceTarget=[4,65,2];assert.equal(copy.furnaceQueue().length,0);copy.furnaceTarget=[3,65,2];copy.chunks.clear();copy.tickFurnaces(12);assert.equal(copy.furnaces['3,65,2'][0].remaining,12);copy.chunks.set('0,0',{a:new Uint8Array(16*16*V.H)});copy.chunks.get('0,0').a[V.idx(3,65,2)]=136;copy.tickFurnaces(12);
+copy.inv.fill({b:3,n:64});assert(!copy.collectFurnace());assert.equal(copy.furnaceQueue().length,1);copy.inv[0]=null;assert(copy.collectFurnace());assert.equal(amount(copy,9),2);
+copy.networkGuest=true;assert(!copy.craft(glass,14));assert(!copy.collectFurnace());copy.networkGuest=false;copy.furnaceTarget=[300,65,2];assert(!copy.craft(glass,14));
+const old=create();assert.equal(Object.keys(old.furnaces).length,0);const invalid=old.restoreFurnaces({'__proto__':[], '1,3,2':[{recipe:-1,remaining:3},{recipe:glass,remaining:1000}]});assert.equal(invalid['1,3,2'].length,1);assert.equal(invalid['1,3,2'][0].remaining,12);
+const ui=fs.readFileSync('js/ui.js','utf8');assert.match(ui,/furnacecollect/);assert.match(ui,/g.tickFurnaces\(dt\);updateFurnaceProgress\(\)/);assert.match(ui,/g.furnaceTarget=v.p.slice\(\)/);
+console.log('PASS furnace: fuel, capacity, sequential batches, exact-once collection, inventory full, saved progress, chunk unload, guest isolation and UI wiring');

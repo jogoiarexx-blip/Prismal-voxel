@@ -103,6 +103,8 @@ const Game = (() => {
       this.eyeHeight = 1.62;
       this.previousEye = null;
       this.chests = rec.chests || {};
+      this.furnaces = this.restoreFurnaces(rec.furnaces);
+      this.furnaceTarget = null;
       this.saplings = rec.saplings || {};
       this.chestRevisions = rec.chestRevisions || Object.create(null);
       this.guestProfiles = rec.guestProfiles || Object.create(null);
@@ -623,6 +625,7 @@ const Game = (() => {
     tick(dt) {
       if (this.paused || !this.ready) return;
       this.elapsed += dt;
+      if (!this.networkGuest) this.tickFurnaces(dt);
       this.time += dt / (this.meta.difficulty === 'short' ? 240 : 1440);
       if (this.time >= 1) {
         this.day++;
@@ -814,6 +817,10 @@ const Game = (() => {
         return;
       }
       const hit = this.hit;
+      if (hit && [14,136].includes(hit.b) && (this.networkGuest || this.furnaces?.[hit.p.join(',')]?.length)) {
+        if(this.progress !== -1)this.notify(this.networkGuest ? 'Forno compartilhado: peça ao anfitrião' : 'Retire todos os produtos do forno antes de removê-lo');
+        this.progress=-1;return;
+      }
       if(this.networkGuest && hit && Voxel.cropInfo(hit.b)){this.notify('Plantação compartilhada: peça ao anfitrião');this.progress=-1;return;}
       if (this.networkGuest && hit && [15,83,84].includes(hit.b)) {
         if(this.progress===0)this.notify('Baú compartilhado: peça ao anfitrião para removê-lo');
@@ -1093,7 +1100,98 @@ const Game = (() => {
       this.notify('Selo ' + Voxel.ruins[site.id].seal + ' descoberto · ' + this.sealCount + '/3');
       this.save();
     }
+    // Each oven has three reserved batches, stored with the world, not in the UI.
+    // The recipe already includes coal where applicable; otherwise one coal or
+    // two planks are reserved as additional fuel. A finished batch is collected once.
+    restoreFurnaces(raw) {
+      const out = Object.create(null);
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+      for (const [k,queue] of Object.entries(raw).slice(0,64)) {
+        if (!/^-?\d+,-?\d+,-?\d+$/.test(k) || !Array.isArray(queue)) continue;
+        const [x,y,z]=k.split(',').map(Number);
+        if (![x,y,z].every(Number.isSafeInteger)||Math.abs(x)>=100000||Math.abs(z)>=100000||y<1||y>=Voxel.H)continue;
+        const jobs=queue.slice(0,3).filter(j=>j && Number.isInteger(j.recipe) && Voxel.recipeStation(Voxel.recipes[j.recipe])===14 && Number.isFinite(j.remaining)).map(j=>({recipe:j.recipe,remaining:clip(j.remaining,0,this.furnaceDuration(Voxel.recipes[j.recipe]))}));
+        if(jobs.length)out[k]=jobs;
+      }
+      return out;
+    }
+    furnaceDuration(r) { return [16,24,35,65,66,9].includes(r[0]) ? 12 : 8; }
+    furnacePosition() {
+      const pos=this.furnaceTarget;
+      if(!Array.isArray(pos)||pos.length!==3||!pos.every(Number.isSafeInteger))return null;
+      if(![14,136].includes(this.get(...pos,true)))return null;
+      const eye=this.eye();
+      return Math.hypot(...pos.map((n,i)=>n+.5-eye[i]))<=5 ? pos : null;
+    }
+    furnaceIngredients(r) {
+      const need=r[2].map(([b,n])=>[b,n]);
+      if(!need.some(([b])=>b===9)) {
+        if(count(this.inv,9)>0)need.push([9,1]);
+        else {
+          const existing=need.find(([b])=>b===8);
+          if(existing)existing[1]+=2;else need.push([8,2]);
+        }
+      }
+      return need;
+    }
+    furnaceQueue() {
+      const pos=this.furnacePosition();
+      return pos ? this.furnaces?.[pos.join(',')] || [] : [];
+    }
+    queueFurnace(i) {
+      const r=Voxel.recipes[i],pos=this.furnacePosition();
+      if(!pos||!r||!this.canCraft(r,14))return false;
+      const k=pos.join(','),queue=this.furnaces[k] ||= [];
+      const copy=this.inv.map(t=>t&&{...t});
+      for(const [b,n] of this.furnaceIngredients(r))cost(copy,b,n);
+      this.inv=copy;
+      queue.push({recipe:i,remaining:this.furnaceDuration(r)});
+      this.set(...pos,136);
+      this.changed();
+      this.notify('Na fila · '+blocks[r[0]].name);
+      return true;
+    }
+    tickFurnaces(dt) {
+      if(this.networkGuest||!Number.isFinite(dt)||dt<=0)return;
+      for(const [k,queue] of Object.entries(this.furnaces||{})) {
+        const pos=k.split(',').map(Number),id=this.get(...pos,true);
+        // Unloaded chunks and missing ovens never consume the reserved batch.
+        if(id!==14&&id!==136)continue;
+        const job=queue.find(j=>j.remaining>0);
+        if(!job){if(id===136)this.set(...pos,14);continue;}
+        if(id===14)this.set(...pos,136);
+        job.remaining=Math.max(0,job.remaining-dt);
+        if(job.remaining<=1e-8){
+          job.remaining=0;
+          if(!queue.some(j=>j.remaining>0))this.set(...pos,14);
+          this.changed();
+        }
+      }
+    }
+    collectFurnace() {
+      const pos=this.furnacePosition();
+      if(this.networkGuest||!pos)return false;
+      const k=pos.join(','),queue=this.furnaces[k];
+      if(!queue?.length)return false;
+      const i=queue.findIndex(j=>j.remaining===0);
+      if(i<0)return false;
+      const r=Voxel.recipes[queue[i].recipe],copy=this.inv.map(t=>t&&{...t});
+      if(fill(copy,r[0],r[1])){this.notify('Mochila cheia · produto preservado no forno');return false;}
+      this.inv=copy;queue.splice(i,1);
+      if(!queue.length)delete this.furnaces[k];
+      this.goals['craft'+r[0]]=true;
+      this.changed();Sound.play('craft',this.settings);
+      this.notify('Retirado · '+blocks[r[0]].name+' ×'+r[1]);
+      return true;
+    }
     canCraft(rec, station = 0) {
+      if(!rec)return false;
+      if(station===14){
+        if(this.networkGuest || Voxel.recipeStation(rec)!==14 || this.sealCount<(rec[4]||0))return false;
+        const pos=this.furnacePosition();if(!pos)return false;
+        const queue=this.furnaces[pos.join(',')];
+        return (queue?queue.length<3:Object.keys(this.furnaces).length<64) && this.furnaceIngredients(rec).every(([b,n])=>count(this.inv,b)>=n);
+      }
       return (
         Voxel.recipeStation(rec) === station &&
         this.sealCount >= (rec[4] || 0) &&
@@ -1106,6 +1204,7 @@ const Game = (() => {
       // Validate at the game layer, not just by hiding recipes in the panel.
       // Workbench/furnace recipes cannot be forged from the backpack or build menu.
       if (!r || !this.canCraft(r, station)) return false;
+      if(station===14)return this.queueFurnace(i);
       let copy = this.inv.map((t) => t && { ...t });
       for (let [b, n] of r[2]) cost(copy, b, n);
       if (fill(copy, r[0], r[1])) {
@@ -1114,19 +1213,10 @@ const Game = (() => {
       }
       this.inv = copy;
       this.goals['craft' + r[0]] = true;
-      if (r[3]===14 && !this.networkGuest) this.lightNearbyFurnace();
       this.changed();
       Sound.play('craft', this.settings);
       this.notify('Fabricado · ' + blocks[r[0]].name + ' ×' + r[1]);
       return true;
-    }
-    lightNearbyFurnace() {
-      const [x,y,z]=this.eye().map(Math.floor);
-      for(let dy=-3;dy<=2;dy++)for(let dx=-3;dx<=3;dx++)for(let dz=-3;dz<=3;dz++){
-        if(dx*dx+dy*dy+dz*dz>12)continue;
-        if(this.get(x+dx,y+dy,z+dz,true)===14){this.set(x+dx,y+dy,z+dz,136);return true;}
-      }
-      return false;
     }
     equip(b) {
       // Equip a crafted block directly: hotbar if present, otherwise swap from backpack.
@@ -1360,14 +1450,6 @@ const Game = (() => {
       // while normal tapping/right-clicking still interacts with them.
       const placing = forcePlace && !!blocks[t?.b]?.placeable;
       const sneaking = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') || this.touchCrouch;
-      if (h && (h.b===14 || h.b===136) && !sneaking && !placing && t?.b===9 && h.b===14) {
-        if(this.set(...h.p,136)) {
-          if(!this.creative && !--t.n)this.inv[this.selected]=null;
-          this.notify('Forno aceso! A fornalha ilumina seu abrigo.');
-          Sound.play('craft',this.settings);
-        }
-        return true;
-      }
       if (h && (h.b === 85 || h.b === 86) && !sneaking && !placing) {
         if (this.set(...h.p, h.b === 85 ? 86 : 85)) Sound.play('place', this.settings);
         return;
@@ -1784,6 +1866,7 @@ const Game = (() => {
         elapsed: this.elapsed,
         edits: this.edits,
         chests: this.chests,
+        furnaces: this.furnaces,
         chestRevisions: this.chestRevisions,
         guestProfiles: this.guestProfiles,
         saplings: this.saplings,
