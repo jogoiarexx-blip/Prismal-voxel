@@ -87,7 +87,7 @@ const Saves = (() => {
   const maxRecoveryBytes = 1_800_000; // bounded sync write; leave room for normal browser storage
   function validWorld(r) {
     return !!r && typeof r === 'object' && r.schema === 1 &&
-      [1,2,3,4,5,6].includes(r.generator) && typeof r.id === 'string' && r.id.length > 0 &&
+      [1,2,3,4,5,6,7].includes(r.generator) && typeof r.id === 'string' && r.id.length > 0 &&
       (typeof r.seed === 'string' || (typeof r.seed === 'number' && Number.isFinite(r.seed))) && Array.isArray(r.inv) && r.inv.length === 36 &&
       !!r.edits && typeof r.edits === 'object' && !Array.isArray(r.edits) &&
       !!r.p && [r.p.x,r.p.y,r.p.z].every(Number.isFinite) &&
