@@ -18,7 +18,7 @@ const Net=new Function('RTCPeerConnection','setInterval','clearInterval',read('m
 const Coop=new Function(read('coop.js')+'\nreturn PrismaCoop;')();
 async function run(){
  const received=[],net=Net.create({onMessage:m=>received.push(m)});
- const code=await net.host(),obj=await Net.unpack(code,'offer');assert.equal(obj.v,2);
+ const code=await net.host(),obj=await Net.unpack(code,'offer');assert.equal(obj.v,Net.PROTOCOL);
  const [reliable,fast]=peer.channels;assert.equal(reliable.opts.ordered,true);assert.equal(fast.opts.ordered,false);assert.equal(fast.opts.maxRetransmits,0);
  reliable.onopen();
  const bulk=net.send({t:'world',data:'x'.repeat(24000)});
@@ -40,6 +40,6 @@ async function run(){
  assert.equal((await saving).status,'committed');
  const chest=await readPending;assert.equal(chest.status,'ready');assert.equal(chest.state.inv[0].n,8);
  assert.equal((await Coop.readChest(game,id,'1,2,3',2,196)).status,'conflict');
- console.log('OK: protocolo 2, canais separados, congestionamento, fragmentação e baú após confirmação de inventário');
+ console.log('OK: protocolo atual, canais separados, congestionamento, fragmentação e baú após confirmação de inventário');
 }
 run().catch(e=>{console.error(e);process.exitCode=1;});
