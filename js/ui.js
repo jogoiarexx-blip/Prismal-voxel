@@ -1933,7 +1933,7 @@
       ? Voxel.farmAnimals.includes(aimedCreature.kind)
         ? (aimedCreature.juvenile?'Filhote de ':'')+aimedCreature.kind+(aimedCreature.tamed?(aimedCreature.follow?' · seguindo':' · domesticado'):'') + (g.inv[g.selected]?.b === Voxel.farmFood[aimedCreature.kind]
           ? ' · Usar para alimentar' : aimedCreature.tamed&&!g.inv[g.selected]?' · Usar: seguir/parar':aimedCreature.kind==='Vaca'?' · Balde para ordenhar':aimedCreature.kind==='Ovelha'?' · Tesoura para tosquiar':' · Animal pacífico')
-        : aimedCreature.kind || 'Raspejante'
+        : aimedCreature.kind==='Aldeão' ? 'Aldeão · '+(['Fazendeiro','Ferreiro','Construtor'][aimedCreature.job]||'Fazendeiro')+' · Usar para conversar' : aimedCreature.kind || 'Raspejante'
       : g.hit?.b === 28
         ? 'R · Despertar núcleo'
         : g.hit
