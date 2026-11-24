@@ -84,3 +84,5 @@ globalThis.PRISMA_ITEMS[175] = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAC
    const svg='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" shape-rendering="crispEdges"><path fill="#302b31" d="M9 3h5v5h4V3h5v3h5v12h-5v11H9V18H4V6h5z"/><path fill="'+base+'" d="M10 5h3v5h6V5h3v3h4v8h-5v11H11V16H6V8h4z"/><path fill="'+highlight+'" d="M7 8h5v5H7zm13 0h5v5h-5zm-7 6h6v3h-6zm-1 7h8v3h-8z"/></svg>';
    globalThis.PRISMA_ITEMS[id]='data:image/svg+xml,'+encodeURIComponent(svg);
  }
+
+globalThis.PRISMA_ITEMS[178]='data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" shape-rendering="crispEdges"><path fill="#81551e" d="M9 3h14v3h3v3h3v14h-3v3h-3v3H9v-3H6v-3H3V9h3V6h3z"/><path fill="#efc66a" d="M9 6h14v3h3v14h-3v3H9v-3H6V9h3z"/><path fill="#fff0a2" d="M9 9h5v3H9zm3-3h9v3h-9z"/><path fill="#ae7831" d="M16 10l6 6-6 6-6-6z"/><path fill="#ffe3a0" d="M16 13l3 3-3 3-3-3z"/></svg>');
