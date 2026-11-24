@@ -561,7 +561,7 @@ const View = (() => {
         const dead=mob.hp<=0 ? Math.max(.10,Math.min(1,(mob.dying||0)/.55)) : 1;
         const s=Math.min(1.2,Math.max(.08,(kind==='Guardião Prisma' ? 1.06 : kind==='Vaca' ? 1.14 :
           kind==='Ovelha' ? .97 : kind==='Porco' ? .91 :
-          kind==='Vigia de Cascalho' ? 1.02 : kind==='Zumbi' ? 1.02 : kind==='Saltim' ? .72 : kind==='Galinha'?.64:.82)*dead*Voxel.farmScale(mob)));
+          kind==='Vigia de Cascalho' ? 1.02 : kind==='Zumbi' || kind==='Aldeão' ? 1.02 : kind==='Saltim' ? .72 : kind==='Galinha'?.64:.82)*dead*Voxel.farmScale(mob)));
         const start=ent.length;
         // One shared vertex buffer, no extra draw calls or additional texture atlases.
         // Clamped, positive cuboids prevent warped/stretched enemies even after
@@ -580,7 +580,23 @@ const View = (() => {
         const eyes=(height,depth,material=110,spacing=.18,size=.09)=>{
           for (const side of [-1,1]) piece(side*spacing-size/2,height,-depth,size,size,size*.6,material);
         };
-        if (kind === 'Ovelha') {
+        if(kind==='Aldeão'){
+          const coat=[17,109,68][mob.job]||17;
+          piece(-.29,.57,-.20,.58,.72,.40,coat);
+          piece(-.23,1.28,-.23,.46,.41,.46,106);
+          piece(-.10,1.37,-.32,.20,.13,.11,105);
+          piece(-.25,1.64,-.25,.50,.12,.50,mob.job===0?113:27);
+          piece(-.17,1.48,-.26,.10,.06,.04,112);
+          piece(.07,1.48,-.26,.10,.06,.04,112);
+          piece(-.23,.70,-.36,.46,.18,.16,coat);
+          piece(-.13,.70,-.39,.26,.12,.07,106);
+          for(const side of [-1,1]){
+            piece(side*.35-.085,.68,-.18,.17,.50,.29,coat);
+            piece(side*.15-.11,.12,-.12+side*step*.14,.22,.46,.27,27);
+            piece(side*.15-.12,.01,-.23+side*step*.14,.24,.14,.36,112);
+          }
+          piece(-.27,.59,-.22,.54,.10,.44,12);
+        } else if (kind === 'Ovelha') {
           // White fluffy body, grey face and four articulated black hooves.
           const wool=(mob.shorn||(mob.woolReady||0)>g.elapsed)?116:115;
           piece(-.42,.39,-.37,.84,.71,.78,wool);
@@ -1058,6 +1074,14 @@ const View = (() => {
         const scale=(boss?1.5:kind==='Vaca'?1.2:kind==='Ovelha'?1.08:
           kind==='Vigia de Cascalho'?1.15:kind==='Galinha'?.6:.85)*die*Voxel.farmScale(m);
         const color=m.hurt>0?'#efb169':col;
+        if(kind==='Aldeão'){
+          const coat=['#608971','#667178','#70503a'][m.job]||'#608971';
+          drawSprite(m.x,m.y+.85,m.z,.75,coat);
+          drawSprite(m.x,m.y+1.49,m.z,.48,'#f1d69e');
+          drawSprite(m.x,m.y+1.74,m.z,.38,'#845d37');
+          for(const side of [-1,1])drawSprite(m.x+side*.14,m.y+.28,m.z+side*Math.sin(m.gait||0)*.08,.27,'#70503a');
+          continue;
+        }
         if(kind==='Galinha'){
           drawSprite(m.x,m.y+.40*scale,m.z,.85*scale,color);
           drawSprite(m.x,m.y+.84*scale,m.z-.2,.42*scale,col);
