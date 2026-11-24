@@ -144,6 +144,7 @@ const Game = (() => {
       this.lastNetworkMobSeq = -1;
       this.guestPickupPending = new Map();
       this.bag = rec.bag;
+      this.wornArmor=rec.wornArmor&&Voxel.armor[rec.wornArmor.b]&&rec.wornArmor.n===1&&Number.isFinite(rec.wornArmor.dur)&&rec.wornArmor.dur>0?{b:rec.wornArmor.b,n:1,dur:Math.min(Voxel.durability[rec.wornArmor.b],Math.floor(rec.wornArmor.dur))}:null;
       this.goals = rec.goals || {};
       this.defenseHistory=rec.defenseHistory&&typeof rec.defenseHistory==='object'&&!Array.isArray(rec.defenseHistory)?rec.defenseHistory:{};
       this.marketDay = Number.isSafeInteger(rec.marketDay)?rec.marketDay:0;
@@ -667,6 +668,8 @@ const Game = (() => {
       }
       this.damageCool = Math.max(0, this.damageCool - dt);
       this.attackCool = Math.max(0, (this.attackCool || 0) - dt);
+      this.shieldTime=Math.max(0,(this.shieldTime||0)-dt);
+      this.shieldCool=Math.max(0,(this.shieldCool||0)-dt);
       this.previousEye = this.eye();
       this.physics(dt);
       this.stream();
@@ -721,7 +724,7 @@ const Game = (() => {
     }
     strikeMob(mob, damage, fromX, fromZ) {
       if (!mob || mob.hp <= 0 || mob.dying || friendly(mob.kind)) return false;
-      mob.hp -= Math.max(1, Math.min(5, damage));
+      mob.hp -= Math.max(1, Math.min(8, damage));
       mob.stun = mob.hurt = .36;
       mob.knockback = .34;
       if (isFarm(mob.kind)) { mob.flee = 4.5; mob.graze = 0; }
@@ -841,6 +844,7 @@ const Game = (() => {
       this.holding = false;
     }
     mine(dt) {
+      if(this.inv[this.selected]?.b===191){this.progress=0;if(!this.attackCool)this.fireBow();return;}
       const mob = this.aimMob();
       if (mob) {
         this.progress = 0;
@@ -852,9 +856,10 @@ const Game = (() => {
             this.signal('p2pHitMob', {id:mob.id, weapon:item?.b || 0});
             this.signal('hitEnemy');
           } else {
-            const damage = item?.b === 47 ? 5 : Voxel.durability[item?.b] && !Voxel.armor[item?.b] ? 2 : 1;
-            this.strikeMob(mob, damage, this.p.x, this.p.z);
-            if (item?.b === 47 && --item.dur <= 0) this.inv[this.selected] = null;
+            const damage=Voxel.weaponDamage(item?.b);
+            if(this.strikeMob(mob,damage,this.p.x,this.p.z)&&!this.creative&&Voxel.equipment[item?.b]?.kind==='sword'){
+              if(--item.dur<=0)this.inv[this.selected]=null;this.changed();
+            }
           }
         }
         return;
@@ -890,7 +895,8 @@ const Game = (() => {
       const speed = { 22: 3.2, 42: 4, 43: 5, 44: 6, 45: 8 }[tool?.b] || 1;
       const wood = [5, 8, 12, 15, 27, 46, 49, 50, 51, 52, 53, 55, 57, 58, 59, 60, 61, 62, 63, 64, 68, 77, 78, 79, 83, 84, 85, 86, 91].includes(hit.b) || Voxel.bedFoot(hit.b) || Voxel.bedHead(hit.b) || Voxel.farmGate(hit.b) || [171,172,174].includes(hit.b);
       const soil = [1, 2, 4, 17, 19, 38, 39, 40].includes(hit.b);
-      const toolSpeed = tool?.b === 89 && wood ? 5.4 : tool?.b === 90 && soil ? 4 : rock ? speed : 1;
+      const spec=Voxel.equipment[tool?.b];
+      const toolSpeed = spec?.kind==='axe'&&wood?spec.power:spec?.kind==='shovel'&&soil?spec.power:rock?speed:1;
       if (hit.b === 34 && !this.creative && speed < 4) {
         if (this.progress === 0) this.notify('O ferro exige picareta de pedra ou superior');
         this.progress = -1;
@@ -966,7 +972,7 @@ const Game = (() => {
         if([1,17].includes(b) && Voxel.hash(x,z,this.seed^902)>.82)this.addDrop(x+.5,y+.2,z+.5,152+Math.floor(Voxel.hash(x,z,this.seed^903)*3),1);
         if ([1, 17, 39, 40].includes(b)) this.addDrop(x + 0.5, y + 0.2, z + 0.5, 37, b === 40 ? 2 : 1);
         if (b === 5 || b === 27) this.goals.wood = true;
-        if (((speed > 1 && rock) || (tool?.b === 89 && wood) || (tool?.b === 90 && soil)) && --tool.dur <= 0) {
+        if (toolSpeed>1 && --tool.dur <= 0) {
           this.inv[this.selected] = null;
           this.notify('Sua ferramenta se desgastou.');
         }
@@ -1559,9 +1565,39 @@ const Game = (() => {
         this.notify('Nasceu um filhote de '+a.kind.toLowerCase()+'!');this.changed();break;
       }
     }
+    equipArmor(index) {
+      if(this.networkGuest||!Number.isInteger(index)||index<0||index>=36)return false;
+      const t=this.inv[index];if(!t||!Voxel.armor[t.b]||t.n!==1||!(t.dur>0))return false;
+      this.inv[index]=this.wornArmor||null;this.wornArmor=t;this.changed();return true;
+    }
+    unequipArmor(){
+      if(this.networkGuest||!this.wornArmor)return false;
+      const bag=this.inv.map(t=>t&&{...t}),t=this.wornArmor;
+      if(fill(bag,t.b,1,t.dur))return false;
+      this.inv=bag;this.wornArmor=null;this.changed();return true;
+    }
+    fireBow(){
+      if(this.networkGuest){this.attackCool=1;this.notify('Arco disponível para o anfitrião ou solo.');return false;}
+      const t=this.inv[this.selected];if(t?.b!==191||this.attackCool)return false;
+      this.attackCool=.85;
+      if(!this.creative&&count(this.inv,192)<1){this.notify('Sem flechas');return false;}
+      const target=this.aimMob(18);
+      if(!this.creative){cost(this.inv,192,1);if(--t.dur<=0)this.inv[this.selected]=null;this.changed();}
+      Sound.play('mine',this.settings);
+      if(target&&!friendly(target.kind))this.strikeMob(target,4,this.p.x,this.p.z);
+      else this.signal('hitEnemy');
+      return true;
+    }
+    raiseShield(){
+      const t=this.inv[this.selected];
+      if(Voxel.equipment[t?.b]?.kind!=='shield'||this.shieldCool)return false;
+      this.shieldTime=1.6;this.shieldCool=3;this.shieldItem=t;this.notify('Escudo erguido');return true;
+    }
     use(forcePlace = false) {
       const t = this.inv[this.selected],
         h = this.hit;
+      if(Voxel.equipment[t?.b]?.kind==='shield'){this.raiseShield();return true;}
+      if(t?.b===191){this.fireBow();return true;}
       // Feed farm animals with their preferred food, including in peaceful mode.
       // The same right-click/tap works with the existing inventory and touch UI.
       const animal = (!forcePlace || !blocks[t?.b]?.placeable) && this.aimMob();
@@ -1692,20 +1728,17 @@ const Game = (() => {
       this.signal('hud');
       return true;
     }
-    aimMob() {
-      let eye = this.eye(),
-        d = View.basis(this.p).f;
-      return this.mobs.find((m) => {
-        if (m.dying || m.hp <= 0) return false;
-        let a = [m.x - eye[0], m.y + (friendly(m.kind)?1.25:m.kind==='Galinha'?.35:.6)*Voxel.farmScale(m) - eye[1], m.z - eye[2]],
-          dist = a.reduce((s, v, i) => s + v * d[i], 0);
-        return (
-          dist > 0 &&
-          dist < 3.7 &&
-          dist < (this.hit?.dist ?? 99) + 0.25 &&
-          a.reduce((s, v, i) => s + (v - d[i] * dist) ** 2, 0) < (m.kind === 'Vaca' ? .64 : .48)
-        );
-      });
+    aimMob(range=3.7) {
+      const eye=this.eye(),d=View.basis(this.p).f;
+      const wall=range>3.7?Voxel.ray((x,y,z)=>this.get(x,y,z,true),eye,d,range,true):this.hit;
+      let best=null,nearest=Math.min(range,(wall?.dist??range)+.05);
+      for(const m of this.mobs){
+        if(m.dying||m.hp<=0)continue;
+        const a=[m.x-eye[0],m.y+(friendly(m.kind)?1.25:m.kind==='Galinha'?.35:.6)*Voxel.farmScale(m)-eye[1],m.z-eye[2]];
+        const dist=a.reduce((s,v,i)=>s+v*d[i],0);
+        if(dist>0&&dist<nearest&&a.reduce((s,v,i)=>s+(v-d[i]*dist)**2,0)<(m.kind==='Vaca'?.64:.48)){best=m;nearest=dist;}
+      }
+      return best;
     }
     // Small voxel actor collider. Respect non-cube block shapes and unloaded chunks;
     // never permit movement through a closed door, fence, wall or the player.
@@ -2230,13 +2263,24 @@ const Game = (() => {
       // Armor is active while carried in the hotbar. Only the strongest
       // piece protects; no stacking or protection against hunger/drowning/falls.
       if (!['Queda','Sem fôlego','Fome'].includes(why)) {
+        const shield=this.inv[this.selected];
+        if(this.shieldTime>0&&shield===this.shieldItem&&Voxel.equipment[shield?.b]?.kind==='shield'){
+          n=Math.max(1,Math.round(n*(shield.b===195?.35:.50)));
+          if(!this.creative&&--shield.dur<=0){this.inv[this.selected]=null;this.shieldTime=0;}
+          this.changed();
+        }
         let best=-1;
         for(let i=0;i<9;i++){
           const t=this.inv[i];
           if(t && Voxel.armor[t.b] && t.dur>0 &&
             (best<0 || Voxel.armor[t.b]>Voxel.armor[this.inv[best].b]))best=i;
         }
-        if(best>=0){
+        const worn=this.wornArmor;
+        if(worn&&Voxel.armor[worn.b]&&worn.dur>0&&(best<0||Voxel.armor[worn.b]>=Voxel.armor[this.inv[best].b])){
+          n=Math.max(1,Math.round(n*(1-Voxel.armor[worn.b])));
+          if(--worn.dur<=0){this.wornArmor=null;this.notify('Sua armadura se desgastou.');}
+          this.changed();
+        }else if(best>=0){
           const t=this.inv[best];
           n=Math.max(1,Math.round(n*(1-Voxel.armor[t.b])));
           if(--t.dur<=0){this.inv[best]=null;this.notify('Sua armadura se desgastou.');}
@@ -2255,8 +2299,8 @@ const Game = (() => {
         if (this.bag)
           for (let t of this.bag.inv)
             if (t?.n) this.addDrop(this.bag.x, this.bag.y, this.bag.z, t.b, t.n, t.dur);
-        this.bag = { x: p.x, y: p.y, z: p.z, inv: this.inv };
-        this.inv = empty();
+        this.bag = { x:p.x,y:p.y,z:p.z,inv:this.wornArmor?[...this.inv,this.wornArmor]:this.inv };
+        this.wornArmor=null;this.inv = empty();
       }
       const h = land(0, 3, this.seed,this.generator).h;
       p.x = 0.5;
@@ -2325,6 +2369,7 @@ const Game = (() => {
         saved: Date.now(),
         p: this.p,
         inv: this.inv,
+        wornArmor:this.wornArmor||null,
         selected: this.selected,
         time: this.time,
         day: this.day,
