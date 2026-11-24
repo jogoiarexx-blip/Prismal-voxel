@@ -1,3 +1,13 @@
+# Mundo Prisma v0.9.42 — Mercado dos aldeões (prévia)
+
+- Moeda prisma (item 178), ícone próprio e 12 ofertas entre fazendeiro, ferreiro e construtor. Venda recursos e compre alimentos, sementes, metal, ferramentas e material de construção.
+- Aponte para um aldeão e use/interaja para abrir o mercado. Estoque individual por casa/oferta, renovado por dia do jogo e persistido no salvamento.
+- Trocas verificam proximidade, quantidade, estoque e capacidade da mochila. Pagamento e entrega são aplicados juntos, sem consumo parcial quando a mochila está cheia.
+- Comércio disponível em Sobrevivência solo e para o anfitrião P2P; visitantes ainda não negociam. O modo criativo não usa a economia.
+- Teste: `node tests/village-market-0942.test.js`. Sintaxe e lógica isoladas verificadas; interface visual e multiplayer real pendentes.
+
+---
+
 # Mundo Prisma v0.9.41 — Aldeões (prévia)
 
 - Um aldeão por casa elegível próxima no gerador Fronteiras (até oito residentes simultâneos, dentro do limite total de 24 criaturas). Fazendeiro, ferreiro e construtor com roupas distintas, caminhada local e retorno aos arredores da casa à noite.
