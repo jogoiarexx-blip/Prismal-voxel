@@ -177,6 +177,8 @@ const Voxel = (() => {
     ['Bebedouro', '879c98', .9], // 173
     ['Ninho com ovo', 'c3a55f', .45], // 174
     ['Bebedouro com água', '879c98', .9], // 175
+    ['Armadura de cobre', 'c88b56', 0], // 176
+    ['Armadura de ferro', 'cbd4d8', 0], // 177
   ];
   const blocks = data.map(([name, hex, hard], id) => ({
     id,
@@ -664,7 +666,7 @@ const Voxel = (() => {
       3,
     ],
   );
-  const durability = { 22: 48, 42: 80, 43: 120, 44: 180, 45: 260, 47: 100, 89: 160, 90: 80, 146: 80 };
+  const durability = { 22: 48, 42: 80, 43: 120, 44: 180, 45: 260, 47: 100, 89: 160, 90: 80, 146: 80, 176: 65, 177: 110 };
   recipes.push(
     [
       38,
@@ -787,6 +789,9 @@ const Voxel = (() => {
     recipes.push([cooked,1,[[raw,1],[9,1]],14]);
   recipes.push([164,1,[[153,1],[9,1]],14],[165,1,[[154,1],[9,1]],14],[166,1,[[152,1],[153,1],[154,1],[9,1]],14]);
   recipes.push([167,1,[[8,4],[21,2]],12],[171,1,[[8,2],[40,2]],12],[172,1,[[8,5]],12],[173,1,[[3,5]],12]);
+  // Equipment is appended to preserve every existing block and recipe ID.
+  recipes.push([176,1,[[24,8],[21,2]],12],[177,1,[[35,8],[21,2]],12]);
+  const armor = {176:.20,177:.35};
   // A recipe belongs to exactly one station: 0 (backpack), 12 (workbench),
   // or 14 (furnace). Keep recipe indexes stable for saves and UI events.
   const recipeStation = (recipe) => recipe?.[3] || 0;
@@ -1471,6 +1476,7 @@ const Voxel = (() => {
     recipeStation,
     recipesAtStation,
     durability,
+    armor,
     farmAnimals,
     farmFood,
     cropForItem, cropInfo,
