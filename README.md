@@ -1,3 +1,12 @@
+# Mundo Prisma v0.9.49 — Coleta cooperativa transacional (prévia)
+
+- O anfitrião valida distância, revisão e sequência do inventário, calcula capacidade com a mesma função de empilhamento do modo solo e persiste o inventário do visitante junto à redução do item no chão antes de confirmar. A reserva impede coleta simultânea pelo anfitrião durante a gravação. Falha de gravação restaura quantidade e inventário na memória.
+- Visitante aguarda confirmação sem alterar inventário; após tempo limite solicita sincronização. Solicitação repetida com revisão antiga não concede novamente o item. Quantidades parciais permanecem no mundo; durabilidade preservada; contador de IDs de drops persistido. Protocolo 3 exige novo convite e versão igual nos dois dispositivos.
+- Teste isolado `node tests/p2p-loot-0949.test.js`: coleta, repetição, reconstrução de perfil, falha de gravação simulada, mochila cheia, coleta parcial, distância, versão, concorrência local e durabilidade. Não é teste real de IndexedDB, navegador ou rede.
+- Ainda existem limites: mineração e construção do visitante e snapshots de inventário ainda não são integralmente autoritativos; a coleta pode interromper brevemente o visitante; não é uma proteção geral contra trapaças ou duplicações em todos os sistemas. Próxima prioridade: mineração e construção transacionais, seguidas de combate, comércio e fornos compartilhados.
+
+---
+
 # Mundo Prisma v0.9.48 — P2P protocolo 2 (prévia)
 
 - WebRTC com canal confiável ordenado para mundo, inventário e comandos, e canal não ordenado sem retransmissões para posições e entidades. Filas limitadas, fragmentos de 8 mil caracteres e contadores de tráfego no diagnóstico. Convites antigos incompatíveis: atualizar ambos os dispositivos e gerar novo convite.
