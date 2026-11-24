@@ -163,16 +163,23 @@ const Voxel = (() => {
   // Regular terrain still uses greedy meshing, without textures or new draw calls.
   const shapes = new Map();
   const box = (x, y, z, w, h, d, material) => material == null ? [x,y,z,w,h,d] : [x,y,z,w,h,d,material];
+  // Architectural stairs: two walkable steps with shaped nosings and visible
+  // riser joints. Reuse the existing rotated IDs (49–52 and 69–72), so old
+  // worlds keep their orientations and crafting costs.
   for (const base of [49, 69]) {
-    for (let orientation = 0; orientation < 4; orientation++) {
-      const upper = [
-        box(0, .5, .5, 1, .5, .5),
-        box(0, .5, 0, .5, .5, 1),
-        box(0, .5, 0, 1, .5, .5),
-        box(.5, .5, 0, .5, .5, 1),
-      ][orientation];
-      shapes.set(base + orientation, [box(0, 0, 0, 1, .5, 1), upper]);
-    }
+    const stone = base === 69;
+    const trim = stone ? 74 : 8, joint = stone ? 20 : 68;
+    const parts = [
+      box(0,0,0,1,.49,1,base),
+      box(0,.50,.5,1,.485,.5,base),
+      box(.035,.47,.03,.93,.03,.16,trim),       // first tread nosing
+      box(.035,.985,.53,.93,.015,.16,trim),      // high tread nosing
+      box(.04,.54,.483,.085,.38,.022,joint),   // riser side joinery
+      box(.875,.54,.483,.085,.38,.022,joint),
+      box(.26,.62,.481,.48,.055,.021,trim),     // centre inset
+    ];
+    for (let facing=0;facing<4;facing++)
+      shapes.set(base+facing,parts.map(p=>rotateShapeBox(p,facing)));
   }
   // A better torch silhouette: pedestal on the floor, small bracket on walls,
   // and a compact flame so the light looks attached instead of floating.
@@ -220,9 +227,32 @@ const Voxel = (() => {
             ]);
     shapes.set(id, pieces);
   }
-  shapes.set(53, [box(0, 0, 0, 1, .5, 1)]);
-  shapes.set(54, [box(0, 0, 0, 1, .5, 1)]);
-  shapes.set(55, [box(.34, 0, .34, .32, 1, .32), box(0, .33, .40, 1, .13, .20), box(.40, .33, 0, .20, .13, 1), box(0, .73, .40, 1, .10, .20), box(.40, .73, 0, .20, .10, 1)]);
+  // Workbench: not another solid cube. Bench top, four square legs,
+  // tool shelf, drawer, brass handle and a small blade/ruler silhouette.
+  // Materials are from the existing palette, so no new textures or requests.
+  shapes.set(12, [
+    box(.04,.77,.04,.92,.16,.92,8),
+    box(.045,.93,.045,.91,.035,.91,12),
+    box(.08,0,.08,.16,.77,.16,68), box(.76,0,.08,.16,.77,.16,68),
+    box(.08,0,.76,.16,.77,.16,68), box(.76,0,.76,.16,.77,.16,68),
+    box(.10,.32,.10,.80,.09,.80,8),
+    box(.24,.47,.035,.52,.22,.065,68), // front drawer
+    box(.43,.56,.012,.14,.07,.035,35),
+    box(.16,.973,.24,.45,.022,.045,35),
+    box(.58,.972,.18,.13,.025,.36,21),
+    box(.66,.976,.18,.12,.018,.16,24),
+  ]);
+  // Half slabs have visible edge bands, instead of featureless solid halves.
+  shapes.set(53, [box(0,0,0,1,.46,1),box(.03,.46,.03,.94,.04,.94,8)]);
+  shapes.set(54, [box(0,0,0,1,.46,1),box(.03,.46,.03,.94,.04,.94,74)]);
+  // Fence post with a cut top and paired rails. The original shape envelope
+  // and block ID remain unchanged for walls and saved farms.
+  shapes.set(55, [
+    box(.36,0,.36,.28,.94,.28,68),
+    box(.29,.90,.29,.42,.10,.42,8),
+    box(0,.28,.43,1,.12,.14,8),box(.43,.28,0,.14,.12,1,8),
+    box(0,.68,.43,1,.11,.14,8),box(.43,.68,0,.14,.11,1,8),
+  ]);
   shapes.set(56, [box(.455, 0, .02, .09, 1, .96)]);
   for (let facing = 0; facing < 4; facing++) {
     shapes.set(57 + facing, [facing % 2 ? box(.4, 0, 0, .2, 1, 1) : box(0, 0, .4, 1, 1, .2)]);
@@ -243,10 +273,36 @@ const Voxel = (() => {
       box(x+.03,.18,z+.17,Math.max(.04,w-.06),.67,d-.34,56),
     ]);
   }
-  shapes.set(67, [box(.31, .02, .31, .38, .75, .38), box(.23, .06, .23, .54, .09, .54), box(.4, .77, .4, .2, .17, .2)]);
+  // Lantern: open metal frame around a visible warm-light core.
+  shapes.set(67, [
+    box(.27,.05,.27,.46,.12,.46,35),
+    box(.36,.18,.36,.28,.48,.28,25),
+    box(.26,.65,.26,.48,.12,.48,35),
+    box(.28,.16,.28,.07,.50,.07,35),box(.65,.16,.28,.07,.50,.07,35),
+    box(.28,.16,.65,.07,.50,.07,35),box(.65,.16,.65,.07,.50,.07,35),
+    box(.43,.77,.43,.14,.15,.14,35),
+    box(.39,.90,.43,.22,.065,.14,35),
+  ]);
   shapes.set(76, [box(.42, 0, .02, .16, 1, .96), box(.43, .25, 0, .14, .09, 1), box(.43, .73, 0, .14, .09, 1)]);
-  shapes.set(78, [box(.05,.72,.05,.9,.18,.9), box(.12,0,.12,.14,.72,.14), box(.74,0,.12,.14,.72,.14), box(.12,0,.74,.14,.72,.14), box(.74,0,.74,.14,.72,.14)]);
-  shapes.set(79, [box(.15,.45,.18,.7,.14,.7), box(.16,0,.2,.14,.45,.14), box(.70,0,.2,.14,.45,.14), box(.16,0,.74,.14,.45,.14), box(.70,0,.74,.14,.45,.14), box(.16,.58,.76,.68,.42,.12)]);
+  // Dining table: framed planks and apron, rather than one flat prism.
+  shapes.set(78, [
+    box(.045,.77,.045,.91,.13,.91,8),
+    box(.05,.90,.05,.90,.04,.90,78),
+    box(.12,0,.12,.15,.77,.15,68),box(.73,0,.12,.15,.77,.15,68),
+    box(.12,0,.73,.15,.77,.15,68),box(.73,0,.73,.15,.77,.15,68),
+    box(.11,.62,.09,.78,.13,.10,68), box(.11,.62,.81,.78,.13,.10,68),
+    box(.11,.62,.11,.10,.13,.78,68), box(.79,.62,.11,.10,.13,.78,68),
+    box(.05,.937,.24,.90,.015,.035,68),box(.05,.937,.64,.90,.015,.035,68),
+  ]);
+  // Wooden chair: legs, padded seat, side supports and a slatted backrest.
+  shapes.set(79, [
+    box(.13,.45,.13,.74,.12,.74,8),
+    box(.17,.57,.17,.66,.06,.59,88),
+    box(.15,0,.15,.14,.45,.14,68),box(.72,0,.15,.14,.45,.14,68),
+    box(.15,0,.72,.14,.45,.14,68),box(.72,0,.72,.14,.45,.14,68),
+    box(.13,.55,.77,.14,.43,.15,68),box(.73,.55,.77,.14,.43,.15,68),
+    box(.23,.84,.78,.54,.11,.13,8),box(.23,.66,.78,.54,.09,.13,8),
+  ]);
   // Cama de campo: base de madeira, colchão mais baixo, coberta e travesseiro.
   shapes.set(46, [
     box(.05,.00,.05,.90,.12,.90,8),
@@ -269,8 +325,40 @@ const Voxel = (() => {
     box(.46,.48,.00,.08,.08,.05,24),
     box(.16,.01,.15,.15,.07,.15,8), box(.69,.01,.15,.15,.07,.15,8),
     box(.16,.01,.69,.15,.07,.15,8), box(.69,.01,.69,.15,.07,.15,8),
+    box(.10,.65,.055,.10,.15,.07,35),box(.80,.65,.055,.10,.15,.07,35),
+    box(.18,.80,.15,.64,.022,.70,8),
   ]);
-  shapes.set(83, [box(.06, 0, .06, .88, 1, .88), box(.45, .18, .035, .1, .12, .035), box(.45, .66, .035, .1, .12, .035)]);
+  // Double-door cabinet: wooden frame, inset door leaves, hinges and handles.
+  shapes.set(83, [
+    box(.07,.09,.10,.86,.81,.81,68),
+    box(.055,.08,.045,.89,.10,.88,8),box(.055,.87,.045,.89,.11,.88,8),
+    box(.055,.12,.045,.11,.76,.89,8),box(.835,.12,.045,.11,.76,.89,8),
+    box(.19,.21,.03,.29,.59,.060,83),box(.52,.21,.03,.29,.59,.06,83),
+    box(.45,.42,.006,.035,.13,.035,35),box(.515,.42,.006,.035,.13,.035,35),
+    box(.07,0,.12,.12,.09,.14,68),box(.81,0,.12,.12,.09,.14,68),
+    box(.07,0,.74,.12,.09,.14,68),box(.81,0,.74,.12,.09,.14,68),
+    box(.26,.18,.919,.06,.61,.022,8),box(.68,.18,.919,.06,.61,.022,8),
+  ]);
+  // Open bookcase: three shelves with visible books of varying heights.
+  // Book colors reuse the clay/metal/prisma materials already in the game.
+  const shelves = [
+    box(.06,.00,.07,.88,.10,.87,68),
+    box(.06,.29,.07,.88,.085,.87,8),
+    box(.06,.59,.07,.88,.085,.87,8),
+    box(.06,.90,.07,.88,.10,.87,8),
+    box(.06,.00,.07,.12,1,.87,68),
+    box(.82,.00,.07,.12,1,.87,68),
+    // Open from either side; thin rear uprights avoid hiding all the books.
+    box(.19,.10,.82,.085,.80,.11,68),box(.725,.10,.82,.085,.80,.11,68),
+  ];
+  for (let row=0;row<3;row++) {
+    const bottom=[.10,.375,.685][row], colors=[65,73,20,114];
+    for (let i=0;i<4;i++) {
+      const height=.155+((i+row)%3)*.023;
+      shelves.push(box(.22+i*.145,bottom,.17,.105,height,.57,colors[(i+row)%4]));
+    }
+  }
+  shapes.set(77,shelves);
   // Furnace with dark mouth. A fuelled furnace uses the same model plus a flame mesh.
   const furnaceShell = [
     box(.03,.03,.03,.94,.15,.94,3), // foundation
@@ -280,7 +368,11 @@ const Voxel = (() => {
     box(.20,.18,.03,.60,.17,.17,20), // lip
     box(.20,.68,.03,.60,.11,.17,20), // upper front edge
     box(.20,.35,.18,.60,.33,.12,9), // dark inset
+    box(.22,.39,.005,.10,.25,.065,35),box(.68,.39,.005,.10,.25,.065,35),
+    box(.35,.72,.005,.30,.055,.065,3), // lintel & grate
     box(.25,.08,.78,.14,.18,.14,3), box(.61,.08,.78,.14,.18,.14,3),
+    // Two shallow rear air vents keep the oven legible from any direction.
+    box(.29,.48,.975,.42,.035,.017,35),box(.29,.59,.975,.42,.035,.017,35),
   ];
   shapes.set(14, furnaceShell);
   shapes.set(136, [...furnaceShell,
@@ -295,12 +387,31 @@ const Voxel = (() => {
     box(.33,.44,.33,.34,.26,.34,foliage),
     box(.43,.66,.43,.14,.12,.14,foliage),
   ]);
-  shapes.set(84, [box(.14, .05, .14, .72, .86, .72), box(.10, .28, .10, .80, .12, .80), box(.22, .86, .22, .56, .10, .56)]);
-  shapes.set(85, [box(0, 0, 0, 1, .16, 1)]);
-  shapes.set(86, [box(0, 0, 0, 1, 1, .16)]);
+  // Barrel: iron hoops, staves and wooden lid with reinforced rim.
+  shapes.set(84, [
+    box(.18,.07,.18,.64,.78,.64,68),
+    box(.14,.15,.15,.72,.11,.70,35),box(.14,.68,.15,.72,.11,.70,35),
+    box(.15,.15,.14,.70,.11,.72,35),box(.15,.68,.14,.70,.11,.72,35),
+    box(.24,.26,.13,.10,.41,.045,8),box(.45,.26,.13,.10,.41,.045,8),box(.66,.26,.13,.10,.41,.045,8),
+    box(.23,.82,.23,.54,.10,.54,8),
+    box(.18,.91,.18,.64,.05,.64,68),
+    box(.39,.956,.39,.22,.015,.22,35),
+  ]);
+  // Hatch: thick wood panel and hinged metal strips, horizontal and open.
+  shapes.set(85, [
+    box(.04,.04,.04,.92,.13,.92,8),
+    box(.09,.17,.10,.82,.025,.16,68),box(.09,.17,.74,.82,.025,.16,68),
+    box(.09,.17,.13,.12,.025,.73,68),box(.79,.17,.13,.12,.025,.73,68),
+    box(.17,.18,.05,.18,.04,.10,35),box(.65,.18,.05,.18,.04,.10,35),
+  ]);
+  shapes.set(86, [
+    box(.04,0,.05,.92,.94,.13,8),
+    box(.09,.08,.19,.82,.10,.045,68),box(.09,.79,.19,.82,.10,.045,68),
+    box(.15,.18,.19,.12,.64,.04,68),box(.73,.18,.19,.12,.64,.04,68),
+  ]);
   // The modern bed occupies two adjacent ground cells, but is still crafted as item 46.
   // Rotate every tiny box in place: no imported mesh, atlas, or extra draw calls.
-  function rotateBedBox(p, facing) {
+  function rotateShapeBox(p, facing) {
     const [x,y,z,width,height,depth,...material] = p;
     if (facing === 0) return p;
     if (facing === 1) return box(1-z-depth,y,x,depth,height,width,...material);
@@ -325,10 +436,18 @@ const Voxel = (() => {
     box(.03,.35,.02,.94,.35,.10,8), // tall wooden headboard
   ];
   for (let facing = 0; facing < 4; facing++) {
-    shapes.set(126+facing, bedFeetParts.map(p=>rotateBedBox(p,facing)));
-    shapes.set(130+facing, bedHeadParts.map(p=>rotateBedBox(p,facing)));
+    shapes.set(126+facing, bedFeetParts.map(p=>rotateShapeBox(p,facing)));
+    shapes.set(130+facing, bedHeadParts.map(p=>rotateShapeBox(p,facing)));
   }
-  shapes.set(87, [box(.04, .14, .04, .92, .38, .92), box(.04, .52, .73, .92, .42, .23), box(.04, .30, .06, .18, .38, .72), box(.78, .30, .06, .18, .38, .72)]);
+  // Upholstered sofa: timber feet, two cushions, padded back and armrests.
+  shapes.set(87, [
+    box(.05,.13,.09,.90,.36,.82,87),
+    box(.08,.46,.13,.40,.12,.61,88),box(.52,.46,.13,.40,.12,.61,88),
+    box(.05,.45,.76,.90,.43,.18,87),
+    box(.05,.38,.08,.17,.32,.78,87),box(.78,.38,.08,.17,.32,.78,87),
+    box(.11,.00,.15,.14,.14,.16,68),box(.75,.00,.15,.14,.14,.16,68),
+    box(.11,.00,.72,.14,.14,.16,68),box(.75,.00,.72,.14,.14,.16,68),
+  ]);
   shapes.set(88, [box(.02, 0, .02, .96, .045, .96)]);
   shapes.set(92, [box(.04, 0, .43, .92, .10, .14), box(.04, .90, .43, .92, .10, .14), box(.04, 0, .43, .10, 1, .14), box(.86, 0, .43, .10, 1, .14), box(.45, 0, .45, .10, 1, .10)]);
   const shapeParts = (id) => shapes.get(id) || null;

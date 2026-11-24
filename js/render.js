@@ -74,6 +74,16 @@ const View = (() => {
  if(m==5.||m==27.){if(f==2.||f==3.){float rings=max(abs(fract(uv.x)-.5),abs(fract(uv.y)-.5));pat+=.15*sin(rings*50.);col*=vec3(1.20,1.22,1.1);}else{pat+=.19*(rnd(vec2(px.x,floor(px.y/7.)))-.5);}}
  if(m==6.||m==18.){pat+=(large>.61?.10:-.045);col+=vec3(.008,.015,0.);}
  if(m==8.||m==12.||m==15.||m==49.||m==50.||m==51.||m==52.||m==53.||m==55.||m==57.||m==58.||m==59.||m==60.||m==61.||m==62.||m==63.||m==64.||m==68.||m==77.||m==78.||m==79.){if(fract(uv.y*3.)<.08||fract(uv.x+floor(uv.y*3.)*.37)<.035)col*=.6;if(m==12.&&f==2.&&min(fract(uv.x*3.),fract(uv.y*3.))<.12)col*=.59;if(m==15.&&f!=2.&&fract(w.y)>.46&&fract(w.y)<.61)col*=.5;}
+ // Handcrafted stations share the original palette but have distinct grain,
+ // fine seams and hardware highlights, with no texture downloads.
+ if(m==8.||m==68.||m==12.||m==83.||m==84.){
+   float grain=sin(uv.x*32.+sin(uv.y*7.)*.9);
+   col*=.965+.035*grain;
+   if(m==12.&&f==2.&&fract(uv.x*4.)<.035)col*=.74;
+   if(m==83.&&f==5.&&abs(fract(uv.x*2.)-.5)<.025)col*=.70;
+   if(m==84.&&f!=2.&&fract(uv.x*4.)<.04)col*=.78;
+ }
+ if(m==35.||m==73.){float glint=max(0.,sin(uv.y*43.+uv.x*17.));col*=.87+.20*glint;pat*=.30;}
  if(m==9.||m==10.||m==11.){col=color(3.);if(rnd(floor(uv*5.))>.67)col=m==9.?vec3(.23,.24,.23):(m==10.?vec3(.79,.46,.30):vec3(.76,.52,.90));}
  if(m==14.&&f==4.&&fract(w.x)>.18&&fract(w.x)<.82&&fract(w.y)>.25&&fract(w.y)<.6)col*=.32;
  if(m==20.||m==26.){if(fract(uv.y*2.)<.08||fract(uv.x+floor(uv.y*2.)*.5)<.05)col*=.65;}

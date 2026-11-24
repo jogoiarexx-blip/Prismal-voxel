@@ -1,3 +1,13 @@
+# Mundo Prisma v0.9.23 — Oficina artesanal e acabamento dos blocos
+
+- Escadas de madeira e pedra com degraus, bordas e juntas; IDs e orientações mantidos.
+- Bancada, mesa, cadeira, estante, armário, baú, barril, cerca, forno, sofá, lanterna e alçapões com estruturas voxel mais reconhecíveis.
+- Paleta e materiais existentes; sem novos arquivos de textura, GLB ou draw calls por objeto.
+- Compatibilidade com receitas e salvamentos existentes. Testes de geometria e colisão, além das suítes de regressão.
+- FPS e comportamento visual em WebGL real ainda precisam ser confirmados em aparelho.
+
+---
+
 # Mundo Prisma — documentação de desenvolvimento
 
 📘 **[GDD original v1.0](docs/GDD_MUNDO_PRISMA_VOXEL_SHADERS_v1.0.md)** (22 seções, 19/11/2026) · **[Auditoria GDD × jogo v0.9.21](docs/STATUS_GDD_VS_JOGO_v0.9.21.md)**
