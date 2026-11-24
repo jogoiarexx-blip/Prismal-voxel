@@ -137,7 +137,7 @@ const Game = (() => {
       this.nextMobId = Math.max(1, ...this.mobs.map(m => Number.isSafeInteger(m.id) ? m.id + 1 : 1));
       this.mobs.forEach(m => { if (!Number.isSafeInteger(m.id) || m.id <= 0) m.id = this.nextMobId++; });
       this.drops = rec.drops || [];
-      this.nextDropId = Math.max(1, ...this.drops.map(d => Number.isSafeInteger(d.id) ? d.id + 1 : 1));
+      this.nextDropId = Math.max(1, Number.isSafeInteger(rec.nextDropId)?rec.nextDropId:1, ...this.drops.map(d => Number.isSafeInteger(d.id) ? d.id + 1 : 1));
       this.drops.forEach(d => { if (!Number.isSafeInteger(d.id) || d.id <= 0) d.id = this.nextDropId++; });
       this.networkGuest = false;
       this.networkHost = false;
@@ -765,7 +765,7 @@ const Game = (() => {
       }));
     }
     networkDropState() {
-      return this.drops.slice(0,32).map(d => ({id:d.id, x:+d.x.toFixed(2),
+      return this.drops.filter(d=>d.n>0&&!this.lootReservations?.has(d.id)).slice(0,32).map(d => ({id:d.id, x:+d.x.toFixed(2),
         y:+d.y.toFixed(2), z:+d.z.toFixed(2), b:d.b, n:d.n, dur:d.dur}));
     }
     applyNetworkEntities(msg) {
@@ -826,6 +826,7 @@ const Game = (() => {
         if (!capacity)continue;
         this.guestPickupPending.set(d.id,now+1.3);
         this.signal('p2pPickup',{id:d.id,cap:Math.min(64,capacity)});
+        break;
       }
     }
     receiveNetworkLoot(item) {
@@ -1082,6 +1083,7 @@ const Game = (() => {
     loot(dt) {
       const p = this.p;
       for (const d of this.drops) {
+        if(this.lootReservations?.has(d.id))continue;
         if (!this.chunks.has(key(Math.floor(d.x) >> 4, Math.floor(d.z) >> 4))) continue;
         if (!solid(this.get(Math.floor(d.x), Math.floor(d.y - 0.03), Math.floor(d.z)))) d.y -= 3 * dt;
         else d.y = Math.floor(d.y - 0.03) + 1.03;
@@ -1095,7 +1097,7 @@ const Game = (() => {
           }
         }
       }
-      this.drops = this.drops.filter((d) => d.n > 0);
+      this.drops = this.drops.filter(d=>d.n>0||this.lootReservations?.has(d.id));
       if (
         this.bag &&
         Math.hypot(this.bag.x - p.x, this.bag.z - p.z) < 1.8 &&
@@ -2382,7 +2384,8 @@ const Game = (() => {
         chestRevisions: this.chestRevisions,
         guestProfiles: this.guestProfiles,
         saplings: this.saplings,
-        drops: this.drops,
+        drops: this.drops.filter(d=>d.n>0),
+        nextDropId:this.nextDropId,
         mobs: this.mobs,
         bag: this.bag,
         goals: this.goals,
