@@ -12,5 +12,6 @@ for(const s of [normal,casual,legacy])G.Session.prototype.respawn.call(s,'Queda'
 for(const s of [normal,legacy]){assert.equal(G.count(s.inv,5),0);assert.equal(G.count(s.bag.inv,5),6);}
 assert.equal(G.count(casual.inv,5),6);assert.equal(casual.bag,null);assert.equal(casual.p.life,100);
 assert.equal(Sound.footstep(5),'stepWood');assert.equal(Sound.footstep(3),'stepStone');assert.equal(Sound.footstep(4),'stepSand');assert.equal(Sound.footstep(1),'step');
-assert.match(fs.readFileSync(path.join(__dirname,'../offline.js'),'utf8'),/PREFIX \+ '0\.9\.43'/);
+const version=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8').match(/VERSÃO (\d+\.\d+\.\d+)/)[1];
+assert.ok(fs.readFileSync(path.join(__dirname,'../offline.js'),'utf8').includes("PREFIX + '"+version+"'"));
 console.log('OK: modo casual, legado, passos e versão offline');
