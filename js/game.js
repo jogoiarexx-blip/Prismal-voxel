@@ -829,6 +829,7 @@ const Game = (() => {
         break;
       }
     }
+    // Legacy direct grants are no longer accepted by the P2P protocol.
     receiveNetworkLoot(item) {
       if (!this.networkGuest || !Number.isInteger(item?.b) ||
           item.b<=0 || item.b>=Voxel.blocks.length || !Number.isInteger(item.n) ||
