@@ -510,13 +510,13 @@
       else if(mpRole==='guest') panel('mp-answer','Sincronizando mundo…',
         '<p class="mp-lead">Conexão P2P estabelecida. Recebendo os blocos do anfitrião…</p>',true,false);
     } else if(s==='reconnecting' || s==='slow') {
-      if(mpRole==='guest'&&g?.ready&&s==='reconnecting'){saveGuestCheckpoint(true);mpWorldReady=false;pauseSim();panel('load','Reconectando…','<p>Construção pausada para preservar os dados da sessão.</p>',true,false);}
+      if(mpRole==='guest'&&g?.ready&&s==='reconnecting'){saveGuestCheckpoint(true);mpPickup=null;mpWorldReady=false;pauseSim();panel('load','Reconectando…','<p>Construção pausada para preservar os dados da sessão.</p>',true,false);}
       toast(s==='slow' ? 'Conexão lenta: verificando o amigo…' : 'P2P instável: tentando recuperar a conexão…');
     } else if(s==='recovered') {
       toast('Conexão recuperada: conferindo mundo e inventários…');
       if(mpRole==='host')restartWorldSync();
       else if(mpRole==='guest' && g?.ready) {
-        saveGuestCheckpoint(true);mpWorldReady=false;mpLastSeq=-1;
+        saveGuestCheckpoint(true);mpPickup=null;mpWorldReady=false;mpLastSeq=-1;
         pauseSim();
         panel('load','Sincronizando novamente…',
           '<p class="mp-lead">A conexão voltou. Conferindo o mundo e seus itens com o anfitrião antes de liberar a construção.</p>',true,false);
@@ -525,7 +525,7 @@
     } else if(s==='failed') {
       toast('P2P interrompido. É necessário renovar o convite para reconectar.');
       if(mpRole==='guest' && g?.ready) {
-        saveGuestCheckpoint(true);mpWorldReady=false;pauseSim();
+        saveGuestCheckpoint(true);mpPickup=null;mpWorldReady=false;pauseSim();
         panel('mp-lost','Conexão interrompida',
           '<p>O mundo do anfitrião permanece salvo. Peça outro link e entre novamente.</p>'+
           btn('mp-rejoin','Reconectar com novo link','primary fullwidth')+
@@ -755,7 +755,8 @@
       g.notify(msg.kind+' alimentado(a)');g.changed();
     } else if (msg.t==='mob-damage' && mpRole==='guest' && g?.ready &&
                Number.isFinite(msg.n) && msg.n>0 && msg.n<=24 && typeof msg.why==='string') {
-      g.damage(msg.n,msg.why.slice(0,32));
+      if(mpPickup){mpPickup.damage ||= [];if(mpPickup.damage.length<8)mpPickup.damage.push([msg.n,msg.why.slice(0,32)]);}
+      else if(mpWorldReady)g.damage(msg.n,msg.why.slice(0,32));
     } else if (msg.t==='pickup' && mpRole==='host' && mpWorldReady && g?.ready) {
       if(msg.id!==mpHostGuestId)return;
       const session=g,connection=mp,id=mpHostGuestId;
@@ -764,15 +765,16 @@
         .catch(e=>console.warn('Coleta P2P não confirmada',e));
     } else if(msg.t==='loot-state' && mpRole==='guest' && g?.ready && mpPickup && msg.id===mpGuestProfile?.id && msg.request===mpPickup.request) {
       if(!validInventory(msg.inv,36)||!Number.isSafeInteger(msg.rev)||msg.rev<mpGuestRevision||!Number.isSafeInteger(msg.seq))return;
+      const damage=mpPickup.damage||[];
       const pending=mpGuestProfile.pendingInv;
       if(pending&&pending.seq>msg.seq){
         // The inventory update failed: keep local progress, never apply a stale bag.
-        mpPickup=null;saveGuestCheckpoint();toast('Coleta adiada: inventário ainda não confirmado.');if(screen==='loot-sync')resume(false);return;
+        mpPickup=null;for(const [n,why] of damage)g.damage(n,why);saveGuestCheckpoint(true);toast('Coleta adiada: inventário ainda não confirmado.');if(screen==='loot-sync')resume(false);return;
       }
       g.inv=structuredClone(msg.inv);mpGuestRevision=msg.rev;mpGuestSeq=Math.max(mpGuestSeq,msg.seq);
       mpGuestProfile.pendingInv=null;mpLastGuestInvHash=JSON.stringify(g.inv);
       g.guestPickupPending.delete(mpPickup.drop);if(msg.status==='committed')g.drops=g.drops.filter(d=>d.id!==msg.drop);
-      mpPickup=null;saveGuestCheckpoint();
+      mpPickup=null;for(const [n,why] of damage)g.damage(n,why);saveGuestCheckpoint(true);
       if(msg.status==='committed')toast('+'+msg.amount+' '+name(msg.b));
       else if(msg.status==='failed')toast('Não foi possível salvar a coleta. O item permanece no mundo.');
       else if(msg.status==='full')toast('Mochila cheia');
@@ -1462,6 +1464,7 @@
   function back() {
     switch (screen) {
       case 'load':
+      case 'loot-sync':
         return;
       case 'options':
         return cfgBack === 'pause' ? pauseMenu() : homeMenu();
@@ -2705,7 +2708,7 @@
     lastFrame = now;
     if (!g || !g.ready) return;
     if(mpPickup&&now-mpPickup.at>8000){
-      mpPickup=null;saveGuestCheckpoint(true);mpWorldReady=false;
+      saveGuestCheckpoint(true);mpPickup=null;mpWorldReady=false;
       panel('load','Conferindo coleta…','<p>Reconectando o inventário para evitar perda ou duplicação de itens.</p>',true,false);
       mp?.send({t:'resync-request'}).catch(()=>toast('Solicite um novo convite se a conexão não voltar.'));
     }
