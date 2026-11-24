@@ -46,6 +46,14 @@ const Game = (() => {
   function count(bag, b) {
     return bag.reduce((a, t) => a + (t?.b === b ? t.n : 0), 0);
   }
+  // Nearby movement/attacks retain 60 Hz. Far decisions run at 15 or 10 Hz.
+  // All accumulated time is consumed exactly once; no gameplay timer slowdown.
+  function actorStep(state,dt,d,urgent=false) {
+    const interval=urgent||d<=12?0:d<=22?1/15:.1;
+    state.pending=(state.pending||0)+dt;
+    if(interval&&state.pending+1e-8<interval)return 0;
+    const step=state.pending;state.pending=0;return step;
+  }
   function fresh(name, seed, mode, difficulty, generator = 3, keepInventory = false) {
     generator = [4,5,6,7].includes(generator) ? generator : 3;
     let h = land(0, 3, Voxel.seedHash(seed), generator).h;
@@ -142,6 +150,8 @@ const Game = (() => {
       this.chunks = new Map();
       this.revs = new Map();
       this.lit = new Map();
+      this.lightCache=new Map();
+      this.actorSchedule=new WeakMap();
       this.keys = new Set();
       this.touchMove = { forward: 0, side: 0 };
       this.moveSpeed = 0;
@@ -211,6 +221,7 @@ const Game = (() => {
         if (Math.abs(x - cx) > r + 1 || Math.abs(z - cz) > r + 1) {
           this.chunks.delete(k);
           this.lit.delete(k);
+          this.lightCache?.clear();
           this.renderer.remove(k);
         }
       }
@@ -287,8 +298,11 @@ const Game = (() => {
           arr.push(position);
         }
       this.lit.set(k, arr);
+      this.lightCache?.clear();
     }
     lights(block = null) {
+      const cached=this.lightCache?.get(block),p=this.p;
+      if(cached&&this.elapsed<cached.until&&Math.hypot(p.x-cached.x,p.y-cached.y,p.z-cached.z)<.4)return cached.result;
       let found = [];
       for (let arr of this.lit.values())
         for (let v of arr) {
@@ -296,10 +310,9 @@ const Game = (() => {
           const d = (v[0] - this.p.x) ** 2 + (v[1] - this.p.y) ** 2 + (v[2] - this.p.z) ** 2;
           if (d < 42 ** 2) found.push([d, v]);
         }
-      return found
-        .sort((a, b) => a[0] - b[0])
-        .slice(0, 8)
-        .map((i) => i[1]);
+      const result=found.sort((a,b)=>a[0]-b[0]).slice(0,8).map(i=>i[1]);
+      this.lightCache?.set(block,{x:p.x,y:p.y,z:p.z,until:this.elapsed+.15,result});
+      return result;
     }
     get(x, y, z, barrier = false) {
       if (y < 0) return 3;
@@ -983,9 +996,12 @@ const Game = (() => {
       if(this.saplingTimer<1)return;
       this.saplingTimer-=1;
       // A maximum of a handful of loaded saplings are checked each second.
-      let seen=0;
-      for(const [position,info] of Object.entries(this.saplings)) {
-        if(++seen>32)break;
+      const entries=Object.entries(this.saplings),total=entries.length;
+      const start=(this.saplingCursor||0)%Math.max(1,total);
+      const amount=Math.min(32,total);
+      this.saplingCursor=(start+amount)%Math.max(1,total);
+      for(let i=0;i<amount;i++) {
+        const [position,info]=entries[(start+i)%total];
         const [x,y,z]=position.split(',').map(Number);
         const id=this.get(x,y,z,true);
         if(id!==134&&id!==135) { if(id!==-1)delete this.saplings[position];continue; }
@@ -1039,7 +1055,14 @@ const Game = (() => {
       return true;
     }
     addDrop(x, y, z, b, n, dur) {
-      this.drops.push({ id:this.nextDropId++, x, y, z, b, n, dur });
+      // Never merge network-addressable drops, or tools with durability.
+      if(!this.networkHost&&!this.networkGuest&&!Voxel.durability[b]&&dur==null){
+        for(const d of this.drops){
+          if(d.b!==b||d.dur!=null||d.n>=64||Math.abs(d.y-y)>.7||Math.hypot(d.x-x,d.z-z)>.85)continue;
+          const amount=Math.min(n,64-d.n);d.n+=amount;n-=amount;if(!n)return;
+        }
+      }
+      while(n>0){const amount=Math.min(n,Voxel.durability[b]?1:64);this.drops.push({id:this.nextDropId++,x,y,z,b,n:amount,dur});n-=amount;}
     }
     loot(dt) {
       const p = this.p;
@@ -1063,9 +1086,13 @@ const Game = (() => {
         Math.hypot(this.bag.x - p.x, this.bag.z - p.z) < 1.8 &&
         Math.abs(this.bag.y - p.y) < 2
       ) {
-        for (let t of this.bag.inv) {
-          if (t) t.n = fill(this.inv, t.b, t.n, t.dur);
+        let recovered=false;
+        for(let i=0;i<this.bag.inv.length;i++){
+          const t=this.bag.inv[i];if(!t)continue;
+          const left=fill(this.inv,t.b,t.n,t.dur);
+          if(left<t.n){recovered=true;if(left)t.n=left;else this.bag.inv[i]=null;}
         }
+        if(recovered)this.changed();
         if (!this.bag.inv.some((t) => t?.n)) {
           this.bag = null;
           this.notify('Mochila recuperada');
@@ -1912,10 +1939,11 @@ const Game = (() => {
       }
       // Shared single-target navigation with cheap wall slide / sidestep. No pathfinder,
       // extra workers, navmesh or per-creature meshes are required.
+      let movementDt=dt;
       const walk = (m, vx, vz, speed, radius, height) => {
         const len = Math.hypot(vx, vz);
         if (len < .001 || speed <= 0) return false;
-        const dx = vx / len * dt * speed, dz = vz / len * dt * speed;
+        const dx = vx / len * movementDt * speed, dz = vz / len * movementDt * speed;
         const sx = m.x, sz = m.z;
         if (!this.mobMove(m, sx + dx, sz + dz, radius, height)) {
           if (!this.mobMove(m, sx + dx, sz, radius, height) &&
@@ -1933,8 +1961,11 @@ const Game = (() => {
         }
         return false;
       };
-      const plots = Object.keys(this.plots);
+      let plots;
+      this.actorSchedule ||= new WeakMap();
+      this.aiDecisions=0;
       for (const m of this.mobs) {
+        movementDt=dt;
         const kind = m.kind || 'Raspejante';
         const boss = kind === 'Guardião Prisma';
         const scale=Voxel.farmScale(m);
@@ -1970,13 +2001,20 @@ const Game = (() => {
           m.knockback = Math.max(0, m.knockback - dt);
         }
         let moved = false;
-        if (!m.stun && d > .001 && d < 30) {
+        let schedule=this.actorSchedule.get(m);
+        if(!schedule){schedule={pending:0};this.actorSchedule.set(m,schedule);}
+        if(m.stun||d>=30||d<=.001)schedule.pending=0;
+        const decisionDt=!m.stun&&d>.001&&d<30?actorStep(schedule,dt,d,!!m.wind||m.knockback>0):0;
+        if(!decisionDt&&!m.stun&&d>.001&&d<30)continue;
+        if (decisionDt) {
+          this.aiDecisions++;
+          movementDt=decisionDt;
           const safe = nearLight(m.x, m.y, m.z, 4.4);
           const passive = ['Saltim', 'Musgato', 'Luzerrante'].includes(kind);
           if(kind==='Aldeão'){
-            moved=this.villageRoutine(m,dt,night,walk,radius,height,d,dx,dz);
+            moved=this.villageRoutine(m,decisionDt,night,walk,radius,height,d,dx,dz);
           } else if (isFarm(kind)) {
-            m.roamTimer = (m.roamTimer || 0) - dt;
+            m.roamTimer = (m.roamTimer || 0) - decisionDt;
             if (m.roamTimer <= 0) {
               m.roamTimer = 2.5 + Voxel.hash(Math.floor(m.x * 3), Math.floor(m.z * 3), this.seed ^ Math.floor(this.elapsed / 3)) * 4;
               m.roamAngle = Voxel.hash(Math.floor(m.x * 7), Math.floor(m.z * 7), this.seed ^ (Math.floor(this.elapsed) + 33)) * Math.PI * 2;
@@ -1994,7 +2032,7 @@ const Game = (() => {
             } else if (m.graze > 0 || d < 1.9 || (m.tamed&&m.follow)) speed = 0;
             moved = walk(m, vx, vz, speed, radius, height);
           } else if (passive) {
-            m.roamTimer = (m.roamTimer || 0) - dt;
+            m.roamTimer = (m.roamTimer || 0) - decisionDt;
             if (m.roamTimer <= 0) {
               m.roamTimer = 2 + Voxel.hash(Math.floor(m.x * 5), Math.floor(m.z * 5), this.seed ^ Math.floor(this.elapsed)) * 4;
               m.roamAngle = Voxel.hash(Math.floor(m.x * 3), Math.floor(m.z * 3), this.seed ^ 771) * Math.PI * 2;
@@ -2006,7 +2044,7 @@ const Game = (() => {
               vx = this.destination.x - m.x;
               vz = this.destination.z - m.z;
               speed = .8;
-            } else if (kind === 'Musgato' && plots.length) {
+            } else if (kind === 'Musgato' && (plots ||= Object.keys(this.plots)).length) {
               const [tx, , tz] = plots[0].split(',').map(Number);
               if (Math.hypot(tx - m.x, tz - m.z) > 1.25) {
                 vx = tx - m.x; vz = tz - m.z; speed = .68;
@@ -2046,7 +2084,7 @@ const Game = (() => {
           }
         } else if (m.wind && d >= 1.75) m.wind = 0;
         const targetMotion = moved ? 1 : 0;
-        m.motion = (m.motion || 0) + (targetMotion - (m.motion || 0)) * Math.min(1, dt * 12);
+        m.motion = (m.motion || 0) + (targetMotion - (m.motion || 0)) * Math.min(1, (decisionDt||dt) * 12);
       }
       this.mobs = this.mobs.filter(m =>
         !((m.hp <= 0) && m.dying === 0) &&
@@ -2237,5 +2275,5 @@ const Game = (() => {
       this.renderer.reset();
     }
   }
-  return { fresh, Session, fill, count, slot };
+  return { fresh, Session, fill, count, slot, actorStep };
 })();
