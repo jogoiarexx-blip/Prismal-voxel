@@ -3,6 +3,7 @@
 // No matchmaking/signaling backend and no third-party runtime libraries.
 const PrismaNet = (() => {
   const PREFIX = 'PRISMA1:';
+  const PROTOCOL=2;
   const MAX_CODE_LENGTH = 170000;
   const MAX_PAYLOAD = 5_000_000;
   const RTC = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun.cloudflare.com:3478' }] };
@@ -37,8 +38,8 @@ const PrismaNet = (() => {
     } else if (type!=='J') throw Error('Formato de convite desconhecido.');
     if (bytes.length>MAX_PAYLOAD) throw Error('Código excede o tamanho permitido.');
     const obj=JSON.parse(new TextDecoder().decode(bytes));
-    if (obj?.v!==1 || obj.type!==expected || typeof obj.sdp!=='string' || obj.sdp.length>150000)
-      throw Error('Código incompatível ou incompleto.');
+    if (obj?.v!==PROTOCOL || obj.type!==expected || typeof obj.sdp!=='string' || obj.sdp.length>150000)
+      throw Error('Convite incompatível. Atualize o jogo nos dois dispositivos e gere um novo convite.');
     return obj;
   }
   function waitIce(pc) {
@@ -52,9 +53,10 @@ const PrismaNet = (() => {
   }
   function create({onMessage=()=>{},onStatus=()=>{},name='Explorador'}={}) {
     if (typeof RTCPeerConnection==='undefined') throw Error('Seu navegador não oferece suporte ao WebRTC.');
-    let pc=null, ch=null, queue=Promise.resolve(), closed=false, nextId=1, parts=new Map();
-    let heartbeat=null, awaitingPing=0, interrupted=false, activeSends=0;
-    const publicApi={connected:false, role:null, name:String(name).slice(0,28), remoteName:'Visitante', latencyMs:null, send, sendFast, close};
+    let pc=null, ch=null, fast=null, queue=Promise.resolve(), closed=false, nextId=1, parts=new Map();
+    let heartbeat=null, awaitingPing=0, interrupted=false, activeSends=0, queuedChars=0;
+    const metrics={fastSent:0,fastDropped:0,reliableSent:0};
+    const publicApi={connected:false, role:null, name:String(name).slice(0,28), remoteName:'Visitante', latencyMs:null, metrics, send, sendFast, close};
     const status=(name)=>{ if(!closed)onStatus(name); };
     function ping() {
       if(!ch || ch.readyState!=='open') return;
@@ -66,6 +68,16 @@ const PrismaNet = (() => {
     }
     function startHeartbeat() { if(heartbeat)clearInterval(heartbeat); heartbeat=setInterval(ping,3500); ping(); }
     function attachChannel(c) {
+      if(c.label==='prisma-fast'){
+        if(fast){c.close();return;}
+        fast=c;
+        c.onmessage=e=>{
+          if(closed||typeof e.data!=='string'||e.data.length>16000)return;
+          try{const msg=JSON.parse(e.data);if(msg&&['pose','entities'].includes(msg.t))onMessage(msg);}catch{}
+        };
+        return;
+      }
+      if(c.label!=='mundo-prisma'||ch){c.close();return;}
       ch=c;
       ch.binaryType='arraybuffer';
       ch.onopen=()=>{ publicApi.connected=true; status('connected'); startHeartbeat(); send({t:'hello',name:publicApi.name}).catch(()=>{}); };
@@ -74,7 +86,9 @@ const PrismaNet = (() => {
       ch.onerror=()=>status('error');
       ch.onmessage=(e)=>{
         try {
+          if(closed||typeof e.data!=='string'||e.data.length>20000)return;
           const msg=JSON.parse(e.data);
+          if(!msg||typeof msg!=='object')return;
           if(msg.t==='ping') {
             if(Number.isFinite(msg.at)&&ch.readyState==='open') ch.send(JSON.stringify({t:'pong',at:msg.at}));
             return;
@@ -93,12 +107,12 @@ const PrismaNet = (() => {
             if(typeof p.items[msg.i]!=='string'){p.items[msg.i]=msg.d;p.size+=msg.d.length;p.received++;}
             if(p.size>MAX_PAYLOAD){parts.delete(msg.id);return;}
             if(p.received===p.items.length) {
-              parts.delete(msg.id); onMessage(JSON.parse(p.items.join('')));
+              parts.delete(msg.id); const payload=JSON.parse(p.items.join(''));if(payload&&typeof payload==='object'&&!['pose','entities','part'].includes(payload.t))onMessage(payload);
             }
           } else if(msg.t==='hello') {
             publicApi.remoteName=String(msg.name||'Visitante').slice(0,28);
             onMessage({t:'hello',name:publicApi.remoteName});
-          } else onMessage(msg);
+          } else if(!['pose','entities'].includes(msg.t)) onMessage(msg);
         } catch(err) { console.warn('Mensagem P2P ignorada',err); }
       };
     }
@@ -117,10 +131,11 @@ const PrismaNet = (() => {
     async function host() {
       const c=setup('host');
       attachChannel(c.createDataChannel('mundo-prisma',{ordered:true}));
+      attachChannel(c.createDataChannel('prisma-fast',{ordered:false,maxRetransmits:0}));
       await c.setLocalDescription(await c.createOffer());
       status('gathering'); await waitIce(c);
       status('invite-ready');
-      return pack({v:1,type:'offer',sdp:c.localDescription.sdp,name:publicApi.name});
+      return pack({v:PROTOCOL,type:'offer',sdp:c.localDescription.sdp,name:publicApi.name});
     }
     async function join(invite) {
       const obj=await unpack(invite,'offer');
@@ -130,7 +145,7 @@ const PrismaNet = (() => {
       await c.setLocalDescription(await c.createAnswer());
       status('gathering'); await waitIce(c);
       status('answer-ready');
-      return pack({v:1,type:'answer',sdp:c.localDescription.sdp,name:publicApi.name});
+      return pack({v:PROTOCOL,type:'answer',sdp:c.localDescription.sdp,name:publicApi.name});
     }
     async function accept(answer) {
       if(!pc || publicApi.role!=='host') throw Error('Crie uma sala antes de aceitar a resposta.');
@@ -141,42 +156,49 @@ const PrismaNet = (() => {
     }
     // Transient positions never join the reliable world-save queue: stale poses are dropped.
     function sendFast(message) {
-      if(!ch || ch.readyState!=='open' || ch.bufferedAmount>32000 || activeSends) return false;
+      if(closed||!fast||fast.readyState!=='open'||fast.bufferedAmount>32000||!['pose','entities'].includes(message?.t)){metrics.fastDropped++;return false;}
       const raw=JSON.stringify(message);
-      if(raw.length>10240) return false;
-      try { ch.send(raw); return true; } catch { return false; }
+      if(raw.length>16000){metrics.fastDropped++;return false;}
+      try{fast.send(raw);metrics.fastSent++;return true;}catch{metrics.fastDropped++;return false;}
+    }
+    async function drain(channel){
+      const start=Date.now();
+      while(channel.bufferedAmount>180000&&channel.readyState==='open'&&!closed){
+        if(Date.now()-start>18000)throw Error('Tempo esgotado enviando dados. Confira a conexão P2P.');
+        await wait(25);
+      }
+      if(closed||channel.readyState!=='open')throw Error('Conexão P2P interrompida.');
     }
     function send(message) {
-      activeSends++;
+      if(closed||!ch||ch.readyState!=='open')return Promise.reject(Error('Conexão P2P encerrada.'));
+      let raw;try{raw=JSON.stringify(message);}catch(e){return Promise.reject(e);}
+      if(!raw||raw.length>MAX_PAYLOAD)return Promise.reject(Error('Mensagem P2P grande demais.'));
+      if(activeSends>=256||queuedChars+raw.length>MAX_PAYLOAD*2)return Promise.reject(Error('Fila P2P cheia. Aguarde a sincronização.'));
+      const channel=ch;
+      activeSends++;queuedChars+=raw.length;
       queue=queue.catch(()=>{}).then(async()=>{
-        if(!ch || ch.readyState!=='open') throw Error('Conexão P2P encerrada durante o envio.');
-        const raw=JSON.stringify(message);
-        if(raw.length>MAX_PAYLOAD) throw Error('Mundo muito grande para sincronizar nesta versão P2P.');
-        if(raw.length<=11000) { ch.send(raw); return true; }
-        const id=nextId++, n=Math.ceil(raw.length/11000);
-        for(let i=0;i<n;i++) {
-          const start=Date.now();
-          while(ch.bufferedAmount>180000 && ch.readyState==='open') {
-            if(Date.now()-start>18000) throw Error('Tempo esgotado enviando dados. Confira a conexão P2P.');
-            await wait(25);
-          }
-          if(ch.readyState!=='open') throw Error('Conexão P2P interrompida.');
-          ch.send(JSON.stringify({t:'part',id,i,n,d:raw.slice(i*11000,(i+1)*11000)}));
+        await drain(channel);
+        if(raw.length<=11000){channel.send(raw);metrics.reliableSent++;return true;}
+        const id=nextId++,n=Math.ceil(raw.length/11000);
+        for(let i=0;i<n;i++){
+          await drain(channel);
+          channel.send(JSON.stringify({t:'part',id,i,n,d:raw.slice(i*11000,(i+1)*11000)}));
         }
-        return true;
-      }).finally(()=>{activeSends=Math.max(0,activeSends-1);});
+        metrics.reliableSent++;return true;
+      }).finally(()=>{activeSends=Math.max(0,activeSends-1);queuedChars=Math.max(0,queuedChars-raw.length);});
       return queue;
     }
     function close() {
       closed=true;
       publicApi.connected=false;
       if(heartbeat)clearInterval(heartbeat);heartbeat=null;awaitingPing=0;
-      if(ch){ch.onclose=null;ch.close();}
+      if(fast){fast.onmessage=null;fast.close();fast=null;}
+      if(ch){ch.onclose=null;ch.onmessage=null;ch.close();}
       if(pc)pc.close();
       parts.clear();
     }
     return Object.assign(publicApi,{host,join,accept});
   }
-  return {create,pack,unpack};
+  return {create,pack,unpack,PROTOCOL};
 })();
 if(typeof module!=='undefined')module.exports=PrismaNet;
