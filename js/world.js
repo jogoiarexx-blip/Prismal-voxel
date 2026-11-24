@@ -814,7 +814,7 @@ const Voxel = (() => {
         const x = Math.round(Math.sin(arc) * radius),
           z = -Math.round(Math.cos(arc) * radius),
           h = land(x, z, seed, generator).h;
-        if ((generator === 5 && h > H - 12) || (generator >= 4 && land(x,z,seed,generator).river) || h < SEA + 2 || (player && Math.hypot(player.x - x, player.z - z) < 12)) continue;
+        if ((generator >= 5 && h > H - 12) || (generator >= 4 && land(x,z,seed,generator).river) || h < SEA + 2 || (player && Math.hypot(player.x - x, player.z - z) < 12)) continue;
         let free = true;
         for (let dz = -4; dz <= 4 && free; dz++)
           for (let dx = -4; dx <= 4 && free; dx++) {
@@ -1037,6 +1037,50 @@ const Voxel = (() => {
   }
   const idx = (x, y, z) => (y * 16 + z) * 16 + x;
   const key = (x, z) => x + ',' + z;
+  // A village is a pure function of seed and global coordinates. Every chunk
+  // evaluates the same candidates, so roofs never depend on loading order.
+  function villageHouses(gx,gz,s,sites=[]) {
+    const vx=gx*64+24+Math.floor(hash(gx,gz,s^191)*16);
+    const vz=gz*64+24+Math.floor(hash(gx,gz,s^193)*16);
+    if(Math.hypot(vx,vz-3)<46 || sites.some(p=>Math.hypot(p.x-vx,p.z-vz)<24)) return [];
+    const houses=[];
+    for(const [dx,dz] of [[-6,-5],[6,-5],[0,6]]) {
+      const x=vx+dx,z=vz+dz, center=land(x,z,s,6);
+      if(center.h<=SEA+2 || center.h>H-14 || center.region || center.dunes) continue;
+      let valid=true, minH=Infinity,maxH=-Infinity;
+      for(let i=-3;i<=3;i++) for(let j=-3;j<=3;j++){
+        const t=land(x+i,z+j,s,6);
+        if(t.river || t.h<=SEA+1 || t.h<=(t.waterY??SEA)) valid=false;
+        minH=Math.min(minH,t.h);maxH=Math.max(maxH,t.h);
+      }
+      if(valid && maxH-minH<=3) houses.push({x,z,y:maxH+1});
+    }
+    return houses.length>=2?houses:[];
+  }
+  function buildVillageHouse({x,z,y},set,s) {
+    for(let dz=-3;dz<=3;dz++) for(let dx=-3;dx<=3;dx++){
+      // Remove intersecting tree branches, then build a stone foundation.
+      for(let dy=0;dy<=12;dy++)set(x+dx,y+dy,z+dz,0);
+      if(Math.abs(dx)<=2&&Math.abs(dz)<=2){
+        for(let dy=-4;dy<0;dy++)set(x+dx,y+dy,z+dz,48);
+        set(x+dx,y,z+dz,8);
+        for(let dy=1;dy<=3;dy++){
+          const edge=Math.abs(dx)===2||Math.abs(dz)===2;
+          if(!edge)continue;
+          const entrance=dx===0&&dz===2&&dy<=2;
+          const window=dy===2&&((Math.abs(dx)===2&&dz===0)||(dz===-2&&dx===0));
+          if(!entrance)set(x+dx,y+dy,z+dz,window?16:(Math.abs(dx)===2&&Math.abs(dz)===2?5:8));
+        }
+      }
+      if(Math.abs(dx)<=3&&Math.abs(dz)<=3)
+        set(x+dx,y+4+(3-Math.abs(dx)),z+dz,65);
+      if(Math.abs(dz)===2&&Math.abs(dx)<=2)
+        for(let dy=4;dy<4+(3-Math.abs(dx));dy++)set(x+dx,y+dy,z+dz,8);
+    }
+    set(x-1,y+1,z-1,12);
+    set(x+1,y+1,z-1,14);
+    set(x,y+1,z-1,13);
+  }
   function generate(cx, cz, s, sites = [], generator = 1) {
     const a = new Uint8Array(16 * 16 * H),
       ox = cx * 16,
@@ -1123,12 +1167,22 @@ const Voxel = (() => {
           }
           continue;
         }
-        if (hash(gx, gz, s ^ 53) < (mist ? 0.63 : 0.31)) tree(tx, tz);
+        const density=generator>=6
+          ? mix(.12,.89,smooth(clip((noise(tx*.017,tz*.017,s^524)-.2)/.6,0,1)))
+          : (mist ? .63 : .31);
+        if (hash(gx, gz, s ^ 53) < density) tree(tx, tz);
       }
     tree(2, 0, true);
+    if(generator>=6) {
+      for(let gz=Math.floor((oz-16)/64);gz<=Math.floor((oz+31)/64);gz++)
+        for(let gx=Math.floor((ox-16)/64);gx<=Math.floor((ox+31)/64);gx++)
+          for(const house of villageHouses(gx,gz,s,sites))
+            if(house.x+3>=ox && house.x-3<ox+16 && house.z+3>=oz && house.z-3<oz+16)
+              buildVillageHouse(house,set,s);
+    }
     for (const site of sites)
       if (site.x + 4 >= ox && site.z + 4 >= oz && site.x - 4 < ox + 16 && site.z - 4 < oz + 16)
-        { buildRuin(site, set); if(generator===5)decorateExpedition(site,set); }
+        { buildRuin(site, set); if(generator>=5)decorateExpedition(site,set); }
     return { a, top };
   }
   const directions = [
@@ -1446,6 +1500,7 @@ const Voxel = (() => {
     hash,
     land,
     generate,
+    villageHouses,
     idx,
     key,
     clip,
