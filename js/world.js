@@ -254,24 +254,56 @@ const Voxel = (() => {
     box(0,.68,.43,1,.11,.14,8),box(.43,.68,0,.14,.11,1,8),
   ]);
   shapes.set(56, [box(.455, 0, .02, .09, 1, .96)]);
+  // Architectural doors: preserve the original orientation and collision envelope.
+  // Render the two faces with recessed panels, rails, hinges and metal hardware.
+  const doorCollisions = new Map();
   for (let facing = 0; facing < 4; facing++) {
-    shapes.set(57 + facing, [facing % 2 ? box(.4, 0, 0, .2, 1, 1) : box(0, 0, .4, 1, 1, .2)]);
-    shapes.set(61 + facing, [facing % 2 ? box(0, 0, facing === 1 ? .08 : .75, 1, 1, .17) : box(facing === 0 ? .08 : .75, 0, 0, .17, 1, 1)]);
+    doorCollisions.set(57 + facing, [facing % 2 ? box(.4, 0, 0, .2, 1, 1) : box(0, 0, .4, 1, 1, .2)]);
+    doorCollisions.set(61 + facing, [facing % 2 ? box(0, 0, facing === 1 ? .08 : .75, 1, 1, .17) : box(facing === 0 ? .08 : .75, 0, 0, .17, 1, 1)]);
   }
-  // Upper halves have a small glazed window framed in wood. The panels use
-  // the existing transparent material, so they add no texture dependencies.
   for (let facing = 0; facing < 8; facing++) {
-    const lower = 57 + facing;
-    const p = shapes.get(lower)[0], [x,,z,w,,d] = p;
-    shapes.set(97 + facing, w > d ? [
-      box(x,0,z,w,.19,d),box(x,.83,z,w,.17,d),
+    const lower=57+facing, upper=97+facing;
+    const [x,,z,w,,d]=doorCollisions.get(lower)[0];
+    const alongX=w>d, thickness=alongX?d:w;
+    // u is distance along the door and v is distance through its thickness.
+    const panel=(u,y,v,span,h,t,mat)=>alongX
+      ? box(x+u,y,z+v,span,h,t,mat)
+      : box(x+v,y,z+u,t,h,span,mat);
+    const rim=.045, core=thickness-2*rim;
+    const parts=[panel(0,0,rim,1,1,core,8),
+      panel(0,0,0,.13,1,thickness,68),
+      panel(.87,0,0,.13,1,thickness,68),
+      panel(.13,0,0,.74,.13,thickness,68),
+      panel(.13,.87,0,.74,.13,thickness,68),
+      panel(.13,.46,0,.74,.08,thickness,68)];
+    for(const v of [.014, thickness-.034]) {
+      // Inlaid panel borders and a handle on each face, without extending into
+      // the neighboring block or adding invisible collision to the doorway.
+      parts.push(panel(.18,.19,v,.64,.035,.02,57),panel(.18,.405,v,.64,.035,.02,57),
+        panel(.18,.225,v,.035,.18,.02,57),panel(.785,.225,v,.035,.18,.02,57),
+        panel(.18,.59,v,.64,.035,.02,57),panel(.18,.815,v,.64,.035,.02,57),
+        panel(.18,.625,v,.035,.19,.02,57),panel(.785,.625,v,.035,.19,.02,57));
+    }
+    for(const v of [0,thickness-.028]) {
+      parts.push(panel(.79,.65,v,.07,.10,.028,35),
+        panel(.73,.68,v,.12,.035,.028,24));
+    }
+    shapes.set(lower,parts);
+    // Upper half: two-by-two glazing, wooden mullions and continuous frame.
+    const top=[panel(0,0,0,1,.19,thickness,68),panel(0,.83,0,1,.17,thickness,68),
+      panel(0,.19,0,.18,.64,thickness,68),panel(.82,.19,0,.18,.64,thickness,68),
+      panel(.47,.19,.025,.06,.64,thickness-.05,8),
+      panel(.18,.48,.025,.29,.06,thickness-.05,8),
+      panel(.53,.48,.025,.29,.06,thickness-.05,8)];
+    for(const [u,y,span,h] of [[.18,.19,.29,.29],[.53,.19,.29,.29],[.18,.54,.29,.29],[.53,.54,.29,.29]])
+      top.push(panel(u,y,(thickness-.045)/2,span,h,.045,56));
+    shapes.set(upper,top);
+    // Keep the v0.9.24 upper collision (including the existing pane) unchanged.
+    doorCollisions.set(upper,alongX ? [box(x,0,z,w,.19,d),box(x,.83,z,w,.17,d),
       box(x,0,z,.18,1,d),box(x+w-.18,0,z,.18,1,d),
-      box(x+.17,.18,z+.03,w-.34,.67,Math.max(.04,d-.06),56),
-    ] : [
-      box(x,0,z,w,.19,d),box(x,.83,z,w,.17,d),
-      box(x,0,z,w,1,.18),box(x,0,z+d-.18,w,1,.18),
-      box(x+.03,.18,z+.17,Math.max(.04,w-.06),.67,d-.34,56),
-    ]);
+      box(x+.17,.18,z+.03,w-.34,.67,Math.max(.04,d-.06),56)] : [
+      box(x,0,z,w,.19,d),box(x,.83,z,w,.17,d),box(x,0,z,w,1,.18),
+      box(x,0,z+d-.18,w,1,.18),box(x+.03,.18,z+.17,Math.max(.04,w-.06),.67,d-.34,56)]);
   }
   // Lantern: open metal frame around a visible warm-light core.
   shapes.set(67, [
@@ -449,7 +481,16 @@ const Voxel = (() => {
     box(.11,.00,.72,.14,.14,.16,68),box(.75,.00,.72,.14,.14,.16,68),
   ]);
   shapes.set(88, [box(.02, 0, .02, .96, .045, .96)]);
-  shapes.set(92, [box(.04, 0, .43, .92, .10, .14), box(.04, .90, .43, .92, .10, .14), box(.04, 0, .43, .10, 1, .14), box(.86, 0, .43, .10, 1, .14), box(.45, 0, .45, .10, 1, .10)]);
+  // Framed window: actual transparent panes, timber surround and a sill.
+  // The glass is solid for collision; daylight and visibility remain available.
+  shapes.set(92,[
+    box(.02,0,.37,.96,.11,.26,68),box(.04,.89,.43,.92,.11,.14,68),
+    box(.04,.11,.43,.10,.78,.14,68),box(.86,.11,.43,.10,.78,.14,68),
+    box(.47,.11,.445,.06,.78,.11,8),
+    box(.14,.47,.445,.33,.06,.11,8),box(.53,.47,.445,.33,.06,.11,8),
+    box(.14,.11,.479,.33,.36,.042,56),box(.53,.11,.479,.33,.36,.042,56),
+    box(.14,.53,.479,.33,.36,.042,56),box(.53,.53,.479,.33,.36,.042,56),
+  ]);
   const shapeParts = (id) => shapes.get(id) || null;
   const specialShape = (id) => shapes.has(id);
   const doorLower = (id) => id >= 57 && id <= 64;
@@ -475,7 +516,7 @@ const Voxel = (() => {
   function intersects(id, bx, by, bz, x0, y0, z0, x1, y1, z1) {
     if (!blocks[id]?.solid) return false;
     if (x1 <= bx || x0 >= bx + 1 || y1 <= by || y0 >= by + 1 || z1 <= bz || z0 >= bz + 1) return false;
-    const parts = shapeParts(id);
+    const parts = doorCollisions.get(id) || shapeParts(id);
     return !parts || parts.some(([x,y,z,w,h,d]) => x0 < bx+x+w && x1 > bx+x && y0 < by+y+h && y1 > by+y && z0 < bz+z+d && z1 > bz+z);
   }
   const recipes = [

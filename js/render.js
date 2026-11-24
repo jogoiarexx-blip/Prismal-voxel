@@ -115,8 +115,49 @@ const View = (() => {
  if(m==48.||m==66.||m==69.||m==70.||m==71.||m==72.||m==74.){
    if(fract(uv.y*3.)<.07 || fract(uv.x*2.+floor(uv.y*3.)*.5)<.045)col*=.7;
  }
- if(m==65.){if(fract(uv.y*3.)<.095||fract(uv.x*3.+floor(uv.y*3.)*.5)<.045)col*=.63;}
- if(m==75.)pat*=.38;
+ // Architectural finishes remain on the existing greedy terrain mesh.
+ // Clay roof tiles use alternating rows, rounded highlights and a shadow lip.
+ if(m==65.){
+   vec2 tileUV=uv*vec2(3.,4.);
+   float row=floor(tileUV.y), tileX=fract(tileUV.x+row*.5), tileY=fract(tileUV.y);
+   float edge=min(tileX,1.-tileX);
+   float ridge=sin(tileX*3.14159265);
+   float lip=smoothstep(.02,.10,tileY);
+   col*=.77+.29*ridge+.07*rnd(vec2(floor(tileUV.x+row*.5),row));
+   col*=mix(.66,1.,lip)*mix(.77,1.,smoothstep(.018,.07,edge));
+   col+=vec3(.075,.035,.014)*smoothstep(.80,.96,tileY);
+   pat*=.58;
+ }
+ if(m==66.){
+   vec2 brickUV=uv*vec2(2.,4.);
+   float row=floor(brickUV.y), bx=fract(brickUV.x+.5*row), by=fract(brickUV.y);
+   float mortar=min(min(bx,1.-bx),min(by,1.-by));
+   vec3 brick=color(66.)*(.86+.19*rnd(vec2(floor(brickUV.x+.5*row),row)));
+   brick*=.86+.14*smoothstep(.03,.12,mortar);
+   col=mix(vec3(.49,.42,.34),brick,smoothstep(.035,.075,mortar));
+   pat*=.65;
+ }
+ if(m==75.){
+   col*=.98+.025*sin(uv.x*10.+sin(uv.y*5.));
+   pat*=.23;
+ }
+ if(m==91.){
+   if(f==2.||f==3.){
+     vec2 q=abs(fract(uv)-.5);
+     float ring=max(q.x,q.y);
+     col*=1.10+.11*sin(ring*63.);
+   }else{
+     float grain=sin(uv.x*48.+sin(uv.y*3.)*1.3);
+     col*=.91+.10*grain;
+   }
+   pat*=.6;
+ }
+ if(m==74.&&f==2.){
+   vec2 tile=fract(uv*2.);
+   float edge=min(min(tile.x,1.-tile.x),min(tile.y,1.-tile.y));
+   col=color(74.)*(.89+.16*rnd(floor(uv*2.)));
+   col*=mix(.62,1.,smoothstep(.018,.08,edge));
+ }
  if(m==73.){if(fract(uv.x*5.)<.05)col*=.7;pat*=.7;}
  if(m==67.){col=mix(col,vec3(1.,.82,.43),.36);pat*=.3;}
  if(m==77.){if(fract(w.y*3.)<.13)col*=.52;else if(rnd(floor(uv*7.))>.42)col=mix(col,vec3(.61,.42,.25),.5);}
