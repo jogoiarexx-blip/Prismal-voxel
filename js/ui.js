@@ -871,6 +871,7 @@
           '<select id="difficulty"><option value="normal">Normal · ciclo de 24 minutos</option>' +
           '<option value="short">Ciclo rápido · 4 minutos</option>' +
           '<option value="peaceful">Pacífico · sem criaturas hostis</option></select></label>' +
+        '<label id="keepInventoryField" class="checkline"><input id="keepInventory" type="checkbox"> Modo casual · manter inventário ao morrer</label>' +
         '<details class="new-help"><summary><span>⚙</span><span><b>Informações do mundo</b>' +
           '<small>Como funcionam sementes, modos e construções.</small></span><span class="new-chevron">⌄</span></summary>' +
           '<p>Cada semente gera um mapa reproduzível. No modo Criativo você pode erguer casas bloco a bloco, sem modelos obrigatórios. A qualidade gráfica e os controles ficam em <b>Opções</b> no menu principal.</p></details>' +
@@ -888,7 +889,7 @@
       const title = $('#worldName').value.trim() || 'Meu mundo',
         seed =
           $('#worldSeed').value.trim() || 'PR-' + Math.random().toString(36).slice(2, 9).toUpperCase();
-      let rec = Game.fresh(title, seed, edition, $('#difficulty').value, Number($('#worldGenerator').value));
+      let rec = Game.fresh(title, seed, edition, $('#difficulty').value, Number($('#worldGenerator').value),$('#keepInventory').checked);
       await launch(rec, true);
     };
   }
@@ -1293,7 +1294,9 @@
         '<label class="checkline"><input id="leftHanded" type="checkbox"> Inverter lados dos controles</label>' +
         '<label class="checkline"><input id="haptics" type="checkbox"> Vibrar ao quebrar e colocar blocos</label>' +
         '<label class="checkline"><input id="thirdPerson" type="checkbox"> Câmera em terceira pessoa (V)</label>' +
-        slider('volume', 'Volume', 0, 100, 1, Math.round(settings.volume * 100), '%') +
+        slider('volume', 'Volume geral', 0, 100, 1, Math.round(settings.volume * 100), '%') +
+        slider('effectsVolume', 'Efeitos e passos', 0, 100, 1, Math.round((settings.effectsVolume??1)*100), '%') +
+        slider('interfaceVolume', 'Sons da interface', 0, 100, 1, Math.round((settings.interfaceVolume??1)*100), '%') +
         '<label class="checkline"><input id="noFlash" type="checkbox"> Desativar flash de dano</label><label class="checkline"><input id="audioCheck" type="checkbox"> Ativar som</label><label class="checkline"><input id="motion" type="checkbox"> Animar vegetação e atmosfera</label><label class="checkline"><input id="invert" type="checkbox"> Inverter eixo vertical do mouse</label><div class="btns">' +
         btn('back', 'Concluir', 'primary') +
         '</div>',
@@ -1324,11 +1327,11 @@
         if (prop === 'sound') Sound.play('ui', settings);
       };
     }
-    for (const id of ['fov', 'sensitivity', 'touchSensitivity', 'touchSize', 'hudScale', 'volume', 'recuo']) {
+    for (const id of ['fov', 'sensitivity', 'touchSensitivity', 'touchSize', 'hudScale', 'volume', 'effectsVolume', 'interfaceVolume', 'recuo']) {
       let n = $('#' + id);
       n.oninput = () => {
         let v = Number(n.value);
-        settings[id] = id === 'volume' ? v / 100 : v;
+        settings[id] = ['volume','effectsVolume','interfaceVolume'].includes(id) ? v / 100 : v;
         n.previousElementSibling.querySelector('output').textContent = v + n.dataset.unit;
         savePrefs();
       };
@@ -2053,6 +2056,7 @@
         b.setAttribute('aria-pressed', on);
       });
       $('#difficultyField').hidden = edition === 'creative';
+      if($('#keepInventoryField'))$('#keepInventoryField').hidden=edition==='creative';
       return;
     }
     const [a, i] = node.dataset.act.split(':');
