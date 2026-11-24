@@ -681,7 +681,7 @@
       rec.name=String(src.name).slice(0,48);
       rec.p=existing?.p || mpGuestProfile.p || {...rec.p,x:rec.p.x+1.8,z:rec.p.z+1.8};
       rec.inv=existing?.inv || (validInventory(mpGuestProfile.inv,36)?mpGuestProfile.inv:Game.fresh('Visitante',rec.seed,rec.mode,rec.difficulty).inv);
-      rec.mobs=[];rec.selected=0;
+      rec.mobs=[];rec.selected=0;rec.wornArmor=null;
       mpGuestEdits=[];
       mpWorldReady=false;
       launch(rec,false,true);
@@ -729,7 +729,7 @@
       const len=Math.hypot(...v);
       if(len>.01 && Voxel.ray((x,y,z)=>g.get(x,y,z,true),eye,v.map(n=>n/len),len,true))return;
       mpLastRemoteHit=now;
-      const damage=msg.weapon===47?5:Voxel.durability[msg.weapon]&&!Voxel.armor[msg.weapon]?2:1;
+      const damage=Voxel.weaponDamage(msg.weapon===mpRemote.held?msg.weapon:0);
       g.strikeMob(mob,damage,mpRemote.x,mpRemote.z);
     } else if (msg.t==='mob-feed' && mpRole==='host' && mpWorldReady && g?.ready && mpRemote?.active) {
       const mob=g.mobs.find(m=>m.id===msg.id && m.hp>0 && !m.dying);
@@ -1469,7 +1469,7 @@
   }
   function slotButton(t, i, prefix, active = false, hot = false) {
     const title = t
-      ? name(t.b) + (Voxel.durability[t.b] ? ' · ' + t.dur + '/' + Voxel.durability[t.b] + ' usos' : '') + (Voxel.armor[t.b] ? ' · proteção '+Math.round(Voxel.armor[t.b]*100)+'% na barra rápida' : '')
+      ? name(t.b) + (Voxel.durability[t.b] ? ' · ' + t.dur + '/' + Voxel.durability[t.b] + ' usos' : '') + (Voxel.armor[t.b] ? ' · proteção '+Math.round(Voxel.armor[t.b]*100)+'% equipada ou na barra rápida' : '')
       : 'Espaço vazio';
     return (
       '<button class="slot' +
@@ -1503,9 +1503,9 @@
     ['survival', 'Sobrevivência', '✦'],
   ];
   function recipeCategory(id) {
-    if ([22, 42, 43, 44, 45, 47, 89, 90, 146].includes(id)) return 'tools';
+    if (Voxel.equipment[id]||[22,42,43,44,45,146,192].includes(id)) return 'tools';
     if ([12, 13, 14, 15, 24, 25, 30, 31, 67, 144,171,172,173,178].includes(id)) return 'utility';
-    if (Voxel.farmNutrition[id] || [38,41,46,123,142,143,176,177].includes(id)) return 'survival';
+    if (Voxel.farmNutrition[id] || Voxel.armor[id] || [38,41,46,123,142,143].includes(id)) return 'survival';
     if ([77, 78, 79, 83, 84, 85, 87, 88].includes(id)) return 'decor';
     return 'build';
   }
@@ -1701,6 +1701,7 @@
           grid(0, 9, true) +
           '<div class="inventory-headline"><div class="sectionhead bag-main-title">Inventário</div><small>3 × 9 (27 espaços)</small></div>' +
           grid(9, 45, false) +
+          (!g.networkGuest&&!g.creative?'<div class="quickcraft-box"><div class="sectionhead">Armadura equipada</div><p>'+ (g.wornArmor?esc(name(g.wornArmor.b))+' · '+g.wornArmor.dur+' usos':'Nenhuma')+'</p>'+ (g.wornArmor?btn('armor-off','Retirar armadura','secondary'):'')+g.inv.map((t,i)=>t&&Voxel.armor[t.b]?btn('armor-on:'+i,'Equipar '+esc(name(t.b)),'secondary'):'').join('')+'</div>':'') +
           '<div class="bag-help-strip">' +
             '<span>◉ Clique em um item e depois no destino para mover.</span>' +
             '<span>◉ Clique direito em um espaço vazio para dividir a pilha.</span>' +
@@ -1945,6 +1946,8 @@
         (Voxel.durability[active.b] ? ' · ' + active.dur + '/' + Voxel.durability[active.b] : '')
       : 'Mão livre';
     if (rotation) $('#itemname').textContent += rotation;
+    if(active?.b===191)$('#itemname').textContent+=' · '+Game.count(g.inv,192)+' flechas';
+    if(Voxel.equipment[active?.b]?.kind==='shield')$('#itemname').textContent+=g.shieldTime>0?' · Protegendo':g.shieldCool>0?' · Recuperando':' · Usar para erguer';
     let html = g.inv
       .slice(0, 9)
       .map((t, i) => slotButton(t, i, 'hot', i === g.selected, true))
@@ -2208,6 +2211,10 @@
       case 'furnacecollect':
         if(g.collectFurnace())inventory(true,14);
         break;
+      case 'armor-on':
+        if(g.equipArmor(+i))inventory(true,bagStation);else toast('Armadura indisponível.');break;
+      case 'armor-off':
+        if(g.unequipArmor())inventory(true,bagStation);else toast('Mochila cheia.');break;
       case 'crafttab':
         bagRecipeTab = i;
         inventory(false, bagStation);
