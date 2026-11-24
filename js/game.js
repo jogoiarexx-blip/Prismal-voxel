@@ -37,8 +37,9 @@ const Game = (() => {
   function count(bag, b) {
     return bag.reduce((a, t) => a + (t?.b === b ? t.n : 0), 0);
   }
-  function fresh(name, seed, mode, difficulty) {
-    let h = land(0, 3, Voxel.seedHash(seed)).h;
+  function fresh(name, seed, mode, difficulty, generator = 3) {
+    generator = generator === 4 ? 4 : 3;
+    let h = land(0, 3, Voxel.seedHash(seed), generator).h;
     let inv = empty();
     if (mode === 'creative') [8, 49, 53, 57, 55, 16, 83, 85, 87].forEach((v, i) => (inv[i] = slot(v, 64)));
     else {
@@ -46,7 +47,7 @@ const Game = (() => {
     }
     return {
       schema: 1,
-      generator: 3,
+      generator,
       id: crypto.randomUUID?.() || Date.now().toString(36) + Math.random().toString(36).slice(2),
       name,
       seed,
@@ -76,7 +77,7 @@ const Game = (() => {
         mode: rec.mode,
         difficulty: rec.difficulty,
       };
-      if (![1, 2, 3].includes(rec.generator) || rec.schema !== 1)
+      if (![1, 2, 3, 4].includes(rec.generator) || rec.schema !== 1)
         throw Error('Versão de mundo incompatível');
       this.generator = rec.generator;
       this.fragments = [];

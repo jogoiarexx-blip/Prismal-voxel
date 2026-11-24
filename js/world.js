@@ -748,12 +748,13 @@ const Voxel = (() => {
         const x = Math.round(Math.sin(arc) * radius),
           z = -Math.round(Math.cos(arc) * radius),
           h = land(x, z, seed, generator).h;
-        if (h < SEA + 2 || (player && Math.hypot(player.x - x, player.z - z) < 12)) continue;
+        if ((generator === 4 && land(x,z,seed,generator).river) || h < SEA + 2 || (player && Math.hypot(player.x - x, player.z - z) < 12)) continue;
         let free = true;
         for (let dz = -4; dz <= 4 && free; dz++)
           for (let dx = -4; dx <= 4 && free; dx++) {
             if (
               edits[key((x + dx) >> 4, (z + dz) >> 4)] ||
+              (generator === 4 && land(x+dx,z+dz,seed,generator).river) ||
               Math.abs(land(x + dx, z + dz, seed, generator).h - h) > 3
             )
               free = false;
@@ -836,7 +837,7 @@ const Voxel = (() => {
       v,
     );
   }
-  function land(x, z, s, generator = 1) {
+  function classicLand(x, z, s, generator = 1) {
     const zone =
       Math.sin(x * 0.035 + z * 0.011 + (s % 27) * 0.018) +
       0.67 * (noise(x * 0.027, z * 0.027, s ^ 357) - 0.5);
@@ -873,6 +874,40 @@ const Voxel = (() => {
     }
     return { h, mist, dunes };
   }
+  // Generator 4 is opt-in. Global coordinates make the tributary and tunnels
+  // continuous across chunk borders, irrespective of loading order.
+  function land(x, z, s, generator = 1) {
+    const base = classicLand(x, z, s, generator);
+    if (generator !== 4 || x < 12 || Math.hypot(x,z-3) < 24) return base;
+    const center = 46 + 12 * Math.sin(x * .035 + (s % 29) * .065) + 5 * Math.sin(x * .091);
+    const width = 2.1 + 1.8 * noise(x * .055, 2, s ^ 441);
+    const distance = Math.abs(z-center);
+    if (distance > width+4) return base;
+    // A shallow tributary rises in steps toward the hills. Water is static,
+    // capped by the original terrain, and never raises a column of land.
+    const level = Math.max(SEA, Math.min(base.h, SEA + Math.floor(Math.max(0,x-38)/13), SEA+9));
+    const blend = smooth(clip((width+4-distance)/4,0,1));
+    const bed = Math.min(base.h, level-2);
+    const h = Math.round(mix(base.h, bed, blend));
+    return distance <= width ? {...base,h,waterY:level,river:true} : {...base,h};
+  }
+  function explorationCaves(x,z,s,h) {
+    if (Math.hypot(x,z-3)<20) return [];
+    const tunnels=[];
+    // Wide chambers connect to winding tunnels at two depth bands.
+    for (const [spacing,depth,phase] of [[39,21,17],[51,38,81]]) {
+      const center = z + 11*Math.sin(x*.062+(s%31)*.09+phase) + 5*Math.sin(x*.137+phase);
+      const d = Math.abs(((center+spacing*.5)%spacing+spacing)%spacing-spacing*.5);
+      const chamber = noise(x*.055,z*.055,s^phase);
+      const width = 2.2+5.5*smooth(clip((chamber-.47)/.4,0,1));
+      if(d>=width) continue;
+      const y = SEA-depth+5*Math.sin(x*.047+phase)+3*Math.cos(z*.072+phase);
+      const radius = (2.3+chamber*2.4)*Math.sqrt(Math.max(0,1-(d/width)**2));
+      const low=Math.max(9,Math.ceil(y-radius)), high=Math.min(h-5,Math.floor(y+radius));
+      if(low<=high)tunnels.push([low,high]);
+    }
+    return tunnels;
+  }
   const idx = (x, y, z) => (y * 16 + z) * 16 + x;
   const key = (x, z) => x + ',' + z;
   function generate(cx, cz, s, sites = [], generator = 1) {
@@ -890,13 +925,15 @@ const Voxel = (() => {
       for (let x = 0; x < 16; x++) {
         const wx = ox + x,
           wz = oz + z,
-          { h, mist, dunes, region } = land(wx, wz, s, generator);
-        top = Math.max(top, h);
+          { h, mist, dunes, region, waterY = SEA, river = false } = land(wx, wz, s, generator);
+        top = Math.max(top, h, waterY);
+        const tunnels = generator === 4 ? explorationCaves(wx,wz,s,h) : [];
         const cv = noise(wx * 0.081, wz * 0.081, s ^ 871),
           path = SEA - 8 + 5 * Math.sin(wx * 0.079) + 3 * Math.cos(wz * 0.095);
-        for (let y = 0; y <= Math.max(SEA, h); y++) {
+        for (let y = 0; y <= Math.max(waterY, h); y++) {
           let b = 3;
           if (y > h) b = 7;
+          else if (river && y >= h-2) b = 4;
           else if (y === h && region)
             b =
               region === 'Montanhas Azuis'
@@ -908,6 +945,7 @@ const Voxel = (() => {
                   : 19;
           else if (y === h) b = h <= SEA + 1 || (generator >= 2 && dunes) ? 4 : mist ? 17 : 1;
           else if (y >= h - 3) b = h < SEA + 1 || (generator >= 2 && dunes) ? 4 : 2;
+          else if (generator === 4 && tunnels.some(([lo,hi])=>y>=lo && y<=hi)) b = 0;
           else if (y > 8 && cv > 0.54 && Math.abs(y - path) < (cv - 0.51) * 11) b = 0;
           else if (y > 0) {
             const ore = hash(wx + y * 3, wz - y * 2, s ^ 717);
@@ -918,8 +956,8 @@ const Voxel = (() => {
         }
       }
     function tree(tx, tz, starter = false) {
-      const { h, mist } = land(tx, tz, s, generator);
-      if (h <= SEA + 1) return;
+      const { h, mist, river } = land(tx, tz, s, generator);
+      if (river || h <= SEA + 1) return;
       const n = hash(tx, tz, s ^ 139);
       const trunk = mist ? 27 : 5,
         leaf = mist ? 18 : 6,
@@ -946,6 +984,7 @@ const Voxel = (() => {
         if (Math.hypot(tx, tz - 3) < 8) continue;
         const terrain = land(tx, tz, s, generator);
         const { mist, dunes, h } = terrain;
+        if (terrain.river) continue;
         if (terrain.region) {
           if (terrain.region === 'Pântano Luminescente' && h >= SEA && hash(gx, gz, s) > 0.35)
             set(tx, h + 1, tz, 36);
